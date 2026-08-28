@@ -156,15 +156,19 @@
    It stays bounded (max-height + internal scroll) so a long facet list
    cannot push the results off-screen. */
 .filterPanel {
-  display: grid;
+  composes: auto-grid-fit from global;
 
   /* auto-fit, not a hard `repeat(3, …)`: in flow the panel is only as wide
      as the free space beside the sort/density group (a wide sort track on
      a 1024px viewport leaves it well under 720px), so the facet columns
      have to reflow 3 -> 2 -> 1 to that measured width instead of
-     overflowing it. `min(180px, 100%)` keeps the track from exceeding a
-     very narrow bar. */
-  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
+     overflowing it. The recipe's `min(…, 100%)` keeps the track from
+     exceeding a very narrow bar.
+     LD-19 (rc.6): this rule was already written in the recipe's exact
+     shape, so composing it is a pure substitution — the emitted template
+     is byte-identical to the `minmax(min(180px, 100%), 1fr)` it replaces. */
+  --grid-min: var(--grid-min-card-compact);
+
   gap: var(--space-md);
   width: min(720px, 100%);
   max-height: 60vh;

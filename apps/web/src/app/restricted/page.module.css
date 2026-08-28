@@ -58,8 +58,12 @@
 
 /* Zone home shell (S9): nav tiles to Browse/Performers/Studios/Search. */
 .navGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  composes: auto-grid-fill from global;
+
+  /* LD-19 (rc.6): the 200px floor now arrives as a token; the recipe in
+     styles/grid.css emits the auto-fill template. */
+  --grid-min: var(--grid-min-card);
+
   gap: var(--space-md);
 }
 

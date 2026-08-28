@@ -16,8 +16,14 @@
 }
 
 .cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  composes: auto-grid-fit from global;
+
+  /* LD-19 (rc.6): the 180px floor now arrives as a token; the recipe in
+     styles/grid.css emits the auto-fit template. The phone override at
+     the bottom of this file is a bare 1fr — a fixed single column, not a
+     floor — so it keeps restating grid-template-columns. */
+  --grid-min: var(--grid-min-card-compact);
+
   gap: var(--space-sm);
 }
 

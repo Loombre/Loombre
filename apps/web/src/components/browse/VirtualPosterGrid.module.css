@@ -28,8 +28,13 @@
 }
 
 .skeletonGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  composes: auto-grid-fill from global;
+
+  /* LD-19 (rc.6): the 168px floor is now --grid-min-poster, matching the
+     JS mirror (DEFAULT_ITEM_WIDTH in VirtualPosterGrid.tsx). The two-up
+     phone override below deliberately does NOT use the recipe. */
+  --grid-min: var(--grid-min-poster);
+
   gap: var(--space-md);
   flex: 1;
   align-content: start;
