@@ -677,6 +677,19 @@ Phone-only additions (genuinely new UI, not reflow):
 - **PIN keypad** — 74px circular keys in a 3-column grid with filled dot indicators.
 - **Signed-out overlay** — an in-frame sign-in state, since there is no separate route.
 
+**Player.** The player is neither a reflow nor a phone-only addition — it is the same
+responsive tree at every width, and at phone widths (**≤ 767.98px**) exactly two things
+differ. **The volume slider is hidden** and the mute toggle stays: the transport cluster plus
+the 80px slider plus the right icon cluster do not fit the bar's inner width on a 380px
+viewport (the fullscreen button spilled past the bar and off the viewport entirely —
+2026-08-27 QA), and phones control volume with hardware buttons anyway. **The chapter list
+opens as a bottom sheet** rather than the anchored popover, because an anchored popover has
+no sensible position against a full-width bottom control bar on a narrow viewport (the same
+convention as *Bottom sheets* above). Everything else is the desktop behavior unchanged: the
+floating control bar inset from the gutters (not edge-to-edge), the three-zone transport row,
+the capability chips — which wrap, so the bar grows taller — the audio/subtitle picker as an
+anchored popover, and auto-hide on idle.
+
 The mobile Settings sections mirror desktop capability exactly, including add-user,
 add-library, the registry filter, plugin key management, and the dashboard's scan-error →
 fix-match flow. **Maintaining that parity is the reason to build one responsive tree.**
