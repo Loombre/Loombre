@@ -10,11 +10,17 @@ MODEL POLICY (this run): all sub-agents opus; final review by fresh opus agent.
 - Phase 0 discovery: COMPLETE (wf_a22235ac-775; findings archived at
   archive/2026-08-27-qa-ld14-ld22-discovery/d1..d4.json). Owner go + rulings
   R1–R5: DECISIONS.md.
-- Wave 1 (A: LD-14, B: LD-16, C: LD-15): COMPLETE — merged, gated, QA'd
-  (exit-gate evidence below).
-- Wave 2 (D: LD-17, E: LD-18): IN FLIGHT — parallel opus worktree lanes.
-- Wave 3 (F: LD-19, G: LD-20+21, H: LD-22): queued; F after all grid work
-  merged; G/H both edit design/phosphor/README.md — integrate sequentially.
+- Wave 1 (A: LD-14, B: LD-16, C: LD-15): COMPLETE — merged, gated, QA'd.
+- Wave 2 (D: LD-17, E: LD-18): COMPLETE — merged + 3 integration fixes
+  (f5f39ff phone-focus confinement per lane D's flagged hazard; 5b67eb8
+  rAF focus deferral, live Chrome exposed a StrictMode remount that jsdom
+  masked; ac1e39d srcExclude docs/state/** — gate step 17 choked on state
+  markdown and Wave 1's build had leaked state/*.html into the local
+  website merge, never deployed, scrubbed by re-sync at 70 routes).
+  Gate re-run: ALL 17 STEPS PASSED. Exit-gate evidence below.
+- Wave 3 (F: LD-19, G: LD-20+21, H: LD-22): IN FLIGHT — all grid work is
+  merged so F/G/H run parallel; G/H both edit design/phosphor/README.md
+  (disjoint sections) — integrate sequentially.
 - Final review + gate:full + run archive: pending.
 
 ## Lane dashboard
@@ -23,11 +29,11 @@ MODEL POLICY (this run): all sub-agents opus; final review by fresh opus agent.
 | A | LD-14 Browse 2-up | DONE | rc6/lane-a-ld14 @ e6b48a0 | e28069b |
 | B | LD-16 mini-cards | DONE | rc6/lane-b-ld16 @ 588d417 | 61c0a78 |
 | C | LD-15 /reset GET | DONE | rc6/lane-c-ld15 @ d315f0d (3 commits) | 8bd92a1 |
-| D | LD-17 PIN input | in flight | — | — |
-| E | LD-18 file paths | in flight | — | — |
-| F | LD-19 grid tokens | queued | — | — |
-| G | LD-20+21 docs | queued | — | — |
-| H | LD-22 player | queued | — | — |
+| D | LD-17 PIN input | DONE | rc6/lane-d-ld17 @ 144bf61 (+f5f39ff,5b67eb8) | a9ce2b9 |
+| E | LD-18 file paths | DONE | rc6/lane-e-ld18 @ ad796ee | 25f1e9d |
+| F | LD-19 grid tokens | in flight | — | — |
+| G | LD-20+21 docs | in flight | — | — |
+| H | LD-22 player | in flight | — | — |
 
 ## Wave 1 exit-gate evidence (screenshots: archive/2026-08-27-qa-ld14-ld22-evidence/wave1/)
 - Integration: 3 clean merges, zero conflict markers; `pnpm gate` on merged
@@ -65,18 +71,27 @@ MODEL POLICY (this run): all sub-agents opus; final review by fresh opus agent.
   diff. Screen: ld16-admin-dashboard-1280.png. Suites: JobsPanel 10/10 (6
   pre-existing unmodified), relative-time 5/5, LibrariesSection 10/10.
 
-## Load-bearing pointers for remaining waves (full detail in d3/d4.json)
-- LD-17: Toggle.module.css:14-26 recipe; ring via :has() on .form → .dots
-  (dots precede input; inset ring on 1×1 paints nothing). PinModal.test.tsx
-  pins: aria-label "PIN", input.hiddenInput compound selector, no
-  border-radius in .hiddenInput block, no literal <input, and a
-  no-`.hiddenInput:focus-visible`-selector assertion the :has() rule may
-  collide with — lane must read the exact regex first. In scope: focus
-  input on open (trap lands on Done today) + refocus after keypad presses.
-  R3: mobile display:none block deleted.
-- LD-18: VersionCard.tsx:78 sole render (mounted twice: desktop+mobile
-  trees); CommandBlock.tsx three-state copy pattern incl non-secure-context
-  fallback; mobile .path override collapses into the unified base rule.
+## Wave 2 exit-gate evidence (screenshots: archive/.../wave2/)
+- LD-17 (live Chrome 1280×800): input clip-path inset(50%) 1px, NOT
+  display:none/visibility:hidden; inputmode numeric + autocomplete off +
+  SR name "PIN" preserved; focus lands on the field on open (after 5b67eb8);
+  hardware digits fill dots (live-region announces "2 of 4"); focus ring
+  visible on dots (3px --shadow-focus-ring, pill radius) —
+  ld17-pin-dialog-ring-2dots.png; mixed entry keypad"3"+key"4" →
+  auto-submit → "Incorrect PIN." → dots reset → focus re-acquired. No
+  visible text field. Phone widths: programmatic focus confined off
+  (f5f39ff) — phone flow byte-identical pre-run. PinModal spec 12/12
+  (red-first: 7 new cases red incl. empirical proof autoFocus was dead).
+- LD-18 (161-char real path, Doctor Strange item): desktop + 380px both
+  render the full path (4 wrapped lines at 380), tail visible, break-all,
+  no ellipsis/clip/line-clamp, nothing clipped; copy button delivered the
+  byte-exact 161-char string to the clipboard API and flipped to "Copied";
+  non-secure-context fallback covered by unit tests (clipboard-undefined
+  case). Screens: ld18-path-desktop-1280.png, ld18-path-mobile-380.png.
+  VersionCard spec red-first; full apps/web suite 232 files / 2364 green;
+  ld14-mono-scale-conformance untouched and green.
+
+## Load-bearing pointers for Wave 3 (full detail in d1/d4.json)
 - LD-19 tokens: poster 168 / poster-compact 132 / avatar 112 /
   avatar-compact 88 / card 200 / card-compact 180 / panel 480 / swatch 84 /
   detail-sidebar 240 (R4). Utility = styles/grid.css, glass.css pattern,
