@@ -159,6 +159,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/reset-password/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The raw one-time password-reset token (never the hash). */
+                token: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Resolve whether a password-reset token is still usable, without consuming it
+         * @description PUBLIC, unauthenticated (LD-15). A read-only liveness probe for the token in a mailed reset link: a 200 means the token is currently unused and unexpired, and NOTHING is consumed — the caller must still POST /auth/reset-password to complete the reset, and that operation re-checks the token itself (a token consumed between the two requests 404s there, same as it would here). Invalid, expired, already-used, and well-formed-but-unknown tokens ALL resolve to the shared not-found problem (see the `NotFound` response): BYTE-IDENTICAL across the four cases, and BYTE-IDENTICAL to what an unknown route answers at this same path — `instance` is this route's TEMPLATE, never the submitted token, so nothing in the body varies with what was probed. Same "invisible == nonexistent" posture as GET /invites/claim/{token} and POST /auth/reset-password. Rate-limited per `rateLimit.passwordReset` (shared with `authForgotPassword` and `authResetPassword`) — the policy that already governs this flow, not a new one.
+         */
+        get: operations["getPasswordResetState"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/devices": {
         parameters: {
             query?: never;
@@ -2813,6 +2836,8 @@ export interface components {
             /** Format: password */
             password: string;
         };
+        /** @description Deliberately empty, exactly like ForgotPasswordResponse above: the 200 ITSELF is the entire signal (this token is live). Carrying any member — the account's username, the expiry instant, which of the four failure cases applied — would hand an unauthenticated caller precisely what the byte-identical-404 posture (E8/M12) exists to withhold. ClaimState carries presets only because a claimant must SEE them to fill the claim form; the reset form has no field to prefill, so there is nothing legitimate to put here. */
+        PasswordResetState: Record<string, never>;
         /** @description R-F3 (opus adversarial review, fix wave): `currentPassword` is required ONLY when the path `id` equals the caller's own userId — a condition the schema itself cannot express (there is no same-as-caller relational operator in JSON Schema), so it is an optional property here and enforced server-side by the same requireCurrentPassword helper UpdateMeRequest/ RestrictedSettingsUpdate use (target-agnostic 422/403, the shared per-user rate limiter). Ignored entirely when resetting ANOTHER user's password. */
         AdminResetPasswordRequest: {
             /**
@@ -5216,6 +5241,42 @@ export interface operations {
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
             /** @description Rate limited (per-IP, shared with authForgotPassword) */
+            429: {
+                headers: {
+                    /** @description Seconds until the next attempt is allowed. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getPasswordResetState: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The raw one-time password-reset token (never the hash). */
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The token is live — unused and unexpired, and untouched by this call */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasswordResetState"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description Rate limited (per-IP, shared with authForgotPassword/authResetPassword) */
             429: {
                 headers: {
                     /** @description Seconds until the next attempt is allowed. */

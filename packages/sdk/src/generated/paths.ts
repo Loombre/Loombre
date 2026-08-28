@@ -86,6 +86,7 @@ export const API_OPERATIONS = [
   { path: "/auth/logout", method: "post", operationId: "authLogout" },
   { path: "/auth/refresh", method: "post", operationId: "authRefresh" },
   { path: "/auth/reset-password", method: "post", operationId: "authResetPassword" },
+  { path: "/auth/reset-password/{token}", method: "get", operationId: "getPasswordResetState" },
   { path: "/devices", method: "get", operationId: "listDevices" },
   { path: "/devices/{id}", method: "get", operationId: "getDevice" },
   { path: "/devices/{id}", method: "delete", operationId: "revokeDevice" },

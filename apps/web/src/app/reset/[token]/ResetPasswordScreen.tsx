@@ -5,19 +5,34 @@
 //
 // E3b/E8/M12/M16: the public self-serve reset-password completion screen.
 // Split out of page.tsx for the same reason ClaimScreen.tsx is split out
-// of /claim/[token]/page.tsx — see that file's header. Same self-guarding
-// pattern as /claim (M16); this screen does NOT probe the token with a GET
-// first (unlike /claim, there is no GET /auth/reset-password to resolve
-// state from — the contract only has the POST). The form is always shown;
-// a 404 on submit (invalid, expired, already-used, or unknown token — all
-// byte-identical per E8/M12) routes to the SAME generic invalid-link
-// treatment /claim uses, at the point the server actually tells us
-// something's wrong rather than guessing up front.
+// of /claim/[token]/page.tsx — see that file's header.
+//
+// LD-15 (rc.6): this screen now PROBES the token at page load, exactly as
+// /claim does. It previously could not: the contract had only POST
+// /auth/reset-password, whose validation IS the token's consume, so the
+// form was shown unconditionally and a dead link only surfaced after the
+// viewer had typed a new password twice and submitted. GET
+// /auth/reset-password/{token} is the read-only twin added for this — a
+// pure liveness read that consumes nothing — so a dead link now shows the
+// SHARED InvalidLinkScreen before the form is ever offered.
+//
+// Three deliberate properties of that probe:
+//   * 404 (invalid, expired, already-used, unknown — all byte-identical
+//     per E8/M12) is the ONLY thing that renders "isn't valid". Any other
+//     failure renders a DISTINCT load-error screen, because an unreachable
+//     server must never read to the viewer as a dead token.
+//   * The submit-time 404 guard below STAYS. The probe precedes it, it
+//     does not replace it: a token used, expired, or superseded between
+//     the GET and the POST still lands on the same invalid screen.
+//   * Both requests resolve their server through resolvePublicServerUrl
+//     (the module-level publicClient() below) — a probe aimed at the
+//     same-origin guess would call a perfectly live link dead.
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { LoombreClient } from "@loombre/sdk";
 import { AuthScreen } from "../../../components/auth/AuthScreen.js";
+import { InvalidLinkScreen } from "../../../components/auth/InvalidLinkScreen.js";
 import { Button } from "../../../components/ui/Button.js";
 import { TextInput } from "../../../components/ui/Input.js";
 import { getAuthStore } from "../../../lib/auth-store.js";
@@ -25,14 +40,45 @@ import { resolvePublicServerUrl } from "../../../lib/server-url-preference.js";
 import { apiErrorMessage, isApiProblem } from "../../../lib/api-error-message.js";
 import styles from "../../../components/auth/AuthScreen.module.css";
 
-type Phase = "form" | "submitting" | "success" | "invalid";
+type Phase = "loading" | "form" | "submitting" | "success" | "invalid" | "load-error";
+
+// d3-d4 (browser-shell-browse-F2 spillover): resolvePublicServerUrl, not
+// `store.serverUrl || guess`. A reset link is opened on a browser with no
+// session — exactly where the store is empty and the same-origin guess is
+// most likely wrong — and the pill on /login is the only place a signed-out
+// viewer can correct it. Same order /login and /forgot resolve through.
+// LD-15 (rc.6): hoisted out of handleSubmit to a module-level helper, the
+// shape ClaimScreen.tsx already uses, now that there are two call sites
+// (the page-load probe and the submit).
+function publicClient(): LoombreClient {
+  const serverUrl = resolvePublicServerUrl(getAuthStore().getSnapshot().serverUrl);
+  return new LoombreClient({ baseUrl: serverUrl.replace(/\/$/, ""), getAccessToken: () => null });
+}
 
 export function ResetPasswordScreen({ token }: { token: string }): React.JSX.Element {
   const router = useRouter();
-  const [phase, setPhase] = useState<Phase>("form");
+  const [phase, setPhase] = useState<Phase>("loading");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    publicClient()
+      .get("/auth/reset-password/{token}", { params: { path: { token } } })
+      .then(() => {
+        if (cancelled) return;
+        setPhase("form");
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        if (isApiProblem(err) && err.status === 404) setPhase("invalid");
+        else setPhase("load-error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -45,18 +91,13 @@ export function ResetPasswordScreen({ token }: { token: string }): React.JSX.Ele
 
     setPhase("submitting");
     try {
-      // d3-d4 (browser-shell-browse-F2 spillover): resolvePublicServerUrl,
-      // not `store.serverUrl || guess`. A reset link is opened on a browser
-      // with no session — exactly where the store is empty and the
-      // same-origin guess is most likely wrong — and the pill on /login is
-      // the only place a signed-out viewer can correct it. Same order
-      // /login and /forgot resolve through.
-      const serverUrl = resolvePublicServerUrl(getAuthStore().getSnapshot().serverUrl);
-      const client = new LoombreClient({ baseUrl: serverUrl.replace(/\/$/, ""), getAccessToken: () => null });
-      await client.post("/auth/reset-password", { body: { token, password } });
+      await publicClient().post("/auth/reset-password", { body: { token, password } });
       setPhase("success");
     } catch (err) {
       if (isApiProblem(err) && err.status === 404) {
+        // The token was used, expired, or superseded between the page-load
+        // probe and this submit — same byte-identical-404 posture, same
+        // screen. The probe never made this guard redundant.
         setPhase("invalid");
         return;
       }
@@ -69,15 +110,37 @@ export function ResetPasswordScreen({ token }: { token: string }): React.JSX.Ele
     }
   }
 
-  if (phase === "invalid") {
+  if (phase === "loading") {
     return (
       <AuthScreen>
-        <p className={styles.formHeading}>This reset link isn&apos;t valid</p>
-        <p className={styles.bodyText}>
-          It may be expired, already used, or mistyped — request a new one from the sign-in page.
-        </p>
-        <Button type="button" variant="secondary" className={styles.submit} onClick={() => router.push("/forgot")}>
-          Request a new link
+        <p className={styles.bodyText}>Checking your reset link…</p>
+      </AuthScreen>
+    );
+  }
+
+  if (phase === "invalid") {
+    // LD-15 (rc.6): the shared dead-link screen /claim renders too — the
+    // wording here is unchanged, only its markup moved.
+    return (
+      <InvalidLinkScreen
+        heading="This reset link isn't valid"
+        body="It may be expired, already used, or mistyped — request a new one from the sign-in page."
+        actionLabel="Request a new link"
+        onAction={() => router.push("/forgot")}
+      />
+    );
+  }
+
+  if (phase === "load-error") {
+    // Deliberately DISTINCT from "invalid" (the same split /claim makes):
+    // a network failure must never read to the viewer as a dead token, or
+    // they'd abandon a link that is perfectly good.
+    return (
+      <AuthScreen>
+        <p className={styles.formHeading}>Couldn&apos;t check this reset link</p>
+        <p className={styles.bodyText}>Check your connection and try again.</p>
+        <Button type="button" variant="secondary" className={styles.submit} onClick={() => window.location.reload()}>
+          Try again
         </Button>
       </AuthScreen>
     );

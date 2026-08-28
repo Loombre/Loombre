@@ -20,7 +20,19 @@
 //     an unknown or foreign deviceId falls back to Phase 1 behavior
 //     (silent new-device creation — device existence is never leaked).
 
-import { Body, Controller, HttpCode, HttpStatus, NotFoundException, Post, Req, UseFilters, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  NotFoundException,
+  Param,
+  Post,
+  Req,
+  UseFilters,
+  UseGuards,
+} from "@nestjs/common";
 import type { Request } from "express";
 import { randomUUID } from "node:crypto";
 import {
@@ -28,6 +40,7 @@ import {
   getDeviceForUser,
   getUserByEmail,
   getUserById,
+  getLivePasswordResetToken,
   getUserByUsername,
   getUserSettings,
   invalidateUnusedPasswordResetTokens,
@@ -525,5 +538,50 @@ export class AuthController {
     if (!result.ok) {
       throw new NotFoundException();
     }
+  }
+
+  /**
+   * GET /auth/reset-password/{token} (LD-15 (rc.6), PUBLIC, M12 quartet) —
+   * the READ-ONLY twin of the POST above, shaped exactly like
+   * invites.controller.ts's getClaimState. It exists so
+   * apps/web/src/app/reset/[token] can resolve a dead link AT PAGE LOAD
+   * and show the shared invalid-link screen, instead of only discovering
+   * it after the viewer has typed a new password twice and submitted.
+   *
+   * It CONSUMES NOTHING: @loombre/db's getLivePasswordResetToken is a
+   * plain SELECT with the same three-clause liveness predicate the consume
+   * uses, and this handler writes nothing at all. The probe is therefore
+   * never a substitute for the POST's own check — a token used, expired,
+   * or superseded between the two requests still 404s there.
+   *
+   * Invalid, expired, already-used, and unknown tokens ALL raise the same
+   * bare `NotFoundException()` as the POST — one shared not-found problem,
+   * byte-identical across the four cases and byte-identical to an unknown
+   * route at this same path, with `instance` collapsed by
+   * sanitize-instance.ts to the TEMPLATE "/auth/reset-password/{token}" so
+   * the submitted token never rides back in the body (F9). Anti-
+   * enumeration adds nothing beyond that here — the tokens are 256-bit
+   * (reset-token.ts) — so this carries the EXISTING `passwordReset` policy
+   * the forgot/reset pair already shares, and no new one.
+   */
+  @Get("reset-password/:token")
+  @UseGuards(SurfaceRateLimitGuard)
+  @RateLimit("passwordReset", "ip")
+  async getPasswordResetState(@Param("token") token: string): Promise<Record<string, never>> {
+    const live = await getLivePasswordResetToken(this.dbProvider.db, {
+      tokenHash: hashPasswordResetToken(token),
+      nowMs: clockNowMs(),
+    });
+
+    if (!live) {
+      // Byte-identical to the POST's own bad-token 404 — see this method's
+      // doc comment and resetPassword() above.
+      throw new NotFoundException();
+    }
+
+    // PasswordResetState is deliberately empty (contract): the 200 itself
+    // is the entire signal. Nothing about the account or the token's
+    // expiry may leak to an unauthenticated caller.
+    return {};
   }
 }

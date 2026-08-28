@@ -221,6 +221,12 @@ const PUBLIC_OPERATION_IDS = new Set([
   // Lane B): the self-service email-tier recovery surface.
   "authForgotPassword",
   "authResetPassword",
+  // LD-15 (rc.6): GET /auth/reset-password/{token} — the read-only twin of
+  // authResetPassword above, public on exactly the same terms (a dynamic
+  // token segment, so it lives in PUBLIC_ROUTE_PATTERNS rather than the
+  // guard's literal Set). Public means "AuthGuard never gates it", not
+  // "it always succeeds": a dead token still answers the shared 404.
+  "getPasswordResetState",
   // STATE.md "Loombre Remote — embedded WireGuard + three-path wizard +
   // reachability proof + posture card" (R6/R9, Wave 0 — lane/remote-base):
   // public by necessity, same posture as the invite-claim pair above (see
@@ -940,6 +946,8 @@ describe("contract conformance (STATE.md D17/D21)", () => {
       // STATE.md "Optional mail transport + invitation & reset flows" (E3b/M12).
       "authForgotPassword",
       "authResetPassword",
+      // LD-15 (rc.6): the read-only GET twin of authResetPassword.
+      "getPasswordResetState",
       // STATE.md "Loombre Remote — embedded WireGuard + three-path wizard +
       // reachability proof + posture card" (R6/R9, Wave 0).
       "getProbePage",

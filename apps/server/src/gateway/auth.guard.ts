@@ -105,6 +105,14 @@ const PUBLIC_ROUTE_PATTERNS: ReadonlyArray<{ method: string; pattern: RegExp }> 
   { method: "GET", pattern: /^\/invites\/claim\/[^/]+$/ },
   { method: "POST", pattern: /^\/invites\/claim\/[^/]+$/ },
   { method: "GET", pattern: /^\/probe\/[^/]+$/ },
+  // LD-15 (rc.6): GET /auth/reset-password/{token}, the read-only twin of
+  // POST /auth/reset-password (a literal PUBLIC_ROUTES entry above). Same
+  // `security: []` posture, but the raw reset token is a PATH SEGMENT, so
+  // it belongs here rather than in the literal Set — which can never match
+  // a dynamic segment. Without this entry the guard 401s the /reset page's
+  // page-load probe and that screen could never tell a dead token from an
+  // unauthenticated caller.
+  { method: "GET", pattern: /^\/auth\/reset-password\/[^/]+$/ },
 ];
 
 function isPublicRoute(method: string, path: string): boolean {

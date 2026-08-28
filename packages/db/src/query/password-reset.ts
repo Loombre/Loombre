@@ -117,6 +117,45 @@ export async function issuePasswordResetToken(
   });
 }
 
+export interface GetLivePasswordResetTokenInput {
+  tokenHash: string;
+  nowMs: number;
+}
+
+/**
+ * GET /auth/reset-password/{token} (LD-15 (rc.6)): the READ-ONLY twin of
+ * resetPasswordViaTokenAndEmit's atomic consume below. It asks the exact
+ * same three-clause liveness question that consume's WHERE clause asks —
+ * `token_hash = $hash AND used_at_ms IS NULL AND expires_at_ms > now` —
+ * and answers it WITHOUT writing anything: no used_at_ms stamp, no
+ * password change, no revoke, no event. Kept immediately above the
+ * consume so the two predicates can never drift apart, the same reason
+ * src/query/invites.ts keeps isInviteClaimable beside claimInviteAndEmit's
+ * CAS (that pair is this function's shape: plain-read 404 path first,
+ * race-deciding CAS second).
+ *
+ * A probe is NOT a substitute for the consume's own check. Between this
+ * read and the subsequent POST the token can be used, expire, or be
+ * superseded — the consume re-decides, and a loser still gets the same
+ * bare 404. Missing, already-used, expired, and superseded tokens all
+ * collapse to the SAME `null` here (no branch distinguishes them), so the
+ * controller can raise one byte-identical not-found problem for every
+ * case (M12/E8).
+ */
+export async function getLivePasswordResetToken(
+  db: Kysely<DB>,
+  input: GetLivePasswordResetTokenInput
+): Promise<PasswordResetTokenRow | null> {
+  const row = await db
+    .selectFrom('password_reset_tokens')
+    .selectAll()
+    .where('token_hash', '=', input.tokenHash)
+    .where('used_at_ms', 'is', null)
+    .where('expires_at_ms', '>', input.nowMs)
+    .executeTakeFirst();
+  return row ?? null;
+}
+
 export type ResetPasswordViaTokenResult = { ok: true; userId: string } | { ok: false };
 
 export interface ResetPasswordViaTokenInput {
