@@ -1,0 +1,309 @@
+{
+  "browseGrid": {
+    "file": "/Users/ozzy/App Development/Loombre/apps/web/src/components/browse/VirtualPosterGrid.module.css",
+    "lines": "30-36 (CSS); the LIVE grid geometry is JS, not CSS — /Users/ozzy/App Development/Loombre/apps/web/src/components/browse/VirtualPosterGrid.tsx:41-42, :143-148, :265-291 and /Users/ozzy/App Development/Loombre/apps/web/src/lib/grid-windowing.ts:38-42",
+    "currentCss": "CRITICAL: the Browse grid has NO live `grid-template-columns`. It is a hand-rolled virtualized grid — absolutely-positioned cells, column count computed in JS.\n\n(1) The ONLY CSS grid on Browse is the LOADING SKELETON — VirtualPosterGrid.module.css:30-36:\n.skeletonGrid {\n  display: grid;\n  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));\n  gap: var(--space-md);\n  flex: 1;\n  align-content: start;\n}\n\n(2) The real grid — VirtualPosterGrid.module.css:2-20:\n.scrollArea {\n  position: relative;\n  flex: 1;\n  min-height: 320px;\n  overflow: hidden auto;\n  outline: none;\n  border-radius: var(--radius-lg);\n}\n.track { position: relative; width: 100%; }\n.cell { position: absolute; top: 0; left: 0; }\n\n(3) The column count — VirtualPosterGrid.tsx:41-42:\nconst DEFAULT_ITEM_WIDTH = 168;\nconst DEFAULT_GAP = 16; // px — matches --space-md\n\nVirtualPosterGrid.tsx:143-148:\n  const columns = useMemo(\n    () => computeColumns(containerWidth, itemWidth, gap),\n    [containerWidth, itemWidth, gap],\n  );\n  const actualItemWidth = columns > 0 && containerWidth > 0 ? (containerWidth - gap * (columns - 1)) / columns : itemWidth;\n\ngrid-windowing.ts:38-42:\nexport function computeColumns(containerWidth: number, itemWidth: number, gap: number): number {\n  if (containerWidth <= 0 || itemWidth <= 0) return 1;\n  const columns = Math.floor((containerWidth + gap) / (itemWidth + gap));\n  return Math.max(1, columns);\n}\n\nCells are placed at VirtualPosterGrid.tsx:271 `const left = col * (actualItemWidth + gap);` and stamped inline at :278 `style={{ transform: \\`translate(${left}px, ${top}px)\\`, width: actualItemWidth }}`.\n\nCONSEQUENCE FOR LD-14: at a 380px viewport containerWidth = 348px, so computeColumns(348, 168, 16) = floor(364/184) = 1 -> ONE 348px-wide jumbo poster. The `.skeletonGrid` CSS produces the same 1 column. Implementing \"repeat(2, 1fr) below ~480px\" therefore requires BOTH a CSS change (.skeletonGrid) AND a JS change (computeColumns / DEFAULT_ITEM_WIDTH override or a breakpoint-aware column clamp in VirtualPosterGrid.tsx). A CSS-only edit will change the skeleton only and leave the real grid at 1 jumbo column.",
+    "breakpoints": "apps/web/src/components/browse/VirtualPosterGrid.module.css: NO media queries at all — .skeletonGrid's minmax(168px, 1fr) is unconditional at every width. apps/web/src/app/browse/page.module.css:31-35 has the only media query on the route, `@media (width <= 767.98px) { .title { display: none; } }` — it does not touch any grid. There is currently NO ~480px breakpoint anywhere in apps/web; the only literals in use are 767.98px (mobile), 1023.98px (MovieDetailScreen only) and 1279.98px (tablet sidebar).",
+    "componentFiles": [
+      "/Users/ozzy/App Development/Loombre/apps/web/src/app/browse/page.tsx — the route; renders <VirtualPosterGrid<BrowseCard>> twice (line 232 loading-only instance, line 244 the real one) and PosterCell as renderItem (line 255). Imports at :32-33. NEITHER instance passes itemWidth or gap, so both use DEFAULT_ITEM_WIDTH=168 / DEFAULT_GAP=16.",
+      "/Users/ozzy/App Development/Loombre/apps/web/src/components/browse/VirtualPosterGrid.tsx — owns the grid geometry (columns, actualItemWidth, rowHeight, cell transforms) and the skeleton branch (:239-250).",
+      "/Users/ozzy/App Development/Loombre/apps/web/src/components/browse/VirtualPosterGrid.module.css — .scrollArea/.track/.cell/.empty/.skeletonGrid/.skeletonCell.",
+      "/Users/ozzy/App Development/Loombre/apps/web/src/lib/grid-windowing.ts — pure computeColumns/computeTotalRows/computeVisibleRowRange/rangeToItemIndices/shouldLoadMore/rowOffset. Tests: /Users/ozzy/App Development/Loombre/apps/web/src/lib/grid-windowing.test.ts",
+      "/Users/ozzy/App Development/Loombre/apps/web/src/components/browse/PosterCell.tsx + PosterCell.module.css — the tile. .tile is width:100% (PosterCell.module.css:15), .imageWrap is aspect-ratio: 2/3 (:24) — the tile takes whatever width the grid/cell gives it, so it inflates to 348px on a 1-column mobile layout.",
+      "/Users/ozzy/App Development/Loombre/apps/web/src/app/browse/page.module.css — .page (flex column, height: calc(100vh - 64px - (var(--space-xl) * 2))), .toolbar, .title, .emptyLibraries, .loadMoreError, .retryButton.",
+      "/Users/ozzy/App Development/Loombre/apps/web/src/components/browse/VirtualPosterGrid.test.tsx — existing tests stub clientWidth=800/clientHeight=900 and ResizeObserver (lines 27-33); any column-count assertion for LD-14 must re-stub clientWidth."
+    ]
+  },
+  "watchlistGrid": {
+    "file": "/Users/ozzy/App Development/Loombre/apps/web/src/app/watchlist/page.module.css",
+    "lines": "27-31 (desktop .grid), 59-68 (mobile override)",
+    "currentCss": "/Users/ozzy/App Development/Loombre/apps/web/src/app/watchlist/page.module.css:27-35\n.grid {\n  display: grid;\n  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));\n  gap: var(--space-md);\n}\n\n.cell {\n  width: 100%;\n}\n\n:59-68\n@media (width <= 767.98px) {\n  .grid {\n    grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));\n  }\n\n  .loadMore {\n    min-height: 44px;\n    width: 100%;\n  }\n}\n\nThis is a REAL CSS grid (not virtualized) — /Users/ozzy/App Development/Loombre/apps/web/src/app/watchlist/page.tsx:130 (skeleton branch) and :143 (real branch) both render <div className={styles.grid}>, each item wrapped in <div className={styles.cell}> (:145) hosting <WatchlistPosterCard> (:146).",
+    "breakpoints": "Two media queries, both `@media (width <= 767.98px)` (the shared mobile literal documented in apps/web/src/styles/tokens.css:239-253): line 21-25 hides .title, line 59-68 swaps .grid to minmax(132px, 1fr) and makes .loadMore full-width/44px-tall. No ~480px breakpoint. LD-14 says Watchlist keeps this 132px auto-fill unchanged.",
+    "columnCountAt380": "2 columns — arithmetic:\n\nContainer chain at a 380px viewport:\n- body/html have no horizontal padding (apps/web/src/app/globals.css:12-25; box-sizing: border-box globally at :6-10).\n- AppShell .main at <=767.98px (/Users/ozzy/App Development/Loombre/apps/web/src/components/shell/AppShell.module.css:118-123):\n    padding-left:  calc(var(--space-md) + env(safe-area-inset-left, 0))  = 16px + 0 = 16px\n    padding-right: calc(var(--space-md) + env(safe-area-inset-right, 0)) = 16px + 0 = 16px\n  (--space-md: 16px — apps/web/src/styles/tokens.css:168; safe-area insets are 0 on a non-notched 380px browser viewport)\n- .main content box = 380 - 16 - 16 = 348px\n- watchlist .page is `display: flex; flex-direction: column` with no padding (page.module.css:2-6), so .grid's content box = 348px.\n\nauto-fill with minmax(132px, 1fr) and gap: var(--space-md) = 16px:\n  n tracks fit iff  n*132 + (n-1)*16 <= 348\n  n = 2 -> 264 + 16 = 280 <= 348  OK\n  n = 3 -> 396 + 32 = 428 >  348  fails\n  => n = 2\nEquivalent closed form: floor((348 + 16) / (132 + 16)) = floor(364 / 148) = floor(2.459) = 2.\nResulting track width = (348 - 16) / 2 = 166px per column.\n\nCONTRAST — Browse at the same 380px viewport (the LD-14 defect):\n  computeColumns(348, 168, 16) = floor((348 + 16) / (168 + 16)) = floor(364 / 184) = floor(1.978) = 1\n  -> ONE 348px-wide poster (\"jumbo single poster\"). The .skeletonGrid CSS agrees: 1*168 <= 348 but 2*168 + 16 = 352 > 348, so auto-fill also yields 1 track, stretched to 348px by 1fr.\nNote: on a desktop browser narrowed to 380px WITH a classic (non-overlay) scrollbar, subtract ~15px from 348 -> 333px; Watchlist still yields 2 columns (2*132 + 16 = 280 <= 333), Browse still yields 1."
+  },
+  "minmaxInventory": [
+    {
+      "file": "/Users/ozzy/App Development/Loombre/apps/web/src/components/browse/VirtualPosterGrid.module.css",
+      "line": 32,
+      "snippet": "  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));",
+      "minPx": 168,
+      "gridPurpose": "Browse LOADING SKELETON grid (.skeletonGrid) — 18 placeholder 2:3 poster tiles. The live Browse grid is JS-positioned (see browseGrid). Shared with /restricted/browse, /restricted/performers/[id], /restricted/studios/[id] via ZoneBrowseGrid.",
+      "alreadyClampedWithMin": false
+    },
+    {
+      "file": "/Users/ozzy/App Development/Loombre/apps/web/src/app/watchlist/page.module.css",
+      "line": 29,
+      "snippet": "  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));",
+      "minPx": 168,
+      "gridPurpose": "Watchlist poster grid, desktop/tablet (>767.98px) — 2:3 poster cards with inline REMOVE (WatchlistPosterCard).",
+      "alreadyClampedWithMin": false
+    },
+    {
+      "file": "/Users/ozzy/App Development/Loombre/apps/web/src/app/watchlist/page.module.css",
+      "line": 61,
+      "snippet": "    grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));",
+      "minPx": 132,
+      "gridPurpose": "Watchlist poster grid, mobile override inside @media (width <= 767.98px) — the denser 132px auto-fill LD-14 says must NOT be harmonized with Browse.",
+      "alreadyClampedWithMin": false
+    },
+    {
+      "file": "/Users/ozzy/App Development/Loombre/apps/web/src/app/restricted/performers/page.module.css",
+      "line": 31,
+      "snippet": "  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));",
+      "minPx": 112,
+      "gridPurpose": "Restricted-zone performers index — centered avatar/name cards (.card is flex column, align-items:center). Desktop.",
+      "alreadyClampedWithMin": false
+    },
+    {
+      "file": "/Users/ozzy/App Development/Loombre/apps/web/src/app/restricted/performers/page.module.css",
+      "line": 101,
+      "snippet": "    grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));",
+      "minPx": 88,
+      "gridPurpose": "Same performers avatar grid, mobile override inside @media (width <= 767.98px).",
+      "alreadyClampedWithMin": false
+    },
+    {
+      "file": "/Users/ozzy/App Development/Loombre/apps/web/src/app/restricted/studios/page.module.css",
+      "line": 31,
+      "snippet": "  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));",
+      "minPx": 112,
+      "gridPurpose": "Restricted-zone studios index — centered avatar/name cards, byte-identical rule to the performers page. Desktop.",
+      "alreadyClampedWithMin": false
+    },
+    {
+      "file": "/Users/ozzy/App Development/Loombre/apps/web/src/app/restricted/studios/page.module.css",
+      "line": 101,
+      "snippet": "    grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));",
+      "minPx": 88,
+      "gridPurpose": "Same studios avatar grid, mobile override inside @media (width <= 767.98px).",
+      "alreadyClampedWithMin": false
+    },
+    {
+      "file": "/Users/ozzy/App Development/Loombre/apps/web/src/app/restricted/page.module.css",
+      "line": 62,
+      "snippet": "  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));",
+      "minPx": 200,
+      "gridPurpose": "Restricted zone-home nav tiles (.navGrid) — Browse/Performers/Studios/Search entry tiles. No media-query override; .navGrid is untouched by the page's only breakpoint (:132 targets a different selector).",
+      "alreadyClampedWithMin": false
+    },
+    {
+      "file": "/Users/ozzy/App Development/Loombre/apps/web/src/components/admin/HealthCards.module.css",
+      "line": 4,
+      "snippet": "  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));",
+      "minPx": 200,
+      "gridPurpose": "Admin health/status stat cards (.grid). NOTE: this file has its own mobile override at :57 `grid-template-columns: repeat(2, 1fr);` — an existing precedent for exactly the repeat(2, 1fr) shape LD-14 wants on Browse.",
+      "alreadyClampedWithMin": false
+    },
+    {
+      "file": "/Users/ozzy/App Development/Loombre/apps/web/src/components/settings/remote-wizard/ChoiceCard.module.css",
+      "line": 20,
+      "snippet": "  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));",
+      "minPx": 180,
+      "gridPurpose": "Remote-access wizard radio choice cards (.cards). Has a `grid-template-columns: 1fr` override at :81 inside its own media query.",
+      "alreadyClampedWithMin": false
+    },
+    {
+      "file": "/Users/ozzy/App Development/Loombre/apps/web/src/components/restricted/ZoneControls.module.css",
+      "line": 167,
+      "snippet": "  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));",
+      "minPx": 180,
+      "gridPurpose": "Restricted-zone filter panel facet columns (.filterPanel), width: min(720px, 100%). ALREADY in the LD-19 target shape — the min(180px, 100%) clamp and its rationale are documented in the comment at :161-166.",
+      "alreadyClampedWithMin": true
+    },
+    {
+      "file": "/Users/ozzy/App Development/Loombre/apps/web/src/app/admin/page.module.css",
+      "line": 126,
+      "snippet": "  grid-template-columns: repeat(auto-fit, minmax(min(480px, 100%), 1fr));",
+      "minPx": 480,
+      "gridPurpose": "Admin System card grid (.systemGrid) — 2-up wide info panels. ALREADY in the LD-19 target shape; the comment at :120-125 records the exact 380px clipping bug the min() clamp fixed (2026-08-27 QA). This is the reference implementation LD-19's utility generalizes.",
+      "alreadyClampedWithMin": true
+    },
+    {
+      "file": "/Users/ozzy/App Development/Loombre/apps/web/src/app/styleguide/page.module.css",
+      "line": 185,
+      "snippet": "  grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));",
+      "minPx": 84,
+      "gridPurpose": "Styleguide Blaze-mark swatch cells (.blazeGrid, .blazeCell min-height:168px). Dev-only route. Comment at :178-182 explicitly relies on auto-fit reflowing 4-across at 1440px to 2-across at 392px.",
+      "alreadyClampedWithMin": false
+    },
+    {
+      "file": "/Users/ozzy/App Development/Loombre/apps/web/src/components/detail/MovieDetailScreen.module.css",
+      "line": 102,
+      "snippet": "  grid-template-columns: minmax(0, 1.4fr) minmax(240px, 1fr);",
+      "minPx": 240,
+      "gridPurpose": "Movie detail two-column body: content column + metadata sidebar. NOT a repeat()/auto-fill grid — a fixed 2-track layout, so LD-19's `repeat(auto-fill, minmax(min(var(--tok),100%),1fr))` utility CANNOT emit this shape. The 240px is a real, deliberately-added floor (AUD-A4v5-001 rationale at :89-99) paired with the stack-to-one-column override at :107-111. The 1.4fr track's minmax(0, ...) is the min-content-suppression idiom, not a px floor.",
+      "alreadyClampedWithMin": false
+    },
+    {
+      "file": "/Users/ozzy/App Development/Loombre/apps/web/src/components/detail/MovieDetailScreen.module.css",
+      "line": 109,
+      "snippet": "    grid-template-columns: minmax(0, 1fr);",
+      "minPx": 0,
+      "gridPurpose": "Movie detail body stacked to one column inside @media (width <= 1023.98px). minmax(0, 1fr) is the min-content-suppression idiom — no px floor, nothing for LD-19 to tokenize, but a naive stylelint `/minmax\\(/` ban would flag it.",
+      "alreadyClampedWithMin": false
+    },
+    {
+      "file": "/Users/ozzy/App Development/Loombre/apps/web/src/components/music/AlbumDetailScreen.module.css",
+      "line": 82,
+      "snippet": "  grid-template-columns: minmax(0, 1fr);",
+      "minPx": 0,
+      "gridPurpose": "Album detail body, single-column default. min-content-suppression idiom, no px floor.",
+      "alreadyClampedWithMin": false
+    },
+    {
+      "file": "/Users/ozzy/App Development/Loombre/apps/web/src/components/music/AlbumDetailScreen.module.css",
+      "line": 88,
+      "snippet": "  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);",
+      "minPx": 0,
+      "gridPurpose": "Album detail body when [data-has-more-albums=\"true\"] — tracklist + 'more albums' sidebar. Both tracks are min-content-suppression idiom, no px floor.",
+      "alreadyClampedWithMin": false
+    },
+    {
+      "file": "/Users/ozzy/App Development/Loombre/apps/web/src/components/admin/system/system-cards.module.css",
+      "line": 54,
+      "snippet": "  grid-template-columns: auto minmax(0, 1fr);",
+      "minPx": 0,
+      "gridPurpose": "Admin System card dt/dd fact grid (.factGrid). min-content-suppression idiom — the comment at :49-53 records the 64-char GPU-id overflow at 380px it fixes. No px floor.",
+      "alreadyClampedWithMin": false
+    }
+  ],
+  "cssArchitecture": "Plain CSS Modules + a small set of globally-imported CSS files. No Tailwind (no tailwind.config anywhere; no tailwind dependency in apps/web/package.json), no CSS-in-JS, no styled-components, no shared style package (grep for `minmax` / `gridTemplateColumns` across all .ts/.tsx in apps/web/src returns ZERO hits — every grid lives in CSS; and `find packages -name \"*.css\"` returns nothing, so no workspace package ships styles apps/web could import).\n\nGLOBAL LAYER — /Users/ozzy/App Development/Loombre/apps/web/src/app/globals.css is imported once by the root layout (/Users/ozzy/App Development/Loombre/apps/web/src/app/layout.tsx:6 `import \"./globals.css\";`). Its first three lines are the entire global-stylesheet manifest:\n  globals.css:2  @import \"../styles/tokens.css\";\n  globals.css:3  @import \"../styles/fonts.css\";\n  globals.css:4  @import \"../styles/glass.css\";\nglobals.css itself then holds the reset (box-sizing, body, headings overflow-wrap, focus rings/keyframes, prefers-reduced-motion) and two globally-scoped class families (.nf-* for the root not-found boundary, with the reason they live here documented at :116-128).\n\nDESIGN TOKENS — /Users/ozzy/App Development/Loombre/apps/web/src/styles/tokens.css is the single source of truth (its own header says so, :3-28). All tokens are CSS custom properties on bare `:root` (:30-328), plus three `:root[data-accent=\"...\"]` override blocks (:338-348) and one `@media (prefers-reduced-motion: reduce) :root` block (:350-358). Dark-only; the light-theme block was deliberately removed.\nToken categories and the px-valued ones (relevant to LD-19 sizing):\n  --radius-*        :34-38   (pill/lg/md/sm/full)\n  --motion-* / --ease-*   :41-45\n  --color-* / --fill-*    :48-160\n  --space-3xs..3xl  :164-172  (2/4/8/12/16/24/32/48/64px)  <- --space-md: 16px is the gap on BOTH grids\n  --font-* / --wdth-* / --text-* / --mono-* / --track-* / --leading-* / --weight-*  :175-207\n  --shadow-*        :213-219\n  --chrome-*        :224-226\n  --sidebar-bg      :237\n  --mobile-tabbar-height / --mobile-header-height / --mobile-header-height-back  :254-256  <- the existing precedent for a NON-color, NON-space, px LAYOUT token; each carries an inline comment justifying its value\n  --scanlines / --vignette / --brand-* / --color-bg-splash / --scanlines-splash  :278-318\n  semantic aliases --bg/--surface/--overlay/--text/--muted/--border/--focus  :321-327\nNAMING CONVENTION: lowercase kebab, `--<category>-<variant>[-<modifier>]`, category first (--space-2xs, --color-text-muted, --mobile-header-height-back, --radius-lg). Every non-obvious token carries an inline `/* ... */` explaining its value and its consumers. There are currently ZERO `--grid-*` custom properties (`grep -rn -- \"--grid-\" apps/web/src` returns nothing) and zero sizing tokens for grid minimums.\n\nCOMPONENT LAYER — one co-located `*.module.css` per component/route (`apps/web/src/app/<route>/page.module.css`, `apps/web/src/components/<area>/<Component>.module.css`). Modules never re-declare literals that tokens.css owns; border-radius literals are actively banned by stylelint (see below).\n\nCROSS-MODULE REUSE — CSS Modules `composes:`, in two forms, 30 call sites total:\n  (a) `composes: <class> from global;` — pulls a class out of a globals-imported stylesheet. THE ONLY existing example is `.glass` (defined at /Users/ozzy/App Development/Loombre/apps/web/src/styles/glass.css:21-25, consumed at app/setup/page.module.css:26, app/styleguide/page.module.css:120, components/music/MiniPlayerBar.module.css:14, components/music/QueueDrawer.module.css:3, components/shell/MobileHeader.module.css:10, components/shell/MobileTabBar.module.css:11, components/detail/AmbientHero.module.css:67, components/detail/SceneBanner.module.css:83, components/player/Scrubber.module.css:95, components/player/UnavailableScreen.module.css:12). glass.css's own header (:12-14) documents the pattern and the deliberate rule that the recipe sets only its own properties and never border-radius/box-shadow so it cannot fight a consumer's cascade.\n  (b) `composes: <class> from \"<relative path to another module>\";` — e.g. `composes: button secondary from \"../ui/Button.module.css\"` (app/browse/page.module.css:60, app/watchlist/page.module.css:46, app/people/[id]/page.module.css:59, components/detail/PlayLink.module.css:3, WatchlistToggle.module.css:7, SeriesDetailScreen.module.css:62,:97), `composes: track|segment from \"../ui/SegmentedControl.module.css\"` (LibraryPills:8,:13, SortControl:3,:7, SeasonPillTabs:17,:21, ZoneControls:20,:24,:28), `composes: dialog from \"./Overlay.module.css\"` (SheetOrModal:10).\n\nSTYLELINT — a single flat config at /Users/ozzy/App Development/Loombre/apps/web/.stylelintrc.json (29 lines; the only other copies on disk are gitignored installer stage artifacts). `extends: [\"stylelint-config-standard\"]`, no plugins beyond stylelint + stylelint-config-standard (apps/web/package.json devDependencies). Run via apps/web `\"lint\": \"eslint src --max-warnings=0 && stylelint \\\"src/**/*.css\\\"\"`, reached from the root `pnpm gate`'s lint step (`turbo run lint`).\nTHE PRECEDENT LD-19's new rule should follow is already in this file at :15-27 — `declaration-property-value-allowed-list` keyed by a property regex, used to make every hand-written border-radius literal a lint failure:\n  \"declaration-property-value-allowed-list\": {\n    \"/^border-radius$/\": [ \"/^var\\\\(--radius-(pill|lg|md|sm|full)\\\\)$/\", ... , \"0\", \"inherit\" ],\n    \"/^border-(top|bottom)-(left|right)-radius$/\": [ ... ]\n  }\nTwo mechanical notes for the LD-19 rule: (i) the config is FLAT — exempting the utility's own file (styles/grid.css) requires adding a stylelint `overrides` block, which this config does not have yet; (ii) a naive `/minmax\\(/` disallow-list on grid-template-columns would also fire on the five legitimate `minmax(0, Nfr)` min-content-suppression sites (AlbumDetailScreen:82,:88, MovieDetailScreen:109, system-cards:54) and on MovieDetailScreen:102 — the pattern must exempt `minmax(0,` and the lane must decide MovieDetailScreen:102's fate.\n\nCSS-SOURCE-READING TESTS — this repo already pins CSS rules by reading stylesheet TEXT in vitest (jsdom never evaluates imported CSS). The general-sweep precedent is /Users/ozzy/App Development/Loombre/apps/web/src/components/ld14-mono-scale-conformance.test.ts (walks every *.module.css, parses rule blocks, asserts a design rule); narrower ones include components/admin/settings/phosphor-mobile-css.test.ts, components/ui/BlazeSpinner.purge.test.ts, components/shell/Sidebar.blaze-purge.test.ts and lib/home-rail-geometry.test.ts (which reads AppShell.module.css's max-width). This is the natural home for a \"no hand-written minmax\" belt-and-braces check if stylelint's flat config proves awkward, and for pinning the LD-14 breakpoint value.",
+  "existingTokens": [
+    {
+      "file": "/Users/ozzy/App Development/Loombre/apps/web/src/styles/tokens.css",
+      "lines": "164-172",
+      "detail": "Spacing scale — the only sizing tokens both grids consume today: --space-3xs:2px, --space-2xs:4px, --space-xs:8px, --space-sm:12px, --space-md:16px, --space-lg:24px, --space-xl:32px, --space-2xl:48px, --space-3xl:64px. --space-md (16px) is the `gap` on the Browse skeleton grid, the Watchlist grid, and the JS DEFAULT_GAP mirror in VirtualPosterGrid.tsx:42 (`const DEFAULT_GAP = 16; // px — matches --space-md`). Header comment at :162-163 marks the scale as intentionally unchanged by the Phosphor retheme."
+    },
+    {
+      "file": "/Users/ozzy/App Development/Loombre/apps/web/src/styles/tokens.css",
+      "lines": "254-256",
+      "detail": "THE STRUCTURAL PRECEDENT FOR LD-19's TOKENS — the only existing non-color, non-space px LAYOUT tokens: --mobile-tabbar-height: 60px; --mobile-header-height: 112px; --mobile-header-height-back: 66px. Each carries an inline comment giving the measured basis for the number. The block header (:239-253) also records the standing rule that the 767.98px BREAKPOINT itself is deliberately NOT a custom property (\"@media conditions cannot consume var()\"), so it stays a hand-repeated literal with a pointer comment in AppShell.module.css, Sidebar.module.css, MobileTabBar.module.css, MobileHeader.module.css and MiniPlayerBar.module.css. LD-14's new ~480px breakpoint falls under this same rule: it CANNOT be a var() — it must be a commented literal."
+    },
+    {
+      "file": "/Users/ozzy/App Development/Loombre/apps/web/src/styles/tokens.css",
+      "lines": "34-38",
+      "detail": "Radius scale (--radius-pill/lg/md/sm/full). Relevant only as the naming+enforcement model: this is the one token family already backed by a stylelint value gate (.stylelintrc.json:15-27), which is exactly the shape LD-19's minmax rule should copy. --radius-md:14px is the poster/thumbnail radius used by both PosterCell.module.css:25 and WatchlistPosterCard.module.css:23."
+    },
+    {
+      "file": "/Users/ozzy/App Development/Loombre/apps/web/src/styles/tokens.css",
+      "lines": "321-327",
+      "detail": "Semantic aliases kept for back-compat: --bg, --surface, --overlay, --text, --muted, --border, --focus. Shows the file's willingness to carry a thin alias layer; not needed by LD-19."
+    },
+    {
+      "file": "/Users/ozzy/App Development/Loombre/apps/web/src/styles/glass.css",
+      "lines": "1-35",
+      "detail": "NOT a token file but THE utility-class precedent: a globals-imported stylesheet defining one recipe class (.glass at :21-25) consumed by 10 modules via `composes: glass from global;`. Its header (:12-14) states the pattern and the discipline (\"this recipe still deliberately does NOT set border-radius or box-shadow, so it never fights a component's own declarations in the cascade\"). LD-19's grid utility should be authored the same way."
+    },
+    {
+      "file": "/Users/ozzy/App Development/Loombre/apps/web/src/app/globals.css",
+      "lines": "2-4",
+      "detail": "The global-stylesheet manifest: @import \"../styles/tokens.css\"; @import \"../styles/fonts.css\"; @import \"../styles/glass.css\". A new styles/grid.css must be added here (a 4th @import) or its class will not exist for `composes: ... from global`."
+    }
+  ],
+  "sharedComponents": [
+    {
+      "file": "/Users/ozzy/App Development/Loombre/apps/web/src/components/browse/VirtualPosterGrid.tsx",
+      "lines": "41-42, 74-87, 143-148, 239-250, 265-291",
+      "detail": "THE BIGGEST LEAK VECTOR — but it leaks toward the RESTRICTED ZONE, not toward Watchlist. VirtualPosterGrid is imported by app/browse/page.tsx:32 AND by components/restricted/ZoneBrowseGrid.tsx:23 (used at :61). ZoneBrowseGrid is the shared card renderer behind /restricted/browse, /restricted/performers/[id] (filmography) and /restricted/studios/[id] (catalog) — its own header says so at :6-9. NEITHER app/browse/page.tsx (lines 232-241 and 244-271) NOR ZoneBrowseGrid.tsx (lines 61-86) passes `itemWidth` or `gap`, so all four surfaces run on DEFAULT_ITEM_WIDTH=168 / DEFAULT_GAP=16. Any LD-14 change made INSIDE VirtualPosterGrid.tsx (or its .module.css) silently reshapes the three restricted-zone poster walls too. To confine LD-14 to Browse, the change must be a prop passed from app/browse/page.tsx, or the component must gain an explicit opt-in — deciding which is a lane decision, not a discovery finding."
+    },
+    {
+      "file": "/Users/ozzy/App Development/Loombre/apps/web/src/components/browse/VirtualPosterGrid.module.css",
+      "lines": "30-36",
+      "detail": "Same leak, CSS side: .skeletonGrid is the loading skeleton for all four surfaces above (VirtualPosterGrid.tsx:241 renders it in the `if (loading)` branch, which every caller reaches). Editing minmax(168px,1fr) here changes the restricted zone's skeletons as well. Also note components/restricted/RestrictedZoneEmptyState.tsx:9 explicitly cites this module's `.empty` class as its visual reference."
+    },
+    {
+      "file": "/Users/ozzy/App Development/Loombre/apps/web/src/lib/grid-windowing.ts",
+      "lines": "38-42",
+      "detail": "computeColumns is pure and has exactly one caller (VirtualPosterGrid.tsx:144) but is unit-tested in isolation (lib/grid-windowing.test.ts) and its contract is quoted in components/admin/VirtualList.tsx:7-9 (a separate single-column virtualizer that copies the model but does NOT import this function). Changing computeColumns's signature or its floor(…) semantics touches Browse + all three restricted-zone walls at once; adding a breakpoint-aware clamp is safer done in VirtualPosterGrid.tsx (or via a new prop) than inside this pure module."
+    },
+    {
+      "file": "/Users/ozzy/App Development/Loombre/apps/web/src/components/skeleton/Skeleton.tsx",
+      "lines": "whole file",
+      "detail": "Shared by BOTH pages: VirtualPosterGrid.tsx:38 imports it for the Browse skeleton cells (rendered at :244-245 with height={itemWidth * POSTER_ASPECT} = 252px and a 70%-width caption bar); app/watchlist/page.tsx:26 imports it for the Watchlist skeleton (rendered at :132 as `<Skeleton radius=\"md\" height={252} />`). Both hardcode a 252px height that assumes a 168px-wide column — neither re-derives it from the actual track width. Any LD-14/LD-19 column-width change makes these skeletons the wrong aspect ratio unless they are updated in the same pass."
+    },
+    {
+      "file": "/Users/ozzy/App Development/Loombre/apps/web/src/components/browse/useCursorFeed.ts",
+      "lines": "whole file",
+      "detail": "Shared data hook, NOT styling: app/watchlist/page.tsx:27 imports it out of the browse folder (`import { useCursorFeed, type CursorPage } from \"../../components/browse/useCursorFeed.js\"`). Listed only so a lane does not mistake the browse/ folder path for a styling coupling — there is none here."
+    },
+    {
+      "file": "/Users/ozzy/App Development/Loombre/apps/web/src/components/ui/Button.module.css",
+      "lines": "referenced from app/browse/page.module.css:60 and app/watchlist/page.module.css:46",
+      "detail": "The one CSS module both routes actually compose from: `composes: button secondary from \"../../components/ui/Button.module.css\"` (browse .retryButton, watchlist .loadMore). Not grid-related; a genuine shared surface if a lane touches button sizing."
+    },
+    {
+      "file": "/Users/ozzy/App Development/Loombre/apps/web/src/components/browse/PosterCell.module.css",
+      "lines": "1-19 vs WatchlistPosterCard.module.css:1-17",
+      "detail": "NOT SHARED — deliberately duplicated. PosterCell.module.css's header (:3-9) states it is \"deliberately not composed from components/home/PosterCard.module.css\", and WatchlistPosterCard.module.css's header (:3-8) says it is the \"Same recipe as components/browse/PosterCell.module.css\" but a separate file. There is no `composes:` between them. Both define an identical `.tile { width: 100%; }` (PosterCell:11-19 / WatchlistPosterCard:9-17) and `.imageWrap { aspect-ratio: 2 / 3; }` (PosterCell:24 / WatchlistPosterCard:22), so BOTH cards take whatever width their grid track gives them. GOOD NEWS FOR LD-14: a Browse-side change to PosterCell.module.css cannot leak to Watchlist. BAD NEWS: the two files must be kept in sync by hand if a lane changes the tile recipe — there are three such near-clones (PosterCell, WatchlistPosterCard, and components/home/PosterCard.module.css), plus a fourth partial in components/restricted/ZonePosterCard.tsx (whose header at :10-21 documents the duplication)."
+    },
+    {
+      "file": "/Users/ozzy/App Development/Loombre/apps/web/src/app/home/HomeContent.tsx",
+      "lines": "62, 408-421",
+      "detail": "THE WATCHLIST-SIDE LEAK VECTOR: WatchlistPosterCard is ALSO rendered by Home's \"Your Watchlist\" rail. Home sizes it with its own fixed-width wrapper — app/home/page.module.css:12-15 `.watchlistCell { width: 160px; flex-shrink: 0; }` inside a horizontal Row scroller. So any change to WatchlistPosterCard.module.css affects Home too; any change to app/watchlist/page.module.css's .grid/.cell does not."
+    },
+    {
+      "file": "/Users/ozzy/App Development/Loombre/apps/web/src/components/shell/AppShell.module.css",
+      "lines": "81-87, 113-130",
+      "detail": "The shared container both grids live inside — `.main` sets the content-box width every column count is computed from. Desktop: padding var(--space-xl) with padding-left calc(210px + var(--space-xl)) (:81-84, dropping to 76px at <=1279.98px, :108-110); mobile <=767.98px: padding-left/right calc(var(--space-md) + env(safe-area-inset-*)) (:119-122). Also `max-width: 1920px` and `overflow-x: hidden` (:85-86) — the overflow-x:hidden is why a too-wide grid clips silently instead of producing a scrollbar (MovieDetailScreen.module.css:93 cites exactly this). lib/home-rail-geometry.test.ts reads this file's max-width and fails if it drifts."
+    },
+    {
+      "file": "/Users/ozzy/App Development/Loombre/apps/web/src/components/detail/ChildPosterGrid.module.css",
+      "lines": "1-16",
+      "detail": "A THIRD poster layout that is neither of the two in scope and uses NO minmax at all — `.grid { display: flex; flex-wrap: wrap; gap: var(--space-md); }` with `.cell { width: 160px; }`. Its header (ChildPosterGrid.tsx:6-7) and WatchlistPosterCard.module.css:6-8 both cite the `.cell { width: 160px }` convention as the house pattern for sizing a poster card from its host. Flagged so a lane sweeping \"all poster grids\" does not miss it — but it is outside LD-19's minmax inventory by construction."
+    }
+  ],
+  "minmaxInventoryComplete": "true",
+  "utilityHomeCandidate": "/Users/ozzy/App Development/Loombre/apps/web/src/styles/grid.css — a new 4th globally-imported stylesheet, added to the manifest at /Users/ozzy/App Development/Loombre/apps/web/src/app/globals.css:2-4 as `@import \"../styles/grid.css\";`, consumed from component modules via `composes: <class> from global;`.\n\nWHY THIS EXACT SPOT: it is a byte-for-byte copy of the ONLY cross-module recipe pattern this codebase already has — /Users/ozzy/App Development/Loombre/apps/web/src/styles/glass.css defines a single recipe class (.glass, :21-25), is @imported by globals.css:4, and is consumed by 10 modules with `composes: glass from global;` (app/setup/page.module.css:26, app/styleguide/page.module.css:120, components/music/MiniPlayerBar.module.css:14, components/music/QueueDrawer.module.css:3, components/shell/MobileHeader.module.css:10, components/shell/MobileTabBar.module.css:11, components/detail/AmbientHero.module.css:67, components/detail/SceneBanner.module.css:83, components/player/Scrubber.module.css:95, components/player/UnavailableScreen.module.css:12). glass.css's header even states the discipline a utility must keep (:12-14): set only the properties you own, never ones a consumer will want to override.\n\nMECHANICS THE LANE NEEDS TO KNOW (LD-19 says ONE utility that always emits `minmax(min(var(--token), 100%), 1fr)`, but the floor varies per call site):\n- `composes:` copies a whole class; it cannot take a parameter. The parameter must ride in on a custom property that the consuming rule sets locally. Shape:\n    /* styles/grid.css */\n    .autoGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(var(--grid-min, 168px), 100%), 1fr)); gap: var(--grid-gap, var(--space-md)); }\n    /* consumer */\n    .grid { composes: autoGrid from global; --grid-min: var(--grid-min-poster); }\n  This works because custom properties inherit and the consumer's rule wins on the same element.\n- auto-fill vs auto-fit is a real behavioural fork in the inventory (10 auto-fill sites vs 4 auto-fit sites) and cannot be expressed by one class. Either two classes (.autoGridFill / .autoGridFit) or a second custom property is needed — a lane decision, but the inventory forces it.\n- The stylelint rule must exempt this file. .stylelintrc.json is a FLAT config today (no `overrides` key), so the exemption requires adding an `overrides` block keyed on `apps/web/src/styles/grid.css`.\n- ALTERNATIVE CONSIDERED AND REJECTED: putting the utility in globals.css alongside the `.nf-*` classes. globals.css:116-128 documents that those live there only because a separate not-found chunk caused unused-preload warnings — a route-boundary problem, not a precedent for utilities. tokens.css is also wrong: its header (:3-28) scopes it to custom properties, and it contains no selectors other than :root.\n- NOTE THE UTILITY CANNOT COVER: MovieDetailScreen.module.css:102's `minmax(0, 1.4fr) minmax(240px, 1fr)` (fixed 2-track layout, not repeat()), and the five `minmax(0, Nfr)` min-content-suppression sites. These need an explicit carve-out in both the migration and the stylelint pattern.",
+  "proposedTokenNames": [
+    {
+      "token": "--grid-min-poster",
+      "valuePx": 168,
+      "coversSites": "2 CSS sites + 1 JS mirror. app/watchlist/page.module.css:29 (Watchlist desktop poster grid) and components/browse/VirtualPosterGrid.module.css:32 (Browse loading-skeleton poster grid). JS MIRROR that must be kept in sync by hand: components/browse/VirtualPosterGrid.tsx:41 `const DEFAULT_ITEM_WIDTH = 168;` — the live Browse grid reads this, not the CSS, so the token cannot fully own the value unless the lane also plumbs it (precedent for a hand-synced pair: VirtualPosterGrid.tsx:42's `const DEFAULT_GAP = 16; // px — matches --space-md`)."
+    },
+    {
+      "token": "--grid-min-poster-compact",
+      "valuePx": 132,
+      "coversSites": "1 site. app/watchlist/page.module.css:61 — the Watchlist mobile (<=767.98px) denser auto-fill that LD-14 explicitly preserves as a deliberate divergence from Browse. A token here does NOT harmonize the two pages; it only names the number so the stylelint rule can pass and so the divergence is legible."
+    },
+    {
+      "token": "--grid-min-avatar",
+      "valuePx": 112,
+      "coversSites": "2 sites, byte-identical rules. app/restricted/performers/page.module.css:31 and app/restricted/studios/page.module.css:31 — centered avatar+name cards on the restricted-zone index pages, desktop."
+    },
+    {
+      "token": "--grid-min-avatar-compact",
+      "valuePx": 88,
+      "coversSites": "2 sites, byte-identical rules. app/restricted/performers/page.module.css:101 and app/restricted/studios/page.module.css:101 — same avatar grids inside @media (width <= 767.98px). Pairs with --grid-min-avatar exactly as --grid-min-poster-compact pairs with --grid-min-poster."
+    },
+    {
+      "token": "--grid-min-card",
+      "valuePx": 200,
+      "coversSites": "2 sites, same value, same 'rectangular info tile' purpose. app/restricted/page.module.css:62 (.navGrid, restricted zone-home nav tiles) and components/admin/HealthCards.module.css:4 (.grid, admin health stat cards). NOTE HealthCards.module.css:57 already overrides to `repeat(2, 1fr)` on mobile — an in-repo precedent for the exact shape LD-14 asks for on Browse, and a site the migration must not accidentally re-point at the auto-fill utility."
+    },
+    {
+      "token": "--grid-min-card-compact",
+      "valuePx": 180,
+      "coversSites": "2 sites, same value, both 'narrow control/choice column'. components/settings/remote-wizard/ChoiceCard.module.css:20 (.cards, wizard radio choice cards — has its own `1fr` override at :81) and components/restricted/ZoneControls.module.css:167 (.filterPanel facet columns). ZoneControls:167 is ALREADY written as `minmax(min(180px, 100%), 1fr)` — migrating it is a pure substitution with zero rendered change, making it the safest first migration in the set."
+    },
+    {
+      "token": "--grid-min-panel",
+      "valuePx": 480,
+      "coversSites": "1 site. app/admin/page.module.css:126 (.systemGrid, admin System 2-up wide info panels). ALREADY in the exact `minmax(min(480px, 100%), 1fr)` target shape; its comment at :120-125 records the 2026-08-27 /admin-at-380px clipping bug that produced the min() clamp. This is the reference implementation LD-19's utility generalizes, so migrating it is also a zero-render-change substitution."
+    },
+    {
+      "token": "--grid-min-swatch",
+      "valuePx": 84,
+      "coversSites": "1 site. app/styleguide/page.module.css:185 (.blazeGrid, Blaze-mark swatch cells on the dev-only /styleguide route). Included ONLY because the stylelint rule LD-19 mandates will fail this file otherwise — it is the smallest cluster and a lane may reasonably propose exempting /styleguide instead of minting a token for it. Flagging the choice rather than pre-deciding it."
+    }
+  ],
+  "outOfScope": [
+    "NAME COLLISION — 'LD-14' ALREADY MEANS SOMETHING ELSE IN THIS REPO. The existing LD-14 is the mono-scale contrast rule (subtle/hint text colors banned on the --mono-* scale), documented at apps/web/src/styles/tokens.css:81-92 and pinned by a whole test file, /Users/ozzy/App Development/Loombre/apps/web/src/components/ld14-mono-scale-conformance.test.ts (its header cites 'LD-14/AUD-A4v3-003'). It has nothing to do with grids. An implementation lane briefed on 'LD-14' will find that file first and be misled. Recommend the new decision be referenced by a distinct tag in code comments, or that the collision be called out explicitly in the lane brief.",
+    "BROWSE .page HEIGHT IS DESKTOP-ONLY MATH, UNGUARDED ON MOBILE. /Users/ozzy/App Development/Loombre/apps/web/src/app/browse/page.module.css:6 `height: calc(100vh - 64px - (var(--space-xl) * 2));` with `min-height: 480px` at :7, and NO media-query override anywhere in the file. The 64px is the DESKTOP topbar height and --space-xl (32px) is the DESKTOP .main padding. Below 767.98px the real chrome is --mobile-header-height (112px) + --mobile-tabbar-height (60px) and .main pads with --space-md (16px) — AppShell.module.css:118-123. So on mobile the page box is computed 128px shorter than the viewport when it needs to be ~204px shorter, and the VirtualPosterGrid scroll area extends under the fixed tab bar. Not a grid-columns defect, so out of LD-14/LD-19 scope, but it is on the same page at the same breakpoint and a QA pass at 380px will see it.",
+    "POSTER SKELETONS HARDCODE A 252px HEIGHT THAT ASSUMES A 168px COLUMN. components/browse/VirtualPosterGrid.tsx:244 renders `<Skeleton radius=\"md\" height={itemWidth * POSTER_ASPECT} />` (168 * 1.5 = 252) inside .skeletonGrid whose 1fr tracks stretch to 348px at a 380px viewport — a 348x252 box where a 2:3 poster wants 348x522. app/watchlist/page.tsx:132 is worse: `<Skeleton radius=\"md\" height={252} />` is a bare literal with no derivation at all, sitting in 166px-wide tracks. Both skeletons therefore render the wrong aspect ratio on mobile TODAY, before any LD-14 change, and both will need updating when column widths move.",
+    "FOUR NEAR-DUPLICATE POSTER-TILE STYLESHEETS KEPT IN SYNC BY HAND. components/browse/PosterCell.module.css, components/watchlist/WatchlistPosterCard.module.css, components/home/PosterCard.module.css, and (partially) components/restricted/ZonePosterCard.tsx all implement the same recipe with no `composes:` between them — each file's header documents the duplication as deliberate (PosterCell.module.css:3-9, WatchlistPosterCard.module.css:3-8, ZonePosterCard.tsx:10-21). The `.tile`/`.imageWrap`/`.artTitle`/`.placeholder`/`.image`/`.title`/`.subtitle` blocks and the `loombre-poster-tile-focus-in` keyframe are byte-near-identical across at least two of them. Real drift risk, but a refactor is well outside LD-14/LD-19.",
+    "THE DESIGN SPEC'S POSTER MINIMUMS DO NOT MATCH THE CODE'S. design/phosphor/README.md:532 describes the Browse grid as `auto-fill minmax(148px,1fr)`, and design/phosphor/Loombre Phosphor.dc.html uses 158px at :269 and 148px at :282, :1109, :1185, :1215 for the poster walls (plus 146px at :898). The code ships 168px everywhere. Not something to 'fix' — flagging only because LD-19 asks tokens to be derived from the CODE inventory, and a lane cross-referencing the design source will find a third set of numbers.",
+    "MOVIEDETAILSCREEN:102's minmax(240px, 1fr) HAS NO CLEAN LD-19 HOME. components/detail/MovieDetailScreen.module.css:102 `grid-template-columns: minmax(0, 1.4fr) minmax(240px, 1fr);` is a genuine `minmax(Npx, 1fr)` call site — literally in LD-19's migration wording — but it is a fixed 2-track layout, not a repeat()/auto-fill grid, so the mandated `repeat(auto-fill, minmax(min(var(--tok),100%),1fr))` utility cannot emit it. Its 240px floor is deliberate and load-bearing (rationale + the exact 768x1024 defect it fixes are at :89-99, paired with the stack-to-one-column override at :107-111). The lane must either carve it out of the stylelint rule or mint a separate layout-floor token; either way it needs an explicit decision rather than a silent migration.",
+    "STYLELINT CONFIG IS FLAT — NO `overrides` KEY EXISTS YET. /Users/ozzy/App Development/Loombre/apps/web/.stylelintrc.json (29 lines) has only `extends` + `rules`. Exempting the new styles/grid.css from the minmax ban requires introducing an `overrides` block, which is a structural first for this config. Also worth knowing: the only stylelint packages installed are `stylelint` and `stylelint-config-standard` (apps/web/package.json devDependencies) — no plugin like stylelint-declaration-strict-value is available, so the rule has to be expressed with the built-in `declaration-property-value-disallowed-list`, and adding a plugin would drag in the dep-audit/license-check gate steps.",
+    "STALE BUILD ARTIFACTS WILL POLLUTE A NAIVE GREP. `grep -rn 'minmax(' apps/ packages/` returns ~164KB of hits because apps/web/.next/static/css/*.css contains the compiled stylesheets (e.g. 7c1824c1488a81c9.css carries the admin systemGrid rule verbatim). installers/linux/.build/stage/*/web/ also holds a copy of .stylelintrc.json (gitignored — .gitignore:76). Any lane or verification script must scope to apps/web/src and exclude .next/ and installers/*/.build/, or it will 'find' minmax sites that are generated output."
+  ]
+}
