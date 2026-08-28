@@ -777,8 +777,15 @@ describe("seek-restart de-duplication (continuation item 1: livelock)", () => {
           suspendAheadThresholdOverride: 10_000,
           resumeAheadThresholdOverride: 5_000,
           // The real cool-down is seconds (config.ts); a shorter one keeps
-          // this test quick without changing what it proves.
-          rungSwitchCooldownMsOverride: 1_500,
+          // this test quick without changing what it proves. MUST scale with
+          // TIME_SCALE: the flap sequence below sleeps 2 × 150 × TIME_SCALE
+          // inside this window, so an unscaled 1500ms is eaten by the sleeps
+          // alone at scale 10 (macOS CI) and by sleeps + runner overhead at
+          // scale 3 (ubuntu CI) — the third switch then lands OUTSIDE the
+          // window and legitimately restarts, failing the "expected 2" pin.
+          // Deterministic red on ubuntu CI 2026-08-28 (runs 33140861189 ×2)
+          // until scaled; reproduced locally at scale 10.
+          rungSwitchCooldownMsOverride: 1_500 * TIME_SCALE,
         },
         sessionId,
       );
@@ -853,7 +860,9 @@ describe("seek-restart de-duplication (continuation item 1: livelock)", () => {
           spawnFn: fakeSpawnFn(),
           suspendAheadThresholdOverride: 10_000,
           resumeAheadThresholdOverride: 5_000,
-          rungSwitchCooldownMsOverride: 1_500,
+          // Scaled for the same reason as the flap case above — this
+          // sequence's scaled waits must stay inside the window.
+          rungSwitchCooldownMsOverride: 1_500 * TIME_SCALE,
         },
         sessionId,
       );
