@@ -3,7 +3,7 @@
 Standing rule: locked decisions are implemented as written. Anything a lane
 believed should differ, plus everything Phase 0 discovered outside
 LD-14–LD-22, lands here — never in code. Pointers reference the Phase 0
-evidence in docs/state/archive/2026-08-27-qa-ld14-ld22-discovery/d1..d4.json.
+evidence in reports/state/archive/2026-08-27-qa-ld14-ld22-discovery/d1..d4.json.
 
 ## Mandated entries
 
