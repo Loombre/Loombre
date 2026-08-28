@@ -43,12 +43,13 @@
 import "reflect-metadata";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import request from "supertest";
 import { NestFactory } from "@nestjs/core";
 import type { INestApplication } from "@nestjs/common";
-import { ensureTestDatabase } from "@loombre/db";
+import { createDb, ensureTestDatabase, getUserByUsername, issuePasswordResetToken } from "@loombre/db";
 import { AppModule } from "../src/app.module.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -91,6 +92,17 @@ const ABSENT_UUID = "018f6f1e-0000-7000-8000-0000000000ff";
 
 let app: INestApplication;
 let adminToken: string;
+/** LD-15 (rc.6): the live-token probe case below mints a real
+ *  password_reset_tokens row against this suite's own isolated database. */
+let databaseUrl: string;
+
+function hashResetTokenForTest(token: string): string {
+  // Mirrors apps/server/src/session/reset-token.ts's hashPasswordResetToken
+  // exactly (sha256 hex) — a test-local copy, not an import, the same
+  // discipline password-recovery.e2e.spec.ts uses, so this suite proves
+  // the WIRE behavior against an independently-computed hash.
+  return createHash("sha256").update(token).digest("hex");
+}
 
 /** Structural stand-in for supertest's Response — only the three members
  *  these helpers read, so the helpers stay usable from any harness. */
@@ -144,7 +156,7 @@ function catchAll(method: "get" | "post" | "put" | "delete" | "patch", url: stri
 }
 
 beforeAll(async () => {
-  const databaseUrl = await ensureTestDatabase(BASE_DATABASE_URL, "server_test_not_found_envelope");
+  databaseUrl = await ensureTestDatabase(BASE_DATABASE_URL, "server_test_not_found_envelope");
   run(path.join(DB_PKG_ROOT, "scripts", "migrate.mjs"), ["reset"], databaseUrl);
   run(path.join(DB_PKG_ROOT, "seed", "seed.mjs"), [], databaseUrl);
 
@@ -250,6 +262,61 @@ describe("adi-F3: hidden vs nonexistent stays byte-identical AT THE SAME PATH", 
     expectNotFoundProblem(reset, "/auth/reset-password");
     expectByteIdentical(reset, wrongMethod);
   }, 20_000);
+
+  // LD-15 (rc.6): GET /auth/reset-password/{token} is the read-only twin
+  // of the POST above — /reset can now resolve a dead link at page load.
+  // It joins this family on exactly the same terms: the raw token is a
+  // PATH segment, so `instance` collapses to the route TEMPLATE, and a
+  // dead token is byte-identical to an unknown route at that same path.
+  it("GET /auth/reset-password/{token} (never-issued token) vs the catch-all on that same path", async () => {
+    const probe = await request(app.getHttpServer()).get("/auth/reset-password/garbage-reset-token-never-issued");
+    const wrongMethod = await catchAll("put", "/auth/reset-password/garbage-reset-token-never-issued");
+
+    expectNotFoundProblem(probe, "/auth/reset-password/{token}");
+    expectByteIdentical(probe, wrongMethod);
+    expect(probe.text).not.toContain("garbage-reset-token-never-issued");
+  }, 20_000);
+
+  it("two DIFFERENT garbage reset tokens are byte-identical to each other", async () => {
+    const a = await request(app.getHttpServer()).get("/auth/reset-password/first-garbage-reset-token");
+    const b = await request(app.getHttpServer()).get("/auth/reset-password/second-garbage-reset-token-much-longer");
+    expectByteIdentical(a, b);
+  }, 20_000);
+
+  it("a LIVE reset token probes 200 with an empty body and is NOT consumed — the POST still succeeds after it", async () => {
+    const plaintextToken = "not-found-envelope-live-reset-token-0123456789";
+    const db = createDb(databaseUrl);
+    try {
+      const user = await getUserByUsername(db, "casual");
+      await issuePasswordResetToken(db, {
+        userId: user!.id,
+        tokenHash: hashResetTokenForTest(plaintextToken),
+        createdAtMs: Date.now(),
+        expiresAtMs: Date.now() + 30 * 60 * 1000,
+      });
+    } finally {
+      await db.destroy();
+    }
+
+    const probe = await request(app.getHttpServer()).get(`/auth/reset-password/${plaintextToken}`);
+    expect(probe.status, probe.text).toBe(200);
+    expect(probe.body).toEqual({});
+    // Probing twice still resolves live — the read never writes.
+    const secondProbe = await request(app.getHttpServer()).get(`/auth/reset-password/${plaintextToken}`);
+    expect(secondProbe.status, secondProbe.text).toBe(200);
+
+    // And the real consume still works afterwards.
+    const reset = await request(app.getHttpServer())
+      .post("/auth/reset-password")
+      .send({ token: plaintextToken, password: "correct-horse-battery-nfe-probe" });
+    expect(reset.status, reset.text).toBe(204);
+
+    // Now consumed: the probe answers the same shared 404 as a garbage token.
+    const afterConsume = await request(app.getHttpServer()).get(`/auth/reset-password/${plaintextToken}`);
+    const garbage = await request(app.getHttpServer()).get("/auth/reset-password/some-other-garbage-token");
+    expectNotFoundProblem(afterConsume, "/auth/reset-password/{token}");
+    expectByteIdentical(afterConsume, garbage);
+  }, 30_000);
 
   it("GET /probe/{token} (never-issued token) vs the catch-all on that same path", async () => {
     const probe = await request(app.getHttpServer()).get("/probe/garbage-token-never-issued");

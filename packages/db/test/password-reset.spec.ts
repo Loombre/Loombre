@@ -25,6 +25,7 @@ import {
   insertRefreshToken,
 } from '../src/query/identity.js';
 import {
+  getLivePasswordResetToken,
   invalidateUnusedPasswordResetTokens,
   issuePasswordResetToken,
   resetPasswordViaTokenAndEmit,
@@ -159,6 +160,112 @@ describe('invalidateUnusedPasswordResetTokens (anti-timing dummy-branch reuse �
     await expect(
       invalidateUnusedPasswordResetTokens(db, '018f6f1e-0000-7000-8000-0000000000ff', 6_000)
     ).resolves.toBeUndefined();
+  });
+});
+
+// LD-15 (rc.6): the read-only liveness lookup behind GET
+// /auth/reset-password/{token}. Its whole point is that it answers the
+// SAME three-clause question resetPasswordViaTokenAndEmit's atomic
+// consume asks (token_hash match AND used_at_ms IS NULL AND
+// expires_at_ms > now) WITHOUT writing — so /reset can show the dead-link
+// screen at page load instead of after the viewer has typed a new
+// password twice.
+describe('getLivePasswordResetToken (LD-15 (rc.6) — read-only liveness probe, never consumes)', () => {
+  it('returns the row for a live (unused, unexpired) token', async () => {
+    const casual = await getUserByUsername(db, 'casual');
+    await issuePasswordResetToken(db, {
+      userId: casual!.id,
+      tokenHash: 'hash-live-probe',
+      createdAtMs: 70_000,
+      expiresAtMs: 70_000 + 30 * 60 * 1000,
+    });
+
+    const row = await getLivePasswordResetToken(db, { tokenHash: 'hash-live-probe', nowMs: 71_000 });
+    expect(row?.user_id).toBe(casual!.id);
+    expect(row?.token_hash).toBe('hash-live-probe');
+    expect(row?.used_at_ms).toBeNull();
+  });
+
+  it('does NOT consume: probing twice still resolves live, and a later consume still succeeds', async () => {
+    const casual = await getUserByUsername(db, 'casual');
+    await issuePasswordResetToken(db, {
+      userId: casual!.id,
+      tokenHash: 'hash-probe-nonconsuming',
+      createdAtMs: 80_000,
+      expiresAtMs: 80_000 + 30 * 60 * 1000,
+    });
+
+    expect(await getLivePasswordResetToken(db, { tokenHash: 'hash-probe-nonconsuming', nowMs: 81_000 })).not.toBeNull();
+    expect(await getLivePasswordResetToken(db, { tokenHash: 'hash-probe-nonconsuming', nowMs: 82_000 })).not.toBeNull();
+
+    // The stored row is untouched by the probes — still unused.
+    expect((await findTokenRow('hash-probe-nonconsuming'))?.used_at_ms).toBeNull();
+
+    // And the real POST can still complete the reset afterwards.
+    const consumed = await resetPasswordViaTokenAndEmit(db, {
+      tokenHash: 'hash-probe-nonconsuming',
+      passwordHash: 'probe-then-consume-hash',
+      nowMs: 83_000,
+    });
+    expect(consumed.ok).toBe(true);
+  });
+
+  it('returns null for an already-used token', async () => {
+    const casual = await getUserByUsername(db, 'casual');
+    await issuePasswordResetToken(db, {
+      userId: casual!.id,
+      tokenHash: 'hash-probe-used',
+      createdAtMs: 90_000,
+      expiresAtMs: 90_000 + 30 * 60 * 1000,
+    });
+    await resetPasswordViaTokenAndEmit(db, {
+      tokenHash: 'hash-probe-used',
+      passwordHash: 'probe-used-hash',
+      nowMs: 91_000,
+    });
+
+    expect(await getLivePasswordResetToken(db, { tokenHash: 'hash-probe-used', nowMs: 92_000 })).toBeNull();
+  });
+
+  it('returns null for an expired token (expires_at_ms <= now)', async () => {
+    const casual = await getUserByUsername(db, 'casual');
+    await issuePasswordResetToken(db, {
+      userId: casual!.id,
+      tokenHash: 'hash-probe-expired',
+      createdAtMs: 100_000,
+      expiresAtMs: 100_500,
+    });
+
+    expect(await getLivePasswordResetToken(db, { tokenHash: 'hash-probe-expired', nowMs: 101_000 })).toBeNull();
+  });
+
+  it('returns null for an unknown token hash, indistinguishably from used/expired (M12)', async () => {
+    expect(
+      await getLivePasswordResetToken(db, { tokenHash: 'hash-probe-never-issued', nowMs: 110_000 })
+    ).toBeNull();
+  });
+
+  it('returns null for a superseded token, same as used/expired/unknown', async () => {
+    const casual = await getUserByUsername(db, 'casual');
+    await issuePasswordResetToken(db, {
+      userId: casual!.id,
+      tokenHash: 'hash-probe-superseded-old',
+      createdAtMs: 120_000,
+      expiresAtMs: 120_000 + 30 * 60 * 1000,
+    });
+    await issuePasswordResetToken(db, {
+      userId: casual!.id,
+      tokenHash: 'hash-probe-superseded-new',
+      createdAtMs: 121_000,
+      expiresAtMs: 121_000 + 30 * 60 * 1000,
+    });
+
+    expect(
+      await getLivePasswordResetToken(db, { tokenHash: 'hash-probe-superseded-old', nowMs: 122_000 })
+    ).toBeNull();
+    expect(
+      await getLivePasswordResetToken(db, { tokenHash: 'hash-probe-superseded-new', nowMs: 122_000 })
+    ).not.toBeNull();
   });
 });
 

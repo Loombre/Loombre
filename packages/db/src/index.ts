@@ -344,10 +344,15 @@ export {
 export type {
   PasswordResetTokenRow,
   IssuePasswordResetTokenInput,
+  // LD-15 (rc.6): the read-only liveness probe behind GET
+  // /auth/reset-password/{token} — see its doc comment for why it sits
+  // beside the consume it deliberately does NOT perform.
+  GetLivePasswordResetTokenInput,
   ResetPasswordViaTokenInput,
   ResetPasswordViaTokenResult,
 } from './query/password-reset.js';
 export {
+  getLivePasswordResetToken,
   invalidateUnusedPasswordResetTokens,
   issuePasswordResetToken,
   resetPasswordViaTokenAndEmit,

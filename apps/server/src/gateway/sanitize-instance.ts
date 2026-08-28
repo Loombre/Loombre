@@ -32,6 +32,12 @@ const TOKEN_PATH_TEMPLATES: ReadonlyArray<{ pattern: RegExp; template: string }>
   // same posture as the invite-claim route above — its 429 (rate-limited)
   // response must never echo the token back via `instance`.
   { pattern: /^\/probe\/[^/]+$/, template: "/probe/{token}" },
+  // LD-15 (rc.6): GET /auth/reset-password/{token} carries the raw
+  // one-time password-reset token as a path segment — the same F9 shape as
+  // the invite-claim route above. Its 404 (dead token) and 429
+  // (rate-limited) bodies must collapse `instance` to this template, or
+  // the very token from the mailed link rides back out in the response.
+  { pattern: /^\/auth\/reset-password\/[^/]+$/, template: "/auth/reset-password/{token}" },
 ];
 
 export function sanitizeInstancePath(req: Request): string {

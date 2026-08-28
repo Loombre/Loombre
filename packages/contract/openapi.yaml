@@ -379,6 +379,59 @@ paths:
               schema: { $ref: '#/components/schemas/Problem' }
         default: { $ref: '#/components/responses/Problem' }
 
+  # LD-15 (rc.6): the read-only GET twin of POST /auth/reset-password above,
+  # shaped exactly like GET /invites/claim/{token} — so the /reset/{token}
+  # web page can resolve a dead link AT PAGE LOAD and show the same
+  # invalid-link screen /claim shows, instead of only discovering it after
+  # the viewer has typed a new password twice and submitted. Anti-
+  # enumeration is not a concern here (256-bit tokens — see
+  # apps/server/src/session/reset-token.ts); this adds NO new rate-limit
+  # policy and NO obfuscation beyond what the POST already carries.
+  /auth/reset-password/{token}:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        schema: { type: string }
+        description: The raw one-time password-reset token (never the hash).
+    get:
+      operationId: getPasswordResetState
+      tags: [auth]
+      summary: Resolve whether a password-reset token is still usable, without consuming it
+      description: >-
+        PUBLIC, unauthenticated (LD-15). A read-only liveness probe for the
+        token in a mailed reset link: a 200 means the token is currently
+        unused and unexpired, and NOTHING is consumed — the caller must
+        still POST /auth/reset-password to complete the reset, and that
+        operation re-checks the token itself (a token consumed between the
+        two requests 404s there, same as it would here). Invalid, expired,
+        already-used, and well-formed-but-unknown tokens ALL resolve to the
+        shared not-found problem (see the `NotFound` response):
+        BYTE-IDENTICAL across the four cases, and BYTE-IDENTICAL to what an
+        unknown route answers at this same path — `instance` is this
+        route's TEMPLATE, never the submitted token, so nothing in the body
+        varies with what was probed. Same "invisible == nonexistent"
+        posture as GET /invites/claim/{token} and POST
+        /auth/reset-password. Rate-limited per `rateLimit.passwordReset`
+        (shared with `authForgotPassword` and `authResetPassword`) — the
+        policy that already governs this flow, not a new one.
+      security: []
+      responses:
+        '200':
+          description: The token is live — unused and unexpired, and untouched by this call
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PasswordResetState' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429':
+          description: Rate limited (per-IP, shared with authForgotPassword/authResetPassword)
+          headers:
+            Retry-After: { schema: { type: integer }, description: Seconds until the next attempt is allowed. }
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        default: { $ref: '#/components/responses/Problem' }
+
   /devices:
     get:
       operationId: listDevices
@@ -4788,6 +4841,19 @@ components:
         # 1-char password); createUser/PATCH /users/me stay minLength:1,
         # out of scope.
         password: { type: string, format: password, minLength: 8 }
+
+    PasswordResetState:
+      type: object
+      additionalProperties: false
+      description: >-
+        Deliberately empty, exactly like ForgotPasswordResponse above: the
+        200 ITSELF is the entire signal (this token is live). Carrying any
+        member — the account's username, the expiry instant, which of the
+        four failure cases applied — would hand an unauthenticated caller
+        precisely what the byte-identical-404 posture (E8/M12) exists to
+        withhold. ClaimState carries presets only because a claimant must
+        SEE them to fill the claim form; the reset form has no field to
+        prefill, so there is nothing legitimate to put here.
 
     AdminResetPasswordRequest:
       type: object
