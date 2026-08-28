@@ -42,6 +42,11 @@ test-fixtures/media/
 test-fixtures/stash/
 .claude/worktrees/
 
+# local Claude agent definitions + their accumulated memory — per-machine
+# tooling state, not part of the codebase
+.claude/agents/
+.claude/agent-memory/
+
 # local evidence artifacts (screenshots, perf runs) — the handful of
 # tracked reports/* files are added deliberately via `git add -f`
 reports/
