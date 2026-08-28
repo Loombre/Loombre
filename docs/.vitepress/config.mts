@@ -68,7 +68,12 @@ export default defineConfig({
   // material lives OUTSIDE the tracked tree (gitignored reports/), and this
   // entry guarantees that even a stray copy under docs/analysis/ can never
   // reach the built site (owner decision LD-1, 2026-08-10).
-  srcExclude: ["PLAN.md", "PLAYBACK.md", "public/**", "analysis/**"],
+  // state/** is the rc.6+ run-state tier (docs/state/STATE.md, DECISIONS.md,
+  // OPEN.md, archive/) — internal working state, same publication status as
+  // PLAN.md/PLAYBACK.md. Raw markdown there also carries literal angle-bracket
+  // tokens (test excerpts) that Vue's template parser rejects, so excluding it
+  // is load-bearing for `pnpm docs:build`, not just editorial.
+  srcExclude: ["PLAN.md", "PLAYBACK.md", "public/**", "analysis/**", "state/**"],
   ignoreDeadLinks: false,
 
   head: [["meta", { name: "referrer", content: "no-referrer" }]],
