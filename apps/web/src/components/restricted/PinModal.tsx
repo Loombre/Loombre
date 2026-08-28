@@ -18,13 +18,19 @@
 // plus TWO input mechanisms feeding the same `pin` state — a 74px circular
 // 3-column keypad (shown at every width, per H20/W3 fidelity audit: the
 // dc's own desktop pin dialog, dc:2994-3013, renders this same keypad, not
-// a text field) and a keyboard-typable numeric field (CSS-hidden below the
-// shell's 767.98px boundary, tokens.css "Mobile chrome layout" — kept at
-// desktop widths as a real keyboard-accessibility affordance the dc's
-// static mockup can't express).
+// a text field) and a keyboard-typable numeric field — a real
+// keyboard-accessibility affordance the dc's static mockup can't express.
 // Renders through SheetOrModal (W1b primitive) instead of a hand-rolled
 // scrim/dialog: the README lists "PIN entry" among the nine phone-only
 // bottom sheets, so the mobile form is a real sheet, not a narrower modal.
+//
+// LD-17 (rc.6): that numeric field is no longer a visible 160px control at
+// desktop widths. It is visually hidden but still FOCUSABLE at EVERY width
+// (owner ruling R3 deleted the old phone-only `display: none` branch, which
+// is why no media query is left in PinModal.module.css); the dots are the
+// sole visible representation of entry state and now carry the field's
+// focus ring; and the two focus fixes below keep hardware-keyboard entry
+// working now that there is no visible field left to click into.
 
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { Delete, Lock } from "lucide-react";
@@ -37,16 +43,50 @@ import styles from "./PinModal.module.css";
 
 const KEYPAD_DIGITS = ["1", "2", "3", "4", "5", "6", "7", "8", "9"] as const;
 
+/**
+ * Puts focus on the (LD-17, rc.6: visually hidden) PIN field.
+ *
+ * Reached through the form rather than a ref on <TextInput> because
+ * ui/Input.tsx's TextInput takes plain InputHTMLAttributes and declares no
+ * `ref` prop — and this form holds exactly ONE input element, the same
+ * single-input assumption PinModal.module.css's
+ * `.form:has(input:focus-visible)` ring rule makes. Module-scope so its
+ * identity is stable across renders.
+ */
+function focusPinField(formRef: React.RefObject<HTMLFormElement | null>): void {
+  formRef.current?.querySelector("input")?.focus();
+}
+
 export function PinModal(): React.JSX.Element | null {
   const { state, closeUnlockModal, unlock } = useRestricted();
   const [pin, setPin] = useState("");
   const submittingRef = useRef(false);
+  const formRef = useRef<HTMLFormElement>(null);
 
   // Fresh entry every time the modal opens — no residual digits from a
   // previous cancelled/failed attempt.
   useEffect(() => {
     if (state.modalOpen) setPin("");
   }, [state.modalOpen]);
+
+  // LD-17 (rc.6): with the field visually hidden there is nothing left to
+  // click into, so focus has to be put there in code — the decision's
+  // "hardware-keyboard entry must keep working" is unmeetable otherwise.
+  // The field's own `autoFocus` does NOT survive the mount: SheetOrModal's
+  // useFocusTrap moves initial focus to the dialog's first focusable, which
+  // is the header's "Done" button (proven in PinModal.test.tsx — the red run
+  // for this change found document.activeElement was that button). This
+  // effect wins because React flushes a CHILD's passive effects before its
+  // parent's, and the trap lives in DesktopDialog/BottomSheet, both
+  // descendants of this component.
+  // Re-running on `submitting` also restores focus after a REJECTED attempt:
+  // the field is `disabled` while submitting, and a disabled element drops
+  // focus, so without this a user could type exactly one wrong PIN and then
+  // never type again.
+  useEffect(() => {
+    if (!state.modalOpen || state.submitting) return;
+    focusPinField(formRef);
+  }, [state.modalOpen, state.submitting]);
 
   // Auto-submit on the 4th digit (README, verbatim). Resets the buffer on
   // a failed attempt so the user can immediately retry; on success
@@ -68,14 +108,22 @@ export function PinModal(): React.JSX.Element | null {
     event.preventDefault();
   }
 
+  // LD-17 (rc.6): pressing a keypad key natively moves focus onto that
+  // <button>, and with the field visually hidden there is no way to click
+  // back into it — mixed entry (tap "1", then type "2","3","4") would
+  // silently stop filling dots. Both keypad value paths therefore route
+  // focus home. This also covers handleKeypadKeyDown's Enter/Space
+  // activation, which lands the user on the field ready to keep typing.
   function appendDigit(digit: string): void {
     if (state.submitting) return;
     setPin((prev) => appendPinDigit(prev, digit));
+    focusPinField(formRef);
   }
 
   function backspace(): void {
     if (state.submitting) return;
     setPin((prev) => prev.slice(0, -1));
+    focusPinField(formRef);
   }
 
   function handleKeypadKeyDown(event: KeyboardEvent<HTMLButtonElement>, digit: string): void {
@@ -92,7 +140,7 @@ export function PinModal(): React.JSX.Element | null {
 
   return (
     <SheetOrModal open={state.modalOpen} onClose={closeUnlockModal} title="Enter PIN" sub="Unlock restricted content for this session.">
-      <form className={styles.form} onSubmit={handleSubmit}>
+      <form ref={formRef} className={styles.form} onSubmit={handleSubmit}>
         <div className={styles.iconRow} aria-hidden="true">
           <Icon icon={Lock} />
         </div>
@@ -103,12 +151,19 @@ export function PinModal(): React.JSX.Element | null {
           ))}
         </div>
 
-        {/* Desktop: keyboard-typable numeric field. CSS-hidden on phone,
-            where the keypad below is the primary input. Consolidated onto
-            the shared ui/Input.tsx TextInput (item 2, Wave A) — inherits
-            Input.module.css's `.input:focus-visible` inset ring instead of
-            shipping its own copy; PinModal.module.css's `.hiddenInput` now
-            only carries the PIN field's own overrides. */}
+        {/* The keyboard-typable numeric field — the ONLY path a hardware
+            keystroke or a paste can reach `pin` by.
+            LD-17 (rc.6): it is now visually hidden but still FOCUSABLE (the
+            ui/Toggle.module.css recipe, in PinModal.module.css's
+            `input.hiddenInput`), at every width per owner ruling R3 — the
+            dots above are the sole visible representation of entry state.
+            Its four required attributes are inputMode="numeric",
+            autoComplete="off", an aria-label, and a focus ring — the ring
+            being the one that moved, onto `.dots`, because the shared
+            `.input:focus-visible` INSET ring paints nothing on a 1x1
+            clipped box. `autoFocus` is kept but is not what actually lands
+            focus here; see the focus effect above. Still rendered through
+            ui/Input.tsx's TextInput (item 2, Wave A), never a raw element. */}
         <TextInput
           className={styles.hiddenInput}
           type="password"
