@@ -1,16 +1,30 @@
 /* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* I5 (UIFIX-2026-08-29, UD-2 advanced-only + UD-8): this column shipped a
+   flat 200px at every desktop width (it only renders above 767.98px —
+   SettingsShell swaps to SettingsHub below that), so it took the same bite
+   out of a 768px pane as out of a 2560px one. It now scales with the
+   viewport between a 168px floor and the original 200px ceiling. */
 .tabs {
   display: flex;
   flex-direction: column;
   gap: var(--space-3xs);
-  width: 200px;
+  width: clamp(168px, 18vw, 200px);
   flex-shrink: 0;
 }
 
+/* A tab was a display: block anchor with no height floor — 8px padding
+   around a 13px line box left it ~37px tall, under the touch floor, and its
+   label sat wherever the line box fell rather than centred. flex + a
+   --control-height floor gives it the one control height this system has
+   (36px, 44px on coarse pointers). Radius follows UD-8: a tab label can
+   wrap inside a 168px column, and a pill is only for what cannot wrap. */
 .tab {
-  display: block;
+  display: flex;
+  align-items: center;
+  min-height: var(--control-height);
   padding: var(--space-xs) var(--space-md);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
   color: var(--muted);

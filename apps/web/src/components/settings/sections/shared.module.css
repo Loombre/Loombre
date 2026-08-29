@@ -67,20 +67,28 @@
   gap: var(--space-sm);
 }
 
-/* H15 (W3 fidelity audit): 999px pill rows on the dc's own fill (dc's
-   settings-row literal, e.g. dc:791 "Movies" library row / dc:774
-   "Hardware transcoding": `border-radius:999px;background:
-   rgba(255,255,255,.015);border:1px solid rgba(255,255,255,.08)`) — was
-   a boxier --radius-md card with no fill. rgba(255,255,255,.015) is the
-   nearest existing step to tokens.css's --fill-1 (2%); .08 sits nearest
-   --color-border-subtle (7%). */
+/* H15 (W3 fidelity audit): the dc's own settings-row fill and hairline
+   (dc's settings-row literal, e.g. dc:791 "Movies" library row / dc:774
+   "Hardware transcoding": `background:rgba(255,255,255,.015);border:1px
+   solid rgba(255,255,255,.08)`) — was a card with no fill.
+   rgba(255,255,255,.015) is the nearest existing step to tokens.css's
+   --fill-1 (2%); .08 sits nearest --color-border-subtle (7%).
+
+   I1 (UIFIX-2026-08-29, UD-8): the RADIUS half of that transcription is
+   superseded. H15 also copied the dc's `border-radius:999px`, but this row
+   sets flex-wrap: wrap three lines down and takes a 44px floor on phones
+   (@media at the foot of this file), so it is a box that grows to two or
+   more lines — a 9999px radius on a tall wrapped box bows its own sides
+   into a lozenge. UD-8's rule decides it: a row that can wrap is a TILE,
+   so --radius-md. The pill is kept only for things that cannot wrap
+   (.liveBadge below). */
 .row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-md);
   padding: var(--space-sm) var(--space-md);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   border: 1px solid var(--color-border-subtle);
   background: var(--fill-1);
   flex-wrap: wrap;
@@ -93,27 +101,34 @@
   min-width: 0;
 }
 
+/* I2 (UIFIX-2026-08-29): a library's NAME and its ROOT PATH are the two
+   facts an admin acts on, and .row wraps — so neither is allowed to clip.
+   Both drop nowrap/overflow/ellipsis and wrap instead; the path additionally
+   takes overflow-wrap: anywhere so an unbroken /Volumes/... string breaks
+   mid-segment rather than widening the row, and the monospace family so
+   l/1/I and O/0 stay distinguishable at a glance (same reasoning as
+   DirectoryPicker's .currentPath). gap is the raw 2px expressed as
+   --space-3xs — a token substitution, not a rendered change. */
 .rowText {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-3xs);
   min-width: 0;
 }
 
 .rowTitle {
   font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  line-height: 1.3;
 }
 
 .rowSub {
   font-size: var(--text-xs);
   color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
 }
 
 .rowChips {
@@ -144,28 +159,26 @@
   text-transform: uppercase;
 }
 
+/* I6/F3 (UIFIX-2026-08-29, UD-17): this dot used to carry its own
+   @keyframes loombre-settings-pulse, one of six byte-identical copies of
+   the same 1 → .3 blink. The keyframe is deleted; the shared
+   loombre-live-pulse in app/globals.css serves every DOT indicator, on
+   --pulse-duration and var(--ease-out) (the 1.6s/ease-in-out here was one
+   of three competing durations — normalising it is the point, not a
+   retune). loombre-live-glow is the OTHER shared name and is NOT
+   interchangeable: it brightens .3 → .85 for the now-playing washes, so
+   swapping the two here would invert this dot. */
 .liveDot {
   width: 6px;
   height: 6px;
   border-radius: var(--radius-full);
   background: currentcolor;
-  animation: loombre-settings-pulse 1.6s ease-in-out infinite;
+  animation: loombre-live-pulse var(--pulse-duration) var(--ease-out) infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .liveDot {
     animation: none;
-  }
-}
-
-@keyframes loombre-settings-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-
-  50% {
-    opacity: 0.3;
   }
 }
 
@@ -181,6 +194,15 @@
 
 /* ── Dashed "add" tile (README "+ ADD LIBRARY") ─────────────────────── */
 
+/* I3 (UIFIX-2026-08-29, UD-7): "Add library" is a CONTROL LABEL, not a
+   machine fact — it was rendering 11px mono, 0.16em-tracked and uppercased,
+   which is the treatment this system reserves for values you read as data.
+   It switches to the sans control voice (--text-sm, medium, normal
+   tracking, sentence case). UD-7 grants this switch to exactly three
+   surfaces; this add-tile is one of them.
+   Height deliberately NOT moved to --control-height: this is a dashed drop
+   target, not a generic control — 36px would shrink it by 20px, and the
+   @media at the foot of this file already pins it to 44px on phones. */
 .addTile {
   display: flex;
   align-items: center;
@@ -191,10 +213,11 @@
   border: 1px dashed var(--color-border-strong);
   background: transparent;
   color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: var(--mono-lg);
-  letter-spacing: var(--track-mono-wide);
-  text-transform: uppercase;
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  letter-spacing: normal;
+  text-transform: none;
   cursor: pointer;
   min-height: 56px;
   transition:
@@ -299,11 +322,15 @@
   gap: var(--space-sm);
 }
 
+/* I6 (UIFIX-2026-08-29): one scroll convention for in-dialog lists. This
+   was a flat 320px while DirectoryPicker's .list capped at 40vh — on a
+   short viewport the fixed cap pushed the dialog's own actions off-screen.
+   40vh is the convention both now follow. */
 .userChecklist {
   display: flex;
   flex-direction: column;
   gap: var(--space-2xs);
-  max-height: 320px;
+  max-height: 40vh;
   overflow-y: auto;
   margin: var(--space-sm) 0;
 }

@@ -68,12 +68,20 @@
   color: var(--color-accent);
 }
 
+/* I6/F3 (UIFIX-2026-08-29, UD-17): @keyframes loombre-hub-pulse deleted —
+   it was a byte-identical copy of the settings/sidebar/jobs/stash dots'
+   blink. All of them now run the shared loombre-live-pulse from
+   app/globals.css on --pulse-duration and var(--ease-out) (the 1.6s
+   ease-in-out here was one of three competing durations; normalising it is
+   the point, not a retune). Not interchangeable with loombre-live-glow,
+   which brightens .3 → .85 for the now-playing washes — using it here would
+   invert this dot. */
 .liveDot {
   width: 6px;
   height: 6px;
   border-radius: var(--radius-full);
   background: currentcolor;
-  animation: loombre-hub-pulse 1.6s ease-in-out infinite;
+  animation: loombre-live-pulse var(--pulse-duration) var(--ease-out) infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -82,17 +90,11 @@
   }
 }
 
-@keyframes loombre-hub-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-
-  50% {
-    opacity: 0.3;
-  }
-}
-
+/* I3 (UIFIX-2026-08-29, UD-15): the chevron is the ONLY "this row goes
+   somewhere" cue on a hub row — the row is a <Link> with the UA underline
+   removed above, so nothing else marks it navigable. --color-text-subtle
+   measures 3.4:1, below AA for a load-bearing cue; the amended contrast law
+   moves glanceable cues to --color-text-muted (7.4:1). */
 .chevron {
-  color: var(--color-text-subtle);
+  color: var(--color-text-muted);
 }
