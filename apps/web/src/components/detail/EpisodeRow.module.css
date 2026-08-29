@@ -1,5 +1,10 @@
 /* SPDX-License-Identifier: AGPL-3.0-only */
 
+/* B5: a radius on a bottom-ONLY border rounds the hover fill's corners
+   while the divider itself stays flat — two shapes disagreeing on the same
+   element. On desktop this row is a list line, not a card, so it takes no
+   radius at all. The phone branch below re-declares --radius-md, where the
+   row really is a card (full border + fill), and keeps it. */
 .row {
   display: flex;
   align-items: center;
@@ -8,7 +13,7 @@
   padding: var(--space-sm) var(--space-xs);
   border: none;
   border-bottom: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-sm);
+  border-radius: 0;
   background: none;
   text-align: left;
   text-decoration: none;
@@ -31,11 +36,17 @@
   color: var(--color-text-muted);
 }
 
+/* B6: the ratio is declared once, as a ratio. The old paired width/height
+   literals were 128x72 (exactly 16:9) on desktop but 62x38 on phones —
+   16:9.81, an 8.96% vertical stretch that `object-fit: cover` on .thumb
+   paid for by cropping ~9% more off the sides. With aspect-ratio the phone
+   block only overrides the width and the shape follows. */
 .thumbWrap {
   position: relative;
   flex-shrink: 0;
   width: 128px;
-  height: 72px;
+  aspect-ratio: 16 / 9;
+  height: auto;
   border-radius: var(--radius-sm);
   overflow: hidden;
 
@@ -115,17 +126,24 @@
 .info {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-3xs);
   min-width: 0;
   flex: 1;
 }
 
+/* C3: episode titles are real sentences ("The One Where Everybody Finds
+   Out") and were clipped to one ellipsised line. Nothing here depends on a
+   fixed row height — .row is padding + the thumb — so the title gets the
+   C1 two-line clamp instead: it wraps, then clamps at line two. */
 .title {
   font-size: var(--text-base);
   font-weight: var(--weight-bold);
-  white-space: nowrap;
+  white-space: normal;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .meta {
@@ -184,9 +202,9 @@
     width: auto;
   }
 
+  /* B6: width only — the base rule's aspect-ratio keeps this 16:9. */
   .thumbWrap {
     width: 62px;
-    height: 38px;
     border-radius: var(--radius-sm);
   }
 

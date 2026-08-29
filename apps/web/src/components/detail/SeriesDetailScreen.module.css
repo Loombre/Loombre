@@ -30,6 +30,14 @@
   margin-bottom: var(--space-xs);
 }
 
+/* C2: this is the series' display title — the h1 SeriesDetailScreen.tsx
+   hands SceneBanner as its `overlay` (there is no `.title` class in this
+   file; SceneBanner never prints the title itself, see its header). Same
+   fix as MovieDetailScreen .title: at 54px uppercase the line break is a
+   design decision, so `balance` evens the lines rather than orphaning a
+   word. Its 54px/0.96 are literals, NOT --text-display/--leading-display —
+   the token amendment does not reach this rule, so nothing here needs the
+   single-line leading pin --leading-display's move to 1.05 implies. */
 .bannerTitle {
   margin: 0;
   font-stretch: var(--wdth-display);
@@ -37,6 +45,7 @@
   font-size: 54px;
   line-height: 0.96;
   text-transform: uppercase;
+  text-wrap: balance;
 }
 
 .content {

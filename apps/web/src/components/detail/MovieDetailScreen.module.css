@@ -61,6 +61,10 @@
 }
 
 
+/* C2: a 52px uppercase display title WILL wrap, so the break point is a
+   design decision, not an accident — `balance` evens the lines instead of
+   leaving one orphaned word on line two. Reads with --leading-display,
+   which is 1.05 (not 1.0) for exactly this multi-line case. */
 .title {
   margin: 0 0 var(--space-sm);
   font-stretch: var(--wdth-display);
@@ -69,6 +73,7 @@
   line-height: var(--leading-display);
   text-transform: uppercase;
   letter-spacing: 0.01em;
+  text-wrap: balance;
 }
 
 .blurb {
@@ -144,11 +149,19 @@
   font-size: var(--text-sm);
 }
 
+/* B3: `overflow-x: auto` forces `overflow-y` to compute to `auto` too (CSS
+   Overflow spec), so this rail clips anything a child paints OUTSIDE its
+   border box at the top edge — PersonCard's cards are links, and the
+   app-wide `:focus-visible` ring is a non-inset 3px box-shadow
+   (globals.css). The rule had padding-bottom only. Byte-identical shape to
+   home/Row .scroller, so it takes the identical fix: headroom above.
+   The 10px top is the handoff's literal — the spacing scale has no 10px
+   step (8/12), so it is NOT tokenizable here; recorded for W2-B. */
 .castRail {
   display: flex;
   gap: var(--space-md);
   overflow-x: auto;
-  padding-bottom: var(--space-xs);
+  padding: 10px 0 var(--space-xs);
 }
 
 /* ── Mobile ────────────────────────────────────────────────────────── */
