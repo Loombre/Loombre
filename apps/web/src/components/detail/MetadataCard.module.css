@@ -1,8 +1,13 @@
 /* SPDX-License-Identifier: AGPL-3.0-only */
 
+/* B4 (UD-8): a CARD is --radius-lg — tokens.css's own "cards, dialogs,
+   sheets" step, which ui/Card .card and admin's .collapsibleCard already
+   use. This surface was the odd one out at --radius-sm, and the phone-only
+   --radius-md override that used to sit in the media block below is
+   DELETED, not migrated: one card radius at every width. */
 .card {
   border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-lg);
   padding: var(--space-md);
   background: var(--fill-1);
 }
@@ -32,20 +37,30 @@
   gap: var(--space-2xs);
 }
 
-/* AUD-A4v2-001 occurrence (folded in by validator V6): 36px was below the
-   Phosphor 44px touch-target floor (A4a REFERENCE APPENDIX §B) — raised
-   to 44px like the shared Button/Input/SegmentedControl primitives.
+/* AUD-A4v2-001 occurrence (folded in by validator V6): a flat 36px was
+   below the Phosphor 44px touch-target floor (A4a REFERENCE APPENDIX §B),
+   so this pill hardcoded 44px, as the shared Button/Input/
+   SegmentedControl primitives did.
+   SUPERSEDED by H (UD-6): that literal is now var(--control-height) — the
+   token those same primitives read. It is 36px under a fine pointer and
+   swaps to 44px for free under tokens.css's single `@media (pointer:
+   coarse)` rule, so the floor is defended where it is actually about
+   touch instead of on a mouse.
+   G2 (UD-7): the label is a control label, not a mono caps token —
+   --font-sans at --text-sm with normal tracking, replacing --mono-xs
+   (8.5px) inside a pill-radius capsule.
    AUD-A4v5-001 attachment (V6): cursor: not-allowed + opacity: 0.65 were
    unconditional, so the ENABLED Fix Match button rendered pixel-identical
    to the dead EDIT stub at every viewport — they belong on :disabled. */
 .actionPill {
   display: inline-flex;
   align-items: center;
-  min-height: 44px;
-  font-family: var(--font-mono);
-  font-size: var(--mono-xs);
+  min-height: var(--control-height);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
   font-weight: var(--weight-medium);
-  letter-spacing: var(--track-mono);
+  letter-spacing: normal;
+  text-transform: none;
   color: var(--color-text-muted);
   background: transparent;
   border: 1px solid var(--color-border);
@@ -73,8 +88,13 @@
   gap: var(--space-md);
 }
 
+/* G2 (UD-15): these labels are glanceable facts, so they come off the
+   3.4:1 AA-exception tier (--color-text-subtle) onto --color-text-muted
+   (7.4:1). The old value was LEGAL under LD-14 — subtle is permitted on
+   the --text-* scale at --text-xs and above — but the 2026-08-29 audit
+   amended the law for exactly this case; see tokens.css's contrast law. */
 .row dt {
-  color: var(--color-text-subtle);
+  color: var(--color-text-muted);
   font-size: var(--text-xs);
 }
 
@@ -91,10 +111,6 @@
 }
 
 @media (width <= 767.98px) {
-  .card {
-    border-radius: var(--radius-md);
-  }
-
   .value,
   .monoValue {
     font-size: var(--mono-sm);
