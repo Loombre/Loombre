@@ -59,14 +59,22 @@
 }
 
 /* D6/D11/README sidebar reference: 8.5px mono, "MEDIA SERVER · V<version>"
-   (design/blaze/README.md "Sidebar-size reference: version line ... in mono 8.5px"). */
+   (design/blaze/README.md "Sidebar-size reference: version line ... in mono 8.5px").
+
+   Colour is --color-text-muted, NOT the prototype's #61666E subtle tier:
+   this is a mono label at 8.5px, and the LD-14/AUD-A4v3-003 amendment in
+   tokens.css bans subtle/hint on the --mono-* scale outright ("a mono
+   label dimmer than --color-text-muted does not have a token; use muted
+   (7.4:1) there"). Same correction .groupLabel and .poolLabel below
+   already carry — this rule was the last one in the file still on subtle,
+   and it renders on EVERY authenticated route (measured 3.38:1). */
 .tagline {
   font-family: var(--font-mono);
   font-size: 8.5px;
   font-weight: var(--weight-medium);
   letter-spacing: var(--track-mono-wide);
   text-transform: uppercase;
-  color: var(--color-text-subtle);
+  color: var(--color-text-muted);
 }
 
 .group {

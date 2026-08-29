@@ -308,3 +308,88 @@ describe("JobsPanel — the dashboard's compact job-queue embed (LD-16 (rc.6))",
     expect(text).not.toMatch(/ago/);
   });
 });
+
+// 2026-08-28 QA (live browser, /admin/jobs at 1280/768/380): a row carrying
+// `lastError` renders FOUR stacked lines' worth of content — .rowMain
+// (21.4px) + .rowMeta (17.4px) + .error (17.4px) + 2 gaps + 24px of vertical
+// padding = 84.2px — inside a virtualized row whose height is the fixed
+// `rowHeight` prop. At 68px the surplus came off the last flex child: the
+// error paragraph measured 0.203px tall with a 17px scrollHeight, i.e. the
+// failure reason was in the DOM and its title attribute but painted at zero
+// height. VirtualList's `.row { overflow: hidden }` (AUD-A4v6-002) is what
+// makes that silent rather than a visible overlap.
+//
+// VirtualList requires a UNIFORM row height (the translateY windowing math
+// multiplies one number), so the fix cannot be per-row: the panel picks the
+// height that fits the tallest anatomy PRESENT IN THE CURRENT PAGE. No
+// error anywhere -> the dense 68px stays, which is every list in practice.
+//
+// Asserted on the inline height VirtualList writes onto each row, because
+// jsdom has no layout — a getBoundingClientRect assertion here would pass
+// against any CSS at all.
+describe("JobsPanel — a failed row's error line has to fit the virtualized row (2026-08-28 QA)", () => {
+  beforeEach(() => {
+    apiGetMock.mockReset();
+    subscribeMock.mockReset();
+    subscribeMock.mockReturnValue(() => {});
+  });
+
+  afterEach(() => {
+    view?.unmount();
+    view = null;
+  });
+
+  function rowHeights(): number[] {
+    if (!view) throw new Error("nothing rendered");
+    return Array.from(view.container.querySelectorAll('[role="listitem"]')).map((el) =>
+      Number.parseFloat((el as HTMLElement).style.height),
+    );
+  }
+
+  it("grows every row when any listed job carries a lastError", async () => {
+    apiGetMock.mockResolvedValue({
+      items: [
+        job({ id: "88888888-8888-7888-8888-888888888888" }),
+        job({
+          id: "99999999-9999-7999-8999-999999999999",
+          status: "failed",
+          lastError: "This job was interrupted — the background worker stopped before it finished.",
+        }),
+      ],
+      nextCursor: null,
+    });
+    view = renderIntoBody(<JobsPanel />);
+    await act(async () => {});
+
+    // The reason is rendered AND has room for its own line.
+    expect(view!.container.textContent).toContain("the background worker stopped before it finished");
+    const heights = rowHeights();
+    expect(heights).toHaveLength(2);
+    // 24px padding + 21.4 + 17.4 + 17.4 + two 2px gaps = 84.2, plus the
+    // row's 1px bottom border.
+    for (const h of heights) expect(h).toBeGreaterThanOrEqual(86);
+    // Uniform — VirtualList's offset math depends on it.
+    expect(new Set(heights).size).toBe(1);
+  });
+
+  it("keeps the dense row height when nothing in the page failed", async () => {
+    apiGetMock.mockResolvedValue({ items: [job(), job({ id: "aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa" })], nextCursor: null });
+    view = renderIntoBody(<JobsPanel />);
+    await act(async () => {});
+
+    for (const h of rowHeights()) expect(h).toBe(68);
+  });
+
+  it("a live job.updated that carries an errorMessage grows the rows in place", async () => {
+    const id = "bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb";
+    apiGetMock.mockResolvedValue({ items: [job({ id, status: "active", attempts: 1 })], nextCursor: null });
+    view = renderIntoBody(<JobsPanel />);
+    await act(async () => {});
+    expect(rowHeights()).toEqual([68]);
+
+    emit({ jobId: id, jobType: "scan", status: "failed", attempts: 2, errorMessage: "ffprobe exited 1", updatedAtMs: 9_000 });
+
+    expect(view!.container.textContent).toContain("ffprobe exited 1");
+    for (const h of rowHeights()) expect(h).toBeGreaterThanOrEqual(86);
+  });
+});

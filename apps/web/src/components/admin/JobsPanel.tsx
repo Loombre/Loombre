@@ -34,6 +34,22 @@ import styles from "./JobsPanel.module.css";
 const PAGE_LIMIT = 50;
 const DEFAULT_ROW_HEIGHT = 68;
 
+/* 2026-08-28 QA: DEFAULT_ROW_HEIGHT fits the THREE-line anatomy (.rowMain
+ * + .rowMeta + padding). A row that also renders `lastError` is a fourth
+ * line — 84.2px of content — and VirtualList allocates exactly `rowHeight`
+ * with `overflow: hidden` (AUD-A4v6-002), so the surplus came off the last
+ * flex child: the error paragraph painted at 0.203px. The failure reason
+ * was in the DOM, in its title attribute, and invisible on screen at every
+ * viewport.
+ *
+ * VirtualList's windowing multiplies ONE height, so this cannot vary per
+ * row — the panel instead picks the height that fits the tallest anatomy
+ * present in the current page. Lists with no failures (the overwhelmingly
+ * common case) keep the dense 68px exactly as before. 88 = 24px padding +
+ * 21.4 + 17.4 + 17.4 + two 2px gaps + the row's 1px border, rounded up to
+ * the next multiple of 4. */
+const ERROR_ROW_HEIGHT = 88;
+
 interface JobProgress {
   current: number;
   total: number | null;
@@ -168,6 +184,10 @@ export function JobsPanel({ maxHeight, showHeader = true, compact = false }: Job
       .catch(() => setLoadingMore(false));
   }, [cursor, loadingMore]);
 
+  // See ERROR_ROW_HEIGHT. `compact` never renders lastError at all (LD-16),
+  // so that embed always keeps the dense height.
+  const rowHeight = !compact && jobs.some((job) => job.lastError) ? ERROR_ROW_HEIGHT : DEFAULT_ROW_HEIGHT;
+
   // Live updates — no poll loop while this socket subscription lives.
   useEffect(() => {
     const socket = getEventsSocket();
@@ -213,7 +233,7 @@ export function JobsPanel({ maxHeight, showHeader = true, compact = false }: Job
       ) : (
         <VirtualList
           items={jobs}
-          rowHeight={DEFAULT_ROW_HEIGHT}
+          rowHeight={rowHeight}
           hasMore={hasMore}
           loadingMore={loadingMore}
           onLoadMore={loadMore}

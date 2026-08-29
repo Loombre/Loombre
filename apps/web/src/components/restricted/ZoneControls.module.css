@@ -20,6 +20,30 @@
   composes: track from "../ui/SegmentedControl.module.css";
 }
 
+/* README §Restricted zone, Unlocked: "On mobile the toolbar is a 44px
+   search row + ONE HORIZONTALLY SCROLLING PILL ROW (genres · divider ·
+   filters · sort)". The five zone sort options measure 491px, so on a
+   phone column this track MUST scroll — it is the one shape the spec
+   names (never wrap: a wrapped --radius-pill track draws one 142px-tall
+   stadium with the outer options sitting outside its own corner radii).
+   `min-width: 0` is what actually enables it: a nowrap flex container's
+   min-content width is the SUM of its nowrap segments, so as a flex item
+   inside page.module.css's `.toolbarRight` the track refuses to shrink
+   below 491px without this, and the segments spill past the screen edge
+   instead of scrolling. Clipping is safe for focus: SegmentedControl's
+   `.segment:focus-visible` is an INSET ring, chosen for exactly this. */
+@media (width <= 767.98px) {
+  .sortTrack {
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .sortTrack::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 .densityTrack {
   composes: track from "../ui/SegmentedControl.module.css";
 }

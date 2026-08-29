@@ -68,13 +68,18 @@
   background: color-mix(in srgb, var(--color-danger) 7%, transparent);
 }
 
+/* --color-text-muted, not the subtle tier: a 9px mono label sits on the
+   --mono-* micro-scale, where LD-14/AUD-A4v3-003 (tokens.css) bans
+   subtle/hint outright — "a mono label dimmer than --color-text-muted
+   does not have a token; use muted (7.4:1) there". Same correction
+   shell/Sidebar.module.css's .tagline/.groupLabel/.poolLabel carry. */
 .statusNote {
   font-family: var(--font-mono);
   font-size: 9px;
   font-weight: var(--weight-medium);
   letter-spacing: var(--track-mono);
   text-transform: uppercase;
-  color: var(--color-text-subtle);
+  color: var(--color-text-muted);
 }
 
 .title {

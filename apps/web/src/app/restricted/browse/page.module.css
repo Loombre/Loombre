@@ -32,12 +32,27 @@
 }
 
 @media (width <= 767.98px) {
+  /* `column nowrap`, not just `flex-direction: column`: the desktop
+     `flex-wrap: wrap` above stays in effect otherwise, and in a WRAPPING
+     column container each flex line's cross size (its width) is derived
+     from its content, not from the container — so `align-items: stretch`
+     stretches the children to that content-derived width instead of to
+     the toolbar's own. ZoneControls.module.css `.filterBar` already
+     documents this exact failure (it reached 583px inside a 358px column
+     at 390x844) and worked around it with `max-width: 100%` on ITSELF;
+     `.toolbarRight` was the other child of the same container and still
+     blew out to 583px at 380px wide, pushing the "Highest Rated" /
+     "Duration" sort segments and the whole density toggle past the screen
+     edge — and `main { overflow-x: hidden }` made them unreachable rather
+     than merely off-screen. Killing wrap fixes both children at the
+     source. Shorthand form because stylelint requires it. */
   .toolbar {
-    flex-direction: column;
+    flex-flow: column nowrap;
     align-items: stretch;
   }
 
   .toolbarRight {
     justify-content: space-between;
+    min-width: 0;
   }
 }

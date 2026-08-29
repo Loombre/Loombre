@@ -74,6 +74,34 @@
   .headingRow {
     margin: 0 0 10px;
   }
+
+  /* README §Foundations: "Mobile touch targets are never below 44px."
+     This link's text box measures 35x15 ("ALL →") / 63x15 ("LIBRARY →")
+     — the row-level "see everything" affordance on Home and on the
+     restricted zone, and by far the smallest tappable thing on either
+     screen (2026-08-28 QA).
+
+     A HIT BOX, not min-height: .headingRow is `align-items: baseline`, so
+     growing this item's box would drop its baseline out of line with the
+     section heading beside it, and a 44px tall row would re-space every
+     section on the phone home screen. An absolutely-positioned ::after
+     costs no layout at all and moves no glyph. Sized 45x59 (the caret is
+     -15px vertically on a 15px line box, -12px horizontally): it grows
+     into the auto margin on its left and the heading row's own 10px
+     bottom margin, so it overlaps no other interactive target — verified
+     with elementFromPoint at 380px, where the measured target goes from
+     35x15 to 47x45 ("ALL →"; the right 12px is trimmed by the content
+     column's own clip, which is why the caret is symmetric rather than
+     left-only — the left side is where the room actually is). */
+  .action {
+    position: relative;
+  }
+
+  .action::after {
+    content: "";
+    position: absolute;
+    inset: -15px -12px;
+  }
 }
 
 .scroller {

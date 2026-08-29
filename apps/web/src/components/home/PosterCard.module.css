@@ -112,11 +112,33 @@
    would double up. font-stretch 108% has no matching --wdth-* token (the
    scale is 62/114/118/125) and is a single-purpose value, so it stays a
    literal rather than growing tokens.css for one number. */
+
+/* SCRIM (design/phosphor/README.md, "Text contrast" obligations): "Where
+   --color-text-muted ... sits on a gradient (hero eyebrows, POSTER
+   CAPTIONS), it still needs a scrim behind it — the prototype already does
+   this with its linear-gradient overlays; preserve them." Only the
+   text-shadow survived the port, and a shadow alone is not a scrim: over
+   LIGHT artwork the caption measured ~1.3:1 (2026-08-28 QA, "After Hours
+   Redline" on the Browse grid — white-on-cream, unreadable). The gradient
+   is carried on .artTitle itself rather than a new pseudo-element because
+   .imageWrap's pseudo-elements are already spoken for. left/right/bottom
+   go to 0 and the former 13/13/11 insets become padding, so the GLYPHS do
+   not move a pixel and the ellipsis still breaks 13px in — only the
+   painted box grows. Stops put ~63% black under the text line: ~5.3:1
+   over pure white. Identical rule in browse/PosterCell, restricted/ZonePosterCard and watchlist/WatchlistPosterCard (this recipe is
+   duplicated by design — see browse/PosterCell.module.css's header). */
 .artTitle {
   position: absolute;
-  left: 13px;
-  right: 13px;
-  bottom: 11px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: var(--space-2xl) 13px 11px;
+  background: linear-gradient(
+    180deg,
+    rgb(0 0 0 / 0%) 0%,
+    rgb(0 0 0 / 60%) 65%,
+    rgb(0 0 0 / 72%) 100%
+  );
   font-stretch: 108%;
   font-weight: var(--weight-black);
   font-size: var(--text-sm);
