@@ -7,7 +7,7 @@
 // unenforced. Here every parse goes through the projected JSON Schema.
 
 import { describe, expect, it } from "vitest";
-import { draftTextFor, parseDraft, shortName, summaryText } from "./advanced-draft.js";
+import { parseDraft, summaryText } from "./advanced-draft.js";
 import type { AdvancedEntry } from "./advanced-model.js";
 
 function entry(overrides: Partial<AdvancedEntry>): AdvancedEntry {
@@ -78,10 +78,9 @@ describe("parseDraft", () => {
   });
 });
 
-describe("draftTextFor / summaryText / shortName", () => {
-  it("pretty-prints a structured value for the textarea and describes it by shape in the row", () => {
+describe("summaryText", () => {
+  it("describes a structured value by shape in the row", () => {
     const rungs = entry({ widget: "structured", value: [{ height: 720 }] });
-    expect(draftTextFor(rungs, [{ height: 720 }])).toBe('[\n  {\n    "height": 720\n  }\n]');
     expect(summaryText(rungs, [{ height: 720 }])).toBe("1 entry");
     expect(summaryText(rungs, [])).toBe("empty list");
     expect(summaryText(rungs, [1, 2])).toBe("2 entries");
@@ -92,9 +91,5 @@ describe("draftTextFor / summaryText / shortName", () => {
     const url = entry({ widget: "string", value: "" });
     expect(summaryText(url, "")).toBe('""');
     expect(summaryText(url, undefined)).toBe("—");
-  });
-
-  it("names a key by its LAST segment for toast copy", () => {
-    expect(shortName(entry({ leaf: "scheduleIntervalMs" }))).toBe("scheduleIntervalMs");
   });
 });

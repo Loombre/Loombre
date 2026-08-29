@@ -15,9 +15,11 @@ export function Chip({ children }: { children: ReactNode }): React.JSX.Element {
 // a count that was a bare, unstyled span rather than a real badge. This is
 // the ONE interactive chip primitive for "a row of selectable filter
 // pills, each with an optional leading glyph and a trailing count" —
-// RegistryFilterBar is the first caller, but nothing here is registry-
-// specific, so a future filter row (library kind, plugin status, etc.)
-// extends this instead of forking its own again.
+// RegistryFilterBar was the first caller until the UIFIX-2026-08-29
+// Advanced rework deleted that surface (its rail is a listbox, not chips),
+// so FilterChip currently renders only in the styleguide. Nothing here was
+// ever registry-specific: a future filter row (library kind, plugin
+// status, etc.) extends this instead of forking its own again.
 export interface FilterChipProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   /** Selected/active visual state. Reuses SegmentedControl's amber-fill
    *  treatment (D-2's `[data-active="true"]` rule) verbatim via

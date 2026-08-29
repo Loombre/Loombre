@@ -16,22 +16,6 @@ import type { AdvancedEntry } from "./advanced-model.js";
 
 export type DraftParse = { ok: true; value: unknown } | { ok: false; message: string };
 
-/** The editable text for a key's CURRENT value. Structured values get
- *  pretty-printed JSON (a textarea the operator can actually read);
- *  everything else its plain string form. */
-export function draftTextFor(entry: AdvancedEntry, value: unknown): string {
-  if (entry.widget === "structured") {
-    try {
-      return JSON.stringify(value, null, 2);
-    } catch {
-      return String(value);
-    }
-  }
-  if (value === null || value === undefined) return "";
-  if (typeof value === "string") return value;
-  return String(value);
-}
-
 /**
  * Turns a draft string back into a wire value for its key, or explains why
  * it cannot. Invalid structured JSON is HELD, never sent: the caller keeps
@@ -83,8 +67,3 @@ export function summaryText(entry: AdvancedEntry, value: unknown): string {
   return text.length === 0 ? "not set" : text;
 }
 
-/** Short, human name for a key inside toast copy — the LAST segment, the
- *  same split the dotted-prefix device uses (advanced-model.ts's `leaf`). */
-export function shortName(entry: AdvancedEntry): string {
-  return entry.leaf;
-}

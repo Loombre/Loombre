@@ -166,6 +166,10 @@ export function AdvancedWorkbench(): React.JSX.Element {
         for (const change of changes) await put(change.key, change.value);
       } catch (err) {
         showToast(apiErrorCopy(err, "Failed to save this setting."), { variant: "danger" });
+        // A mid-batch failure may have landed SOME of the writes; refetch
+        // now so the table shows what the server actually holds, instead of
+        // waiting for the settings.updated socket to catch it up.
+        refetch();
         return;
       }
       for (const change of changes) clearDraft(change.key);

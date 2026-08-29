@@ -211,10 +211,11 @@ export default function StyleguidePage(): React.JSX.Element {
         <Badge>12</Badge>
         {/* W3-R (opus review, styleguide accuracy): FilterChip (ui/Chip.tsx,
             W15) was missing entirely — the one interactive chip primitive
-            for a row of selectable filter pills (RegistryFilterBar's first
-            real caller). Both states shown: unselected with a leading
-            icon, and the active/selected fill with a trailing count
-            badge. */}
+            for a row of selectable filter pills (first shipped in the
+            registry filter bar, since deleted by the UIFIX-2026-08-29
+            Advanced rework; this styleguide entry is currently its only
+            renderer). Both states shown: unselected with a leading icon,
+            and the active/selected fill with a trailing count badge. */}
         <FilterChip icon={<Icon icon={Search} size="dense" />}>Unselected</FilterChip>
         <FilterChip active count={12}>
           Active

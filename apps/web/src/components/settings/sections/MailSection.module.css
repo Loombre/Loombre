@@ -3,9 +3,11 @@
 /* Loombre :: apps/web/src/components/settings/sections/MailSection.module.css
  *
  * Same page/heading/skeletonList/errorBanner shapes as the other Settings
- * IA tabs (AdvancedSection.module.css, PluginsSection.module.css) — see
- * those files for why each tab owns its own small module rather than
- * sharing one generic "settings page" module.
+ * IA tabs (PluginsSection.module.css and siblings; AdvancedSection's own
+ * module was retired by the UIFIX-2026-08-29 Advanced rework, whose page
+ * lives under components/settings/advanced/) — see those files for why
+ * each tab owns its own small module rather than sharing one generic
+ * "settings page" module.
  */
 
 .page {

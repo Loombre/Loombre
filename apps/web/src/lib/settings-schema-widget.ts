@@ -253,13 +253,13 @@ export interface RegistryCategorySummary {
 
 /** One summary row per category, in registry (first-seen) order. Pure
  *  projection over groupByCategory, so this order and the category-section
- *  order can never drift apart. NOTE: this is NOT the pill ROW's own
- *  display order — LD-10 (owner screenshot) locked the category filter
- *  chips to a simple alphabetical-by-label sort, applied by
- *  RegistryFilterBar.tsx immediately before rendering (the one place that
- *  ordering exists — never re-derived here or anywhere else), while every
- *  OTHER consumer of this function (the category section list, etc.) keeps
- *  reproducing the registry's own grouping unchanged. */
+ *  order can never drift apart. HISTORY: LD-10 (owner screenshot) once
+ *  locked an alphabetical-by-label sort for the category filter CHIPS,
+ *  applied by RegistryFilterBar.tsx — that surface was deleted by the
+ *  UIFIX-2026-08-29 Advanced rework (commit bcb64bb), whose category rail
+ *  deliberately uses registry runtime order instead (DISCOVERY §6 / UD-20;
+ *  supersession recorded in reports/state/DECISIONS.md at run close). No
+ *  alphabetical consumer of this function remains. */
 export function categorySummaries<T extends { category: string; scope: string }>(
   entries: readonly T[],
 ): RegistryCategorySummary[] {

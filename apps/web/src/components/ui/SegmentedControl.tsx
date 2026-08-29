@@ -17,11 +17,12 @@
 // ever in the tab order at a time (tabIndex 0 on the checked segment, -1 on
 // every other) — arrow keys move focus AND selection together (mirroring
 // how native <input type="radio"> groups behave), Home/End jump to the
-// first/last option. admin/settings/RegistryFilterBar.tsx (FilterChip-based,
-// a structurally different shape — icon + count decorated pills, not plain
-// labels) and home/FeaturedBanner.tsx (icon-only carousel indicator dots)
-// carry the identical pattern directly rather than consolidating here,
-// since neither fits this component's plain-label shape.
+// first/last option. home/FeaturedBanner.tsx (icon-only carousel indicator
+// dots) carries the identical pattern directly rather than consolidating
+// here, since it does not fit this component's plain-label shape. (The
+// other historical carrier, admin/settings/RegistryFilterBar.tsx, was
+// deleted by the UIFIX-2026-08-29 Advanced rework; ui/Chip.tsx's
+// FilterChip remains the chip-shaped variant.)
 
 import { useRef, useState } from "react";
 import styles from "./SegmentedControl.module.css";

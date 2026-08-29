@@ -463,6 +463,11 @@
   line-height: var(--leading-display);
   letter-spacing: 0.01em;
   text-transform: uppercase;
+
+  /* C2 (UIFIX-2026-08-29): the one display title GUARANTEED to hit the
+     two-line case (uppercase 40px under a hard clamp of 2) — balance
+     evens the two lines instead of a full first line and an orphan. */
+  text-wrap: balance;
   color: var(--color-text);
   text-decoration: none;
   margin-bottom: var(--space-xs);
