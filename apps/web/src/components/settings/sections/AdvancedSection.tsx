@@ -3,122 +3,38 @@
 
 // Loombre :: apps/web/src/components/settings/sections/AdvancedSection.tsx
 //
-// README tab 7 "Advanced Server": the schema-driven registry. This file is
-// the TAB SLOT lane L1 owns; the components it mounts are lane L6's
-// internals. Reconciled at Wave-2 landing (orchestrator): L6 shipped the
-// registry filter field + category pills (RegistryFilterBar) and the
-// one-category-at-a-time behavior against the pre-IA /admin/settings page,
-// which L1 had meanwhile turned into a redirect stub — that page-level
-// wiring now lives HERE, verbatim in semantics: a live query OVERRIDES
-// category scoping rather than combining with it, and clearing the query
-// reverts to whichever category was last selected (never resets to the
-// first one). This component owns that selection state because it's the
-// thing both RegistryFilterBar's pills AND SettingsCategoryCard's single
-// visible section need to agree on.
+// UIFIX-2026-08-29 Lane K: this file is now a THIN MOUNT. Everything it used
+// to own — the registry filter field, the category pill row, the single
+// visible category card, and the query-overrides-category selection state —
+// was replaced by the three-pane workbench under
+// components/settings/advanced/ (AdvancedWorkbench.tsx). The behaviours that
+// note used to describe are preserved there, not dropped: a live query still
+// OVERRIDES scope rather than combining with it, and picking a scope clears
+// the query so the rail can never disagree with the table.
+//
+// UD-2 (advanced-only): Advanced is the one section that folds the tab
+// column into its own page title (SectionSwitcher). app/settings/advanced/
+// page.tsx therefore mounts this component directly instead of going through
+// SettingsShell, which would wrap it in SettingsTabs + SettingsPageLayout's
+// readable-width cap — both wrong for a three-pane workbench. The nine other
+// sections keep SettingsShell exactly as it is; that file is untouched.
+//
+// The admin guard lives here rather than in the route so BOTH entry points
+// are covered — this component is still reachable through SettingsShell's
+// renderSection("advanced") branch, which does its own guard.
 
-import { useState } from "react";
-import { SettingsRestartBanner } from "../../admin/settings/SettingsRestartBanner.js";
-import { RegistryFilterBar } from "../../admin/settings/RegistryFilterBar.js";
-import { CATEGORY_LABELS, SettingsCategoryCard } from "../../admin/settings/SettingsCategoryCard.js";
-import { Skeleton } from "../../skeleton/Skeleton.js";
-import { Button } from "../../ui/Button.js";
-import { categorySummaries, filterEntriesByQuery, groupByCategory } from "../../../lib/settings-schema-widget.js";
-import { useAdminSettingsData } from "./use-admin-settings-data.js";
-import styles from "./AdvancedSection.module.css";
+import { useAdminGuard } from "../../../lib/use-admin-guard.js";
+import { AdvancedWorkbench } from "../advanced/AdvancedWorkbench.js";
 
-export function AdvancedSection({ heading }: { heading: string | null }): React.JSX.Element {
-  const { schema, settings, error, refetch, retry } = useAdminSettingsData();
-  const [query, setQuery] = useState("");
-  const [category, setCategory] = useState<string | null>(null);
+export interface AdvancedSectionProps {
+  /** SettingsShell's per-section heading. Unused here: the workbench's own
+   *  <h1> IS the section switcher and takes its label from
+   *  section-registry.ts directly, so a second heading would duplicate it. */
+  heading?: string | null;
+}
 
-  // AUD-A3b-002: a fetch failure keeps the page shell (heading intact, like
-  // every sibling consumer of this hook) and offers a real retry instead of
-  // blanking the whole tab behind a bare, terminal error line.
-  if (error) {
-    return (
-      <div className={styles.page}>
-        {heading !== null && <h1 className={styles.heading}>{heading}</h1>}
-        <p className={styles.errorBanner} role="alert">
-          {error}
-        </p>
-        <div className={styles.errorActions}>
-          <Button type="button" variant="secondary" onClick={retry}>
-            Retry
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  if (!schema || !settings) {
-    return (
-      <div className={styles.page}>
-        {heading !== null && <h1 className={styles.heading}>{heading}</h1>}
-        <div className={styles.skeletonList} aria-hidden="true">
-          {Array.from({ length: 4 }, (_, i) => (
-            <Skeleton key={i} radius="lg" height={160} />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  const valuesByKey = new Map(settings.settings.map((s) => [s.key, s] as const));
-  const groups = groupByCategory(schema.entries);
-  const categories = categorySummaries(schema.entries);
-  const defaultCategory = groups[0]?.category ?? null;
-  const activeCategory = category ?? defaultCategory;
-  const trimmedQuery = query.trim();
-  const editableCount = schema.entries.filter((e) => e.scope === "ui").length;
-  const envOnlyCount = schema.entries.length - editableCount;
-
-  const visibleEntries = trimmedQuery
-    ? filterEntriesByQuery(schema.entries, trimmedQuery)
-    : (groups.find((g) => g.category === activeCategory)?.entries ?? []);
-
-  // exactOptionalPropertyTypes (tsconfig.base.json): these overrides are
-  // spread in only while filtering IS active — never assigned `undefined`
-  // explicitly, which that flag treats as distinct from "prop absent".
-  const filteredViewProps = trimmedQuery
-    ? {
-        titleOverride: "Filter results",
-        metaOverride: `${visibleEntries.length} of ${schema.entries.length} advanced keys match`,
-        emptyMessage: `No key matches “${trimmedQuery}”.`,
-      }
-    : {};
-
-  return (
-    <div className={styles.page}>
-      {heading !== null && <h1 className={styles.heading}>{heading}</h1>}
-      <div className={styles.registrySection}>
-        <div className={styles.registryHeader}>
-          <h2 className={styles.registryTitle}>Advanced server settings</h2>
-          <span className={styles.registryMeta}>
-            {schema.entries.length} REGISTRY KEYS · {editableCount} EDITABLE · {envOnlyCount} ENV-ONLY
-          </span>
-        </div>
-
-        <RegistryFilterBar
-          categories={categories}
-          categoryLabels={CATEGORY_LABELS}
-          activeCategory={activeCategory}
-          onSelectCategory={setCategory}
-          query={query}
-          onQueryChange={setQuery}
-        />
-
-        <SettingsRestartBanner keys={settings.restartPendingKeys} />
-
-        {activeCategory !== null && (
-          <SettingsCategoryCard
-            category={activeCategory}
-            entries={visibleEntries}
-            valuesByKey={valuesByKey}
-            onChanged={refetch}
-            {...filteredViewProps}
-          />
-        )}
-      </div>
-    </div>
-  );
+export function AdvancedSection(_props: AdvancedSectionProps): React.JSX.Element | null {
+  const { isAdmin } = useAdminGuard("/profile");
+  if (isAdmin !== true) return null; // resolving, or already redirecting
+  return <AdvancedWorkbench />;
 }

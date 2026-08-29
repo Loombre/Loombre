@@ -75,30 +75,16 @@ describe("ProviderKeysCard.module.css — mobile (<=767.98px)", () => {
   });
 });
 
-describe("RegistryFilterBar.module.css — mobile (<=767.98px)", () => {
-  const block = mobileBlock("RegistryFilterBar.module.css");
-
-  it("the filter field becomes a boxed (radius-md) full-width control, not the desktop pill", () => {
-    expect(block).toMatch(/\.searchInput\s*\{[^}]*border-radius:\s*var\(--radius-md\)/);
-    expect(block).toMatch(/\.searchInput\s*\{[^}]*min-height:\s*44px;/);
-  });
-
-  it("the outer filter-header box recedes to just its content, matching SettingsCategoryCard's own mobile pattern", () => {
-    expect(block).toMatch(/\.bar\s*\{[^}]*border:\s*none;/);
-    expect(block).toMatch(/\.bar\s*\{[^}]*padding:\s*0;/);
-  });
-
-  it("the category pill row becomes a single horizontally-scrolling strip whose pills never get squeezed", () => {
-    // W15: the 44px touch floor itself now lives on ui/Chip.tsx's
-    // FilterChip (Chip.module.css's own mobile block, asserted below) —
-    // every chip anywhere in the app grows to it at this width, not just
-    // this one call site's pills. This file only still owns the
-    // horizontal-scroll-strip shape and stopping a chip shrinking inside
-    // it.
-    expect(block).toMatch(/\.pillRow\s*\{[^}]*overflow-x:\s*auto;/);
-    expect(block).toMatch(/\.pillRow > \*\s*\{[^}]*flex-shrink:\s*0;/);
-  });
-});
+// RETIRED 2026-08-29 (UIFIX-2026-08-29 Lane K): the
+// "RegistryFilterBar.module.css — mobile" describe block that stood here is
+// gone because its component is. RegistryFilterBar had exactly one consumer,
+// AdvancedSection, and the Settings › Advanced rework replaced that whole
+// surface with the three-pane workbench under components/settings/advanced/
+// — a scope RAIL, not a horizontally-scrolling pill row — so the .bar /
+// .pillRow / .searchInput shapes those three assertions pinned no longer
+// exist anywhere. The remaining Chip block below is unaffected and still
+// covers the 44px FilterChip floor for every OTHER caller (the rule always
+// lived on Chip.module.css, per W15).
 
 describe("Chip.module.css — mobile (<=767.98px)", () => {
   const block = mobileBlock("../../ui/Chip.module.css");

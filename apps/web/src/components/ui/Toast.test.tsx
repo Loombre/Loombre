@@ -189,4 +189,61 @@ describe("ToastProvider / useToast", () => {
     expect(block).toContain(".viewport");
     expect(block).toContain("translate(-50%, 0)");
   });
+
+  // UD-20c (UIFIX-2026-08-29): the optional action slot Settings › Advanced
+  // hangs its Undo on. Strictly additive — the four cases above that pass no
+  // `action` still render exactly what they did before.
+  describe("action slot (UD-20c)", () => {
+    function actionButton(container: HTMLElement): HTMLButtonElement | undefined {
+      return Array.from(container.querySelectorAll("button")).find((b) => b.textContent === "Undo");
+    }
+
+    it("renders no control at all when a caller passes no action", () => {
+      view = renderProvider();
+      act(() => {
+        latestToastApi!.showToast("SAVED");
+      });
+      expect(view.container.querySelector("button")).toBeNull();
+    });
+
+    it("renders the labelled control inside the live region when one is given", () => {
+      view = renderProvider();
+      act(() => {
+        latestToastApi!.showToast("CONCURRENCY SET TO 6", { action: { label: "Undo", onAction: () => {} } });
+      });
+      const button = actionButton(view.container);
+      expect(button).toBeTruthy();
+      expect(getLiveRegion(view.container).contains(button!)).toBe(true);
+      // The viewport is pointer-events: none for passive toasts, so the ONE
+      // interactive element re-enables them on itself.
+      expect(button!.style.pointerEvents).toBe("auto");
+    });
+
+    it("invoking it runs the action exactly once and dismisses the toast", () => {
+      vi.useFakeTimers();
+      const onAction = vi.fn();
+      view = renderProvider();
+      act(() => {
+        latestToastApi!.showToast("2 SETTINGS RESET TO DEFAULT", { durationMs: 4200, action: { label: "Undo", onAction } });
+      });
+      act(() => actionButton(view!.container)!.click());
+      expect(onAction).toHaveBeenCalledTimes(1);
+      expect(getViewport(view.container).getAttribute("data-visible")).toBe("false");
+      // The dismissed toast's timer must not fire afterwards either.
+      advanceTimers(4200);
+      expect(onAction).toHaveBeenCalledTimes(1);
+    });
+
+    it("a replacement toast without an action drops the previous one's control", () => {
+      view = renderProvider();
+      act(() => {
+        latestToastApi!.showToast("FIRST", { action: { label: "Undo", onAction: () => {} } });
+      });
+      expect(actionButton(view.container)).toBeTruthy();
+      act(() => {
+        latestToastApi!.showToast("SECOND");
+      });
+      expect(actionButton(view.container)).toBeUndefined();
+    });
+  });
 });

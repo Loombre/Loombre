@@ -1,0 +1,451 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* UIFIX-2026-08-29 Lane K — the key table.
+
+   GRID TRACKS. The row template is `minmax(0, 1fr) minmax(132px, 204px)
+   74px`: a value track that is a RANGE, not a fixed width, plus the row's
+   own 430px min-width floor, is what stops the Setting track being crushed
+   to 0 in a narrow pane — the table scrolls sideways instead (the same
+   `min-width: 0` on the pane + intrinsic-floor mechanism ZoneControls'
+   .sortTrack documents). The 132px minimum rides in on a LOCAL custom
+   property rather than being written inline because LD-19 (rc.6)'s
+   stylelint guard disallows a hand-written `minmax(<number>` anywhere in a
+   grid-template, and UD-6 forbids adding a --grid-min-* token to tokens.css
+   for it. Local, component-scoped, not a design token: noted in
+   reports/state/wave1/noted-K.md. */
+
+.pane {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--fill-1);
+  overflow: hidden;
+}
+
+/* Row direction, so wrapping here is the ordinary "toolbar reflows onto a
+   second line" case — NOT the wrapping-COLUMN stretch hazard the restricted
+   browse toolbar documents. */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.context {
+  margin-right: auto;
+  min-width: 0;
+}
+
+.contextTitle {
+  overflow: hidden;
+  color: var(--color-text);
+  font-size: var(--text-md);
+  font-stretch: var(--wdth-title);
+  font-weight: var(--weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contextMeta {
+  font-family: var(--font-mono);
+  font-size: var(--mono-md);
+  letter-spacing: var(--track-mono);
+  color: var(--color-text-muted);
+}
+
+.searchWrap {
+  position: relative;
+  flex: 0 1 264px;
+  min-width: 170px;
+}
+
+.searchIcon {
+  position: absolute;
+  top: 50%;
+  left: var(--space-sm);
+  display: inline-flex;
+  color: var(--color-text-muted);
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+/* The lead-in is exactly one --control-height square, so the icon is
+   optically centred in it at both 36px and the coarse-pointer 44px. */
+.searchInput {
+  width: 100%;
+  min-height: var(--control-height);
+  padding: 0 var(--space-sm) 0 var(--control-height);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.resetScope {
+  min-height: var(--control-height);
+  padding: 0 var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: none;
+  color: var(--color-text-secondary);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.resetScope:hover {
+  border-color: var(--color-border-strong);
+  color: var(--color-text);
+}
+
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+
+.grid {
+  --advanced-value-track-min: 132px;
+
+  min-width: 430px;
+}
+
+.headRow {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(var(--advanced-value-track-min), 204px) 74px;
+  gap: var(--space-md);
+  align-items: center;
+  padding: var(--space-xs) var(--space-md);
+  border-bottom: 1px solid var(--color-border-subtle);
+  background: var(--color-bg-raised);
+  font-family: var(--font-mono);
+  font-size: var(--mono-md);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--track-mono-wide);
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.headState {
+  text-align: right;
+}
+
+/* --fill-4 IS rgb(255 255 255 / 5%) — the prototype's row hairline sits one
+   step BELOW --color-border-subtle (7%) and the border tiers have no 5%
+   entry, so the fill token supplies the exact value rather than a new one
+   being invented (UD-6). */
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(var(--advanced-value-track-min), 204px) 74px;
+  gap: var(--space-md);
+  align-items: center;
+  min-height: 56px;
+  padding: 0 var(--space-md);
+  border-bottom: 1px solid var(--fill-4);
+  cursor: pointer;
+}
+
+.row:hover {
+  background: var(--fill-2);
+}
+
+.row[data-selected="true"] {
+  background: color-mix(in srgb, var(--color-accent) 7%, transparent);
+  box-shadow: inset 2px 0 0 var(--color-accent);
+}
+
+/* INSET ring: rows live inside an overflow:auto pane, where an outset
+   focus ring is clipped at the edges (the ZoneControls scroll-strip
+   precedent). Authored from --color-focus, same as globals.css's own. */
+.row:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--color-focus);
+}
+
+.row[data-selected="true"]:focus-visible {
+  box-shadow:
+    inset 2px 0 0 var(--color-accent),
+    inset 0 0 0 2px var(--color-focus);
+}
+
+.cellKey {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xs);
+  min-width: 0;
+}
+
+.keyLine {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+}
+
+/* UD-20f: the dimmed prefix ships as the handoff instructs — the subtle
+   tier itself, no opacity re-expression. Lawful under LD-14 because this
+   rule sets no --mono-* size: the key line is --text-sm (13px), on the
+   --text-* scale and above the --text-xs floor. */
+.keyPrefix {
+  flex-shrink: 0;
+  color: var(--color-text-subtle);
+}
+
+.keyLeaf {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--color-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.blurb {
+  overflow: hidden;
+  max-width: 100%;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cellValue {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-width: 0;
+}
+
+.switch {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  min-height: var(--control-height);
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+/* UD-5 / P2.10: two STACKED track layers crossfaded on opacity, never a
+   background-color transition (which is not a compositor-only property).
+   The off state is the base; the on state fades in over it. */
+.track {
+  position: relative;
+  display: block;
+  width: 38px;
+  height: 22px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--fill-5);
+}
+
+.trackOn {
+  position: absolute;
+  inset: -1px;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 50%, transparent);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--color-accent) 28%, transparent);
+  opacity: 0;
+  transition: opacity var(--motion-fast) var(--ease-out);
+}
+
+.track[data-on="true"] .trackOn {
+  opacity: 1;
+}
+
+.thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-full);
+  background: var(--color-text-muted);
+  transition: transform var(--motion-fast) var(--ease-out);
+}
+
+.thumbOn {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  opacity: 0;
+  transition: opacity var(--motion-fast) var(--ease-out);
+}
+
+.track[data-on="true"] .thumb {
+  transform: translateX(16px);
+}
+
+.track[data-on="true"] .thumbOn {
+  opacity: 1;
+}
+
+.switchText {
+  min-width: 26px;
+  font-family: var(--font-mono);
+  font-size: var(--mono-lg);
+  letter-spacing: var(--track-mono);
+  color: var(--color-text-muted);
+}
+
+.inputWrap {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-3xs);
+  min-width: 0;
+}
+
+.numberInput,
+.textInput {
+  min-height: var(--control-height);
+  padding: 0 var(--space-xs);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+.numberInput {
+  width: 96px;
+}
+
+.textInput {
+  width: 100%;
+  min-width: 0;
+}
+
+.numberInput[aria-invalid="true"],
+.textInput[aria-invalid="true"] {
+  border-color: color-mix(in srgb, var(--color-danger) 55%, transparent);
+}
+
+.inlineError {
+  color: var(--color-danger);
+  font-size: var(--text-xs);
+}
+
+.summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  max-width: 100%;
+  min-height: var(--control-height);
+  padding: 0 var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.summary:hover {
+  border-color: var(--color-border-strong);
+  color: var(--color-text);
+}
+
+.summaryText {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.summaryChevron {
+  margin-left: auto;
+  opacity: 0.7;
+}
+
+.cellState {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2xs);
+}
+
+.rsPill {
+  padding: var(--space-3xs) var(--space-xs);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 32%, transparent);
+  border-radius: var(--radius-pill);
+  color: var(--color-warning);
+  font-family: var(--font-mono);
+  font-size: var(--mono-md);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--track-mono);
+}
+
+/* Local visually-hidden: the three State glyphs carried `title` only in the
+   prototype (D-5 gap A10), which is unreliable for AT and unreachable on
+   touch. The pill's real label is text; only the "RS" abbreviation is
+   decorative. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.modDot {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+}
+
+.lockGlyph {
+  display: inline-flex;
+  color: var(--color-text-muted);
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-2xl) var(--space-lg);
+}
+
+.emptyTitle {
+  font-family: var(--font-mono);
+  font-size: var(--mono-lg);
+  letter-spacing: var(--track-mono-wide);
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.emptyHint {
+  margin: 0;
+  max-width: 44ch;
+  color: var(--color-text-subtle);
+  font-size: var(--text-sm);
+  text-align: center;
+}

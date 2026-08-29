@@ -1,0 +1,129 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* UIFIX-2026-08-29 Lane K — the 230px scope rail.
+
+   UD-21(ii): the rail item's `border-radius: 12px` is a LITERAL, and it is
+   legal only here — apps/web/.stylelintrc.json carries an `overrides` entry
+   scoped to the CSS in this directory that admits exactly this one extra
+   value. It is prototype-exact and deliberately NOT snapped to
+   --radius-sm (10px) or --radius-md (14px); a nav row at 10 reads as a
+   chip and at 14 as a card. Recorded as a documented exception, not a
+   general 12px allowance. */
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  width: 230px;
+  flex-shrink: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: var(--space-3xs);
+  scrollbar-width: thin;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xs);
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  width: 100%;
+  min-height: var(--control-height);
+  padding: 0 var(--space-sm);
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: none;
+  color: var(--color-text-secondary);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  text-align: left;
+  cursor: pointer;
+}
+
+.item:hover {
+  background: var(--fill-4);
+}
+
+.item[aria-checked="true"] {
+  background: var(--color-accent-tint);
+  color: var(--color-accent);
+  font-weight: var(--weight-semibold);
+}
+
+/* A category with zero editable keys — its count renders the word "env". */
+.item[data-dimmed="true"] {
+  opacity: 0.55;
+}
+
+.itemLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modDot {
+  width: 5px;
+  height: 5px;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+}
+
+/* --color-text-muted, not subtle: a count is a glanced FACT (UD-15's
+   amended contrast law) and the mono scale bans subtle outright (LD-14). */
+.itemCount {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--mono-md);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--track-mono);
+  color: var(--color-text-muted);
+}
+
+.item[aria-checked="true"] .itemCount {
+  color: inherit;
+}
+
+.divider {
+  height: 1px;
+  margin: var(--space-xs) var(--space-sm);
+  background: var(--color-border-subtle);
+}
+
+.eyebrow {
+  padding: var(--space-2xs) var(--space-sm) var(--space-3xs);
+  font-family: var(--font-mono);
+  font-size: var(--mono-md);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--track-mono-wide);
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+/* Sans at --text-xs — the one tier where --color-text-subtle is still
+   lawful (LD-14: --text-* scale, --text-xs or above). */
+.footnote {
+  margin: var(--space-xs) var(--space-sm) 0;
+  color: var(--color-text-subtle);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+}
+
+/* LD-21 (rc.6): a complete axis reset. Below the phone breakpoint the work
+   area stacks, so the rail is a full-width, height-capped strip above the
+   table rather than a 230px column beside it. Touch sizing is NOT set here
+   — --control-height already swaps to 44px on a coarse pointer (tokens.css),
+   which is the correct axis for a hit target; viewport width is not. */
+@media (width <= 767.98px) {
+  .rail {
+    width: 100%;
+    max-height: 240px;
+    flex-shrink: 1;
+    padding-right: 0;
+  }
+}
