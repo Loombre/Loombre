@@ -6,13 +6,19 @@
   margin-bottom: var(--space-md);
 }
 
+/* M3 (UIFIX, 2026-08-29): a panel title is a HEADING, not a mono label —
+   sans at --text-lg/semibold in full-strength --color-text, matching
+   JobsPanel .title (which already conformed). The mono-uppercase-tracked
+   treatment belongs to eyebrow/label runs, not to the heading that names
+   the panel. */
 .title {
   margin: 0;
-  font-family: var(--font-mono);
-  font-size: var(--mono-lg);
-  text-transform: uppercase;
-  letter-spacing: var(--track-mono-wide);
-  color: var(--color-text-muted);
+  font-family: var(--font-sans);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--color-text);
 }
 
 .list {
@@ -81,11 +87,14 @@
   letter-spacing: 0.04em;
 }
 
+/* M4 (UIFIX, UD-15): glanceable facts read at --color-text-muted; the old
+   contrast law's subtle-tier exception is superseded by the 2026-08-29
+   audit. */
 .meta {
   display: flex;
   gap: var(--space-xs);
   font-size: var(--text-xs);
-  color: var(--color-text-subtle);
+  color: var(--color-text-muted);
 }
 
 /* S3 fix (Wave-3 fidelity audit): the WHY band is warning-amber, not

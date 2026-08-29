@@ -11,20 +11,27 @@
   gap: var(--space-md);
 }
 
-/* Fix (W3 fidelity audit, STATE.md "the undefined --border-subtle token is
-   FX4's"): --border-subtle was never defined anywhere in tokens.css (the
-   real token is --color-border-subtle) — the var() fallback silently
-   always won, so this rule always rendered --border/var(--color-border)
-   regardless of the first argument. Also gives the card the dc's own
-   translucent-fill chrome treatment (dc's health-card literal:
-   `border-radius:14px` = --radius-md; a translucent surface, not opaque
-   --color-surface). */
+/* Fix (W3 fidelity audit; STATE.md records it as FX4, the undefined
+   hairline-border token): the old fallback pair named a custom property
+   that tokens.css never defined, so the var() fallback silently always won
+   and this rule rendered --border/var(--color-border) regardless of its
+   first argument. --color-border-subtle is the real token and is named
+   directly. M1 (UIFIX, 2026-08-29) retired the last three fallback pairs
+   app-wide (VirtualList .row, FixMatch .candidateRow, ui/Chip .chip), so
+   the dead spelling now appears nowhere in apps/web/src. Also gives the
+   card the dc's own translucent-fill chrome treatment: a translucent
+   surface, not opaque --color-surface.
+
+   B4 (UIFIX, UD-8): the radius is --radius-lg. This supersedes the dc
+   health-card literal `border-radius:14px` = --radius-md that this comment
+   used to cite as settled — under UD-8 a CARD is --radius-lg and
+   --radius-md is the TILE tier, so the literal loses to the law. */
 .card {
   display: flex;
   flex-direction: column;
   gap: var(--space-xs);
   padding: var(--space-md);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   background: var(--fill-1);
   border: 1px solid var(--color-border-subtle);
 }

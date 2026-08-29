@@ -11,9 +11,15 @@
   color: var(--muted);
 }
 
+/* M2 (UIFIX, 2026-08-29): info renders warning-amber, not the focus accent.
+   --color-focus is the focus-ring colour and carries no severity meaning;
+   painting a status tone with it made "info" read as an accent highlight.
+   Same color-mix recipe as the other tones. Info and warning are now
+   near-identical (18% vs the 20% below) — that is the ruled outcome, not an
+   oversight: no third value was invented for the difference. */
 .pill[data-tone="info"] {
-  background: color-mix(in srgb, var(--color-focus) 18%, transparent);
-  color: var(--color-focus);
+  background: color-mix(in srgb, var(--color-warning) 18%, transparent);
+  color: var(--color-warning);
 }
 
 .pill[data-tone="success"] {

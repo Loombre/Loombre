@@ -61,6 +61,11 @@
   overflow: hidden;
 }
 
+/* M3 (UIFIX, 2026-08-29): the summary names its collapsible panel, so it is
+   a HEADING — sans at --text-lg/semibold in full-strength --color-text,
+   the same treatment StreamsPanel .title and JobsPanel .title carry. The
+   mono-uppercase-tracked run above (.statusLine) stays mono: that one is a
+   machine-fact readout, not a heading. */
 .collapsibleSummary {
   display: flex;
   align-items: center;
@@ -68,11 +73,12 @@
   padding: var(--space-md);
   cursor: pointer;
   list-style: none;
-  font-family: var(--font-mono);
-  font-size: var(--mono-lg);
-  text-transform: uppercase;
-  letter-spacing: var(--track-mono-wide);
-  color: var(--color-text-muted);
+  font-family: var(--font-sans);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--color-text);
 }
 
 .collapsibleSummary::-webkit-details-marker {
