@@ -30,9 +30,20 @@
 // live region, not one that appears fresh together with its content.
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Button } from "./Button.js";
 import styles from "./Toast.module.css";
 
 export type ToastVariant = "accent" | "warning" | "danger";
+
+/** UD-20c (UIFIX-2026-08-29, Lane K): an ADDITIVE optional action slot.
+ *  Settings › Advanced autosaves on change and offers the correction after
+ *  the fact — "N settings reset to default · Undo" — which needs a real
+ *  control inside the toast rather than a second banner. Existing callers
+ *  pass no `action` and are byte-identical to before. */
+export interface ToastAction {
+  label: string;
+  onAction: () => void;
+}
 
 export interface ToastOptions {
   /** Dot color. "accent" (default) follows the user's chosen accent color
@@ -44,6 +55,10 @@ export interface ToastOptions {
    *  the rare flow that legitimately needs a longer read time — most
    *  callers should omit this and get the README's exact 2.6s. */
   durationMs?: number;
+  /** Optional trailing control (UD-20c). Invoking it dismisses the toast
+   *  first, so the action never fires twice and the live region empties the
+   *  moment the correction is taken. */
+  action?: ToastAction;
 }
 
 export interface ToastContextValue {
@@ -60,6 +75,7 @@ interface ToastState {
   key: number;
   message: string;
   variant: ToastVariant;
+  action: ToastAction | null;
 }
 
 export function ToastProvider({ children }: { children: ReactNode }): React.JSX.Element {
@@ -83,7 +99,12 @@ export function ToastProvider({ children }: { children: ReactNode }): React.JSX.
     (message: string, options?: ToastOptions) => {
       clearTimer();
       nextKeyRef.current += 1;
-      setState({ key: nextKeyRef.current, message, variant: options?.variant ?? "accent" });
+      setState({
+        key: nextKeyRef.current,
+        message,
+        variant: options?.variant ?? "accent",
+        action: options?.action ?? null,
+      });
       const durationMs = options?.durationMs ?? DEFAULT_DURATION_MS;
       timerRef.current = setTimeout(() => {
         timerRef.current = null;
@@ -113,6 +134,26 @@ export function ToastProvider({ children }: { children: ReactNode }): React.JSX.
           <span key={state?.key ?? 0} className={styles.message}>
             {state?.message ?? ""}
           </span>
+          {/* UD-20c: the viewport is `pointer-events: none` (a toast is a
+              passive notification), so the ONE control that is not passive
+              re-enables them on itself. Inline because that is a functional
+              property of this element, not a look — Toast.module.css stays
+              exactly as it was, and a toast with no action still has no
+              clickable surface at all. */}
+          {state?.action && (
+            <Button
+              type="button"
+              variant="ghost"
+              style={{ pointerEvents: "auto" }}
+              onClick={() => {
+                const run = state.action?.onAction;
+                dismiss();
+                run?.();
+              }}
+            >
+              {state.action.label}
+            </Button>
+          )}
         </div>
       </div>
     </ToastContext.Provider>

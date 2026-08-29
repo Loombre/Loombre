@@ -46,8 +46,14 @@ type AdminSettingValue = components["schemas"]["AdminSettingValue"];
  *  here rather than in the pure lib module since it's UI copy, not a
  *  decision rule; falls back to the raw category string for a category
  *  this map hasn't been updated for yet (never blocks rendering). Exported
- *  so RegistryFilterBar's category pills and this card's own header always
- *  read the SAME label for a given category — never a second copy. */
+ *  so every surface that names a category reads the SAME label for it —
+ *  never a second copy. Consumers as of 2026-08-29 (UIFIX Lane K): this
+ *  card's own header, and the Advanced workbench's scope rail + detail
+ *  panel + category-label search leg
+ *  (components/settings/advanced/AdvancedWorkbench.tsx). The former
+ *  consumer named here, RegistryFilterBar's category pills, no longer
+ *  exists — that component was deleted with the Settings › Advanced
+ *  rework, which replaced its pill row with a rail. */
 export const CATEGORY_LABELS: Record<string, string> = {
   transcode: "Transcode",
   scanner: "Scanner",

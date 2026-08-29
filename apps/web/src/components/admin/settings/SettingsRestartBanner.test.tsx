@@ -66,4 +66,37 @@ describe("SettingsRestartBanner", () => {
     expect(view.container.textContent).toContain("Restart required to fully apply");
     view.unmount();
   });
+
+  // UIFIX-2026-08-29 Lane K: an ADDITIVE actions slot. Settings › Advanced
+  // supplies its own controls there; every other consumer keeps the static
+  // pointer-link untouched, which is what these two cases pin.
+  describe("actions slot", () => {
+    it("keeps the static pointer link for a caller that passes no actions", () => {
+      mockValue = { bannerVisible: false };
+      const view = render(["mail.smtpHost"]);
+      const link = view.container.querySelector("a");
+      expect(link?.getAttribute("href")).toBe("/settings/server");
+      expect(view.container.querySelector("button")).toBeNull();
+      view.unmount();
+    });
+
+    it("replaces that link with the caller's own controls when actions are given", () => {
+      mockValue = { bannerVisible: false };
+      const view = renderIntoBody(
+        <SettingsRestartBanner
+          keys={["network.trustProxy"]}
+          actions={
+            <button type="button" onClick={() => {}}>
+              Show key
+            </button>
+          }
+        />,
+      );
+      expect(view.container.querySelector("a")).toBeNull();
+      expect(view.container.querySelector("button")?.textContent).toBe("Show key");
+      // The keys themselves still render exactly as handed over.
+      expect(view.container.textContent).toContain("network.trustProxy");
+      view.unmount();
+    });
+  });
 });

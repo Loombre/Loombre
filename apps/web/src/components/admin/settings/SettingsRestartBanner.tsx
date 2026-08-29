@@ -19,25 +19,46 @@
 // notice clears — pure precedence, no change to the restartPendingKeys
 // logic below.
 //
-// Registry reality (review R-F6, adjudicated 2026-08-04): TODAY this
-// banner cannot render from real state — lane S3's hot-reload migration
-// deliberately left ZERO ui-scoped requiresRestart:true keys (every UI
-// setting hot-applies; every restart-only knob is env-only, which PUT
-// 404s and which resets its own boot snapshot by restarting). The
-// mechanism stays, pinned by settings.service.spec.ts via a synthetic
-// registry, for the first future key that genuinely cannot hot-apply —
-// future-proofing, not dead weight. The copy that used to PROMISE this
-// banner as a current fact was corrected instead (ServerPowerCard
-// caption, admin-guide/server-power.md, the generated settings-reference
-// legend, all 2026-08-04).
+// Registry reality — CORRECTED 2026-08-29 (UIFIX-2026-08-29 Lane K,
+// discovery D-4 anomaly 1; supersedes the review R-F6 note of 2026-08-04
+// that used to stand here). That note asserted this banner "cannot render
+// from real state — lane S3's hot-reload migration deliberately left ZERO
+// ui-scoped requiresRestart:true keys". That is FALSE in the current tree:
+// SEVEN ui-scope keys are requiresRestart: true — remote.wireguardPort,
+// remote.subnet, tls.mode, tls.acmeDomains, tls.acmeChallengeType,
+// tls.acmeTosAgreed (RG12, packages/shared/src/settings-registry.ts:1085)
+// and network.trustProxy — each writable via PUT /admin/settings/{key} and
+// each therefore able to push its key into restartPendingKeys. The banner
+// is live-reachable today. Behaviour was always correct; only the comment
+// was stale.
+//
+// N.B. the server's rule is differs-from-BOOT-SNAPSHOT
+// (packages/shared/src/settings-resolve.ts), NOT differs-from-default —
+// this component still renders exactly the keys it is handed and computes
+// nothing.
+//
+// UD-20c-adjacent (UIFIX Lane K): an OPTIONAL `actions` slot. The Advanced
+// workbench supplies its own pair of controls there ("Show key", which
+// selects the pending key in the table, and a confirmed "Restart now" that
+// POSTs /system/restart — the operation ServerPowerCard already calls).
+// Callers that pass nothing — MailSection today — keep the static
+// pointer-link exactly as before, and this component still mutates nothing
+// itself either way.
 
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { AlertTriangle } from "lucide-react";
 import { Icon } from "../../icon/Icon.js";
 import { useSystemNoticeOptional } from "../../notices/SystemNoticeProvider.js";
 import styles from "./SettingsRestartBanner.module.css";
 
-export function SettingsRestartBanner({ keys }: { keys: string[] }): React.JSX.Element | null {
+export interface SettingsRestartBannerProps {
+  keys: string[];
+  /** Replaces the static "Restart from Settings → Server" link when given. */
+  actions?: ReactNode;
+}
+
+export function SettingsRestartBanner({ keys, actions }: SettingsRestartBannerProps): React.JSX.Element | null {
   // Optional (non-throwing): see useSystemNoticeOptional's own header —
   // this component is consumed by settings sections outside this lane's
   // file ownership, so it degrades to "no active notice" rather than
@@ -52,12 +73,16 @@ export function SettingsRestartBanner({ keys }: { keys: string[] }): React.JSX.E
           Restart required to fully apply: <span className={styles.keys}>{keys.join(", ")}</span>
         </div>
         <div className={styles.caption}>SAVED NOW · OLD VALUE STAYS IN USE UNTIL RESTART · NOTHING PLAYING IS EVER INTERRUPTED</div>
-        {/* Static pointer only — the actual action (confirm + POST
-            /system/restart) lives in the Server tab's Power card; this
-            banner still never computes or mutates anything itself. */}
-        <Link className={styles.restartLink} href="/settings/server">
-          Restart from Settings → Server
-        </Link>
+        {actions !== undefined ? (
+          <div className={styles.actions}>{actions}</div>
+        ) : (
+          /* Static pointer only — the actual action (confirm + POST
+             /system/restart) lives in the Server tab's Power card; this
+             banner still never computes or mutates anything itself. */
+          <Link className={styles.restartLink} href="/settings/server">
+            Restart from Settings → Server
+          </Link>
+        )}
       </div>
     </div>
   );

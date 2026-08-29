@@ -42,3 +42,13 @@
   text-decoration: underline;
   width: fit-content;
 }
+
+/* UIFIX-2026-08-29 Lane K: the optional `actions` slot's row. Only rendered
+   when a caller supplies controls (the Advanced workbench does); every
+   other consumer still gets .restartLink and never sees this rule. */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin-top: var(--space-2xs);
+}

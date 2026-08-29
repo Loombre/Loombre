@@ -1,0 +1,103 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* UIFIX-2026-08-29 Lane K — the Settings › Advanced page shell.
+
+   GUTTER CANCEL (the one coupling in this file, deliberate and measured).
+   AppShell's .main already pads var(--space-xl) on every side, PLUS the
+   fixed chrome's clearance (210px/76px sidebar, 64px topbar). UD-20d fixes
+   this page's own work-area padding at var(--space-lg) var(--space-xl)
+   var(--space-xl) and its inline-panel threshold at 1150px measured on the
+   work area's INNER width. Stacking both paddings would (a) double the
+   32px gutter and (b) cost 64px of measured width — enough to push a
+   1440px viewport (1440 - 210 sidebar - 64 - 64 = 1102) BELOW 1150, so the
+   detail pane would open as a drawer on one of the commonest desktop
+   widths. Cancelling exactly the --space-xl component of .main's padding
+   with a matching negative margin leaves the sidebar/topbar clearance
+   untouched and restores the prototype's single-gutter geometry, so the
+   1150 threshold behaves as UD-20d specifies (1440 - 210 - 64 = 1166).
+   Recorded in reports/state/wave1/noted-K.md; if AppShell's padding ever
+   changes, this margin changes with it. */
+
+.screen {
+  display: flex;
+  flex-direction: column;
+  margin: calc(-1 * var(--space-xl));
+
+  /* 64px is the desktop topbar height — the same literal AppShell.module.css
+     repeats rather than tokenising (see its own note). Bounds the panes so
+     they scroll internally instead of growing the page. */
+  min-height: calc(100vh - 64px);
+}
+
+.stateBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-lg) var(--space-xl) var(--space-xl);
+}
+
+/* AUD-A3b-001: errors render danger, not accent. */
+.errorBanner {
+  margin: 0;
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-danger) 14%, transparent);
+  color: var(--color-danger);
+  font-size: var(--text-sm);
+}
+
+/* The banner renders null when nothing is pending, so this wrapper must not
+   contribute space of its own in that case — hence `display: contents`
+   rather than a padded box, with the spacing carried by the banner itself. */
+.bannerSlot {
+  display: contents;
+}
+
+.bannerSlot > * {
+  margin: var(--space-md) var(--space-xl) 0;
+  flex-shrink: 0;
+}
+
+.workArea {
+  display: flex;
+  flex: 1;
+  align-items: stretch;
+  gap: var(--space-lg);
+  min-height: 0;
+  padding: var(--space-lg) var(--space-xl) var(--space-xl);
+}
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 64;
+  background: var(--color-overlay);
+}
+
+/* LD-21 (rc.6): a complete axis reset, not a partial override. Three panes
+   cannot coexist below the phone breakpoint — the rail unstacks above the
+   table, the work area's own gutter drops to the mobile shell's, and the
+   viewport-height floor is released so the page scrolls normally. Column
+   direction is explicitly NOWRAP: a WRAPPING column container derives each
+   line's cross size from its content, so align-items: stretch would size
+   the panes to their content width instead of the container's (the
+   restricted browse toolbar's own documented failure). */
+@media (width <= 767.98px) {
+  .screen {
+    margin: calc(-1 * var(--space-md));
+    min-height: 0;
+  }
+
+  .stateBlock {
+    padding: var(--space-md);
+  }
+
+  .bannerSlot > * {
+    margin: var(--space-md) var(--space-md) 0;
+  }
+
+  .workArea {
+    flex-flow: column nowrap;
+    padding: var(--space-md);
+  }
+}
