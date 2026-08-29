@@ -271,9 +271,14 @@ export function Sidebar({
         <Avatar label={name} size={32} />
         <div className={styles.userInfo}>
           <span className={styles.userName}>{name}</span>
+          {/* A4 (run UIFIX-2026-08-29): the literal aria-hidden middot that
+              used to sit between the role and Sign out is gone. A separator
+              joins two runs of the same kind of thing; once Sign out is a
+              real bordered button (Sidebar.module.css .signOut) the role
+              label and the control are visibly different kinds, and a
+              punctuation mark between them only added noise. */}
           <span className={styles.userMeta}>
             <span>{roleLabel}</span>
-            <span aria-hidden="true">·</span>
             <button type="button" className={styles.signOut} onClick={onSignOut}>
               Sign out
             </button>

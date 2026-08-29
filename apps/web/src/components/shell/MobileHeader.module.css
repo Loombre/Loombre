@@ -75,6 +75,13 @@
   padding-top: var(--space-2xs);
 }
 
+/* C2 (run UIFIX-2026-08-29): `text-wrap: balance`, not `pretty`. This is a
+   large-title header on the narrowest viewport the app ships to, so a
+   two-word title routinely wraps with one word stranded on line two.
+   `pretty` only protects the LAST line from an orphan; `balance` evens the
+   line lengths across the whole (short) heading, which is the actual defect
+   here. Not a --leading-display consumer — that token's 1 -> 1.05 amendment
+   does not reach this rule; this half of C2 is the wrap fix alone. */
 .title {
   margin: 0;
   font-family: var(--font-sans);
@@ -84,7 +91,7 @@
   letter-spacing: -0.02em;
   line-height: var(--leading-tight);
   color: var(--text);
-  text-wrap: pretty;
+  text-wrap: balance;
 }
 
 .subtitle {

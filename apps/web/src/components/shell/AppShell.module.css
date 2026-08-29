@@ -63,27 +63,41 @@
   }
 }
 
-/* max-width (d4-w6, browser-shell-browse-F8-edge): the content column stops
-   growing at the display width Home's fold count is derived from. Home
-   excludes the Recently Added rail's VISIBLE FIRST PAGE from the featured
-   pool so the banner cannot duplicate a card in its own fold — a count
-   computed from a 1920px display (lib/home-rail-geometry.ts). Without a cap
-   here that count was a stale literal on anything wider: QA measured 13
-   cards on screen at 2400x900 with rail indices 10/11/12 still eligible
-   candidates. box-sizing is border-box (globals.css), so this INCLUDES the
-   padding that clears the sidebar and the two gutters, leaving the 1646px
-   content column that count assumes; lib/home-rail-geometry.test.ts reads
-   this rule and fails if the two ever disagree.
-   Deliberately NOT centred (`margin-inline: auto`): .main's left padding
-   exists to clear the position:fixed sidebar, and centring the padded box
-   would open a gap between the sidebar and the content it belongs to. The
-   column simply stops widening — every display up to 1920px is unchanged. */
+/* The cap that keeps Home's fold count honest (d4-w6,
+   browser-shell-browse-F8-edge). Home excludes the Recently Added rail's
+   VISIBLE FIRST PAGE from the featured pool so the banner cannot duplicate
+   a card in its own fold, and that count is derived from a fixed content
+   width (lib/home-rail-geometry.ts). Uncapped, the count was a stale
+   literal on anything wide: QA measured 13 cards on screen at 2400x900 with
+   rail indices 10/11/12 all still eligible candidates.
+
+   E3 / UD-18 (run UIFIX-2026-08-29): the cap MOVED off .main and onto the
+   content it wraps, and the "deliberately NOT centred" note that used to
+   stand here is superseded. Capping the padded box at 1920px did stop the
+   column growing, but it also parked the whole app against the left edge of
+   any wider display — 640px of dead gutter on one side at 2560px, with
+   nothing on the other. .main now spans the viewport (its padding still
+   clears the fixed sidebar and topbar, so nothing slides under them) and
+   `.main > *` carries the 1646px cap plus `margin-inline: auto`, which
+   centres the column in the space that is left: 320px of symmetric breathing
+   room at 2560px instead of 640px of nothing.
+   1646px is the same column the old shape produced (1920 − 210 sidebar − 2 ×
+   32 gutter, box-sizing: border-box from globals.css) — it is now stated
+   once, here and as SHELL_CONTENT_MAX_WIDTH_PX, instead of being arithmetic
+   two files had to agree on. lib/home-rail-geometry.test.ts reads THIS rule
+   and fails if the two ever disagree, and also fails if a max-width comes
+   back onto .main itself. Every display up to 1920px is unchanged. */
 .main {
   padding: var(--space-xl);
   padding-left: calc(210px + var(--space-xl));
   padding-top: calc(64px + var(--space-xl));
-  max-width: 1920px;
+  max-width: none;
   overflow-x: hidden;
+}
+
+.main > * {
+  max-width: 1646px;
+  margin-inline: auto;
 }
 
 /* NG9/BannerRegion: when a warning/critical notice is showing,
