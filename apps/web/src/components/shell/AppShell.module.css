@@ -47,7 +47,7 @@
   z-index: 30;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: var(--space-sm);
   padding: 0 var(--space-lg);
   background: color-mix(in srgb, var(--color-bg) 85%, transparent);
@@ -60,6 +60,112 @@
 ) {
   .topbar {
     background: var(--color-bg);
+  }
+}
+
+/* A1 (run UIFIX-2026-08-29, HIGH — "the topbar is 658px of nothing"): the
+   bar was `justify-content: flex-end` around ONE right-aligned cluster, so
+   at 1280px roughly 658px of it — the entire left three-quarters — was
+   empty, and the search field read as an afterthought pinned to the corner.
+   Three zones now, the same shape PlayerControls.module.css uses to centre
+   its transport cluster (that file's own LD-12(a) note explains the
+   mechanism): both flanks are `flex: 1 1 0%`, so they grow to EQUAL widths
+   whatever they hold, and the equal split is what puts QuickSearch's field
+   dead centre — not a hand-tuned margin that would drift the moment either
+   flank's content changed.
+
+   `min-width: 0` on both flanks is load-bearing, not boilerplate: a flex
+   item's automatic minimum size is its CONTENT's min-content width, so
+   without it a long route label ("Advanced Server") would refuse to shrink,
+   make the left flank wider than the right, and push the field off centre.
+   With it the flanks stay equal and the label ellipses instead (below). */
+.topbarLeft {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.topbarRight {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+}
+
+/* ...and the flank's own children must NOT pay for that `min-width: 0`.
+   Measured at 768px (the NARROWEST width this bar is visible at — below
+   767.98px MobileHeader takes over): the equal flank share is 90px while
+   the lock + avatar buttons need 92px, so with shrink left on, the lock
+   button squashed to 38x40 — a circular control gone oval. Shrink off, the
+   two keep their geometry and the 2px difference lands in the 12px gap
+   beside the field, invisible. The LEFT flank deliberately keeps shrink on:
+   its route label is supposed to ellipse rather than push the field off
+   centre. */
+.topbarRight > * {
+  flex-shrink: 0;
+}
+
+/* The current route's name (Topbar.tsx resolves it from usePathname()).
+   Same eyebrow recipe as the sidebar's own chrome fact, .tagline
+   (Sidebar.module.css): mono, --mono-md, --track-mono, muted — the UD-7
+   "glanced at" tier, which is its floor; a chrome label nobody reads as a
+   sentence has no business below it. --track-mono, NOT --track-mono-wide:
+   that one is reserved for all-caps SECTION headers (tokens.css), and this
+   is a location fact in the chrome, not a section eyebrow. */
+.topbarRoute {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--mono-md);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--track-mono);
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+/* Live scan status — the topbar half of A1's left flank, reading the same
+   shared store as the sidebar's Dashboard pill (use-scan-status.ts). Same
+   accent-text-plus-pulsing-dot idiom as Sidebar.module.css .scanBadge
+   (deliberately NOT a filled pill — Wave-3 fidelity audit), stated in
+   tokens rather than that rule's pre-sweep 9px/0.08em literals: --mono-md is
+   the UD-7 floor for a glanced status chip and --track-mono its tracking, so
+   this rule adds nothing to W2-B's sub-12px literal sweep. */
+.topbarScan {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: var(--mono-md);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--track-mono);
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
+
+/* F3/UD-17: the ONE app-wide live-indicator rhythm (loombre-live-pulse,
+   app/globals.css) on --pulse-duration, compositor-only (opacity), so this
+   dot beats in time with the sidebar's rather than against it. `global()`
+   is mandatory — CSS Modules localizes a bare keyframe name here and the
+   animation silently never runs (H-B1, Wave-1 integration). */
+.topbarScanDot {
+  width: 5px;
+  height: 5px;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  animation: global(loombre-live-pulse) var(--pulse-duration) var(--ease-out) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .topbarScanDot {
+    animation: none;
   }
 }
 

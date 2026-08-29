@@ -28,19 +28,24 @@
 // It renders on the "Dashboard" nav item (admin-only group) as a small
 // amber SCAN pill while at least one scan job is active, tracked by jobId
 // so overlapping scans across libraries don't clear the badge early.
+// A1 (run UIFIX-2026-08-29): that subscription is no longer PRIVATE to this
+// file — the topbar's new left flank shows the same live status, so the
+// former local `useScanBadge` moved to use-scan-status.ts, where one
+// module-level store serves both consumers off ONE listener pair (see that
+// file). Behaviour here is unchanged, jobId tracking included; only the
+// owner of the subscription moved.
 //
 // Movies/TV Shows shortcut ids: Wave 1 (W1a) lifted the GET /libraries
 // fetch + resolution out to useLibraryShortcuts.ts, called once by
 // ShellNav.tsx and threaded down as props — the mobile tab bar and mobile
 // header need the same two ids, and three components each doing their own
 // fetch would triple the request for no reason. See that hook's header.
-import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { Icon } from "../icon/Icon.js";
 import { Avatar } from "../ui/Card.js";
 import { BlazeMark } from "../brand/BlazeMark.js";
-import { getEventsSocket, type EventEnvelope } from "../../lib/events-socket.js";
+import { useScanStatus } from "./use-scan-status.js";
 import { APP_VERSION } from "../../lib/app-version.js";
 import { formatStoragePoolMeter, useStoragePool } from "../../lib/storage-pool.js";
 import { hasRestrictedZoneEntitlement, useRestrictedZoneCount } from "../../lib/restricted-zone-count.js";
@@ -90,36 +95,6 @@ export interface SidebarProps {
   tvItemCount: number | null;
 }
 
-interface ScanJobPayload {
-  jobId: string;
-}
-
-function useScanBadge(isAdmin: boolean): boolean {
-  const [scanning, setScanning] = useState(false);
-
-  useEffect(() => {
-    if (!isAdmin) return;
-    const socket = getEventsSocket();
-    const active = new Set<string>();
-
-    const unsubStarted = socket.subscribe<ScanJobPayload>("scan.started", (e: EventEnvelope<ScanJobPayload>) => {
-      active.add(e.payload.jobId);
-      setScanning(active.size > 0);
-    });
-    const unsubCompleted = socket.subscribe<ScanJobPayload>("scan.completed", (e: EventEnvelope<ScanJobPayload>) => {
-      active.delete(e.payload.jobId);
-      setScanning(active.size > 0);
-    });
-
-    return () => {
-      unsubStarted();
-      unsubCompleted();
-    };
-  }, [isAdmin]);
-
-  return scanning;
-}
-
 export function Sidebar({
   isAdmin,
   displayName,
@@ -133,7 +108,7 @@ export function Sidebar({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const activeLibraryId = searchParams.get("library");
-  const scanning = useScanBadge(isAdmin);
+  const scanning = useScanStatus(isAdmin);
   const pool = useStoragePool(isAdmin);
   // Watchlist count (Wave 2 lane L3) — DERIVED from the same bounded
   // GET /watchlist page useWatchlistIds() fetches for every consumer (no

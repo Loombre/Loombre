@@ -1,7 +1,20 @@
 /* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* A1 (run UIFIX-2026-08-29): was a rigid `width: 260px`. With the topbar's
+   three-zone shape (AppShell.module.css .topbarLeft/.topbarRight) the field
+   is the bar's primary object, sitting dead centre between two equal
+   flanks, so it gets a real basis to fill: `flex: 0 1 440px` — 440px when
+   the bar has room, allowed to SHRINK (never grow past it, which would turn
+   a search field into a stretched slab on a 2560px display), with
+   `min-width: 0` so that shrink can actually happen instead of the flank
+   arithmetic breaking. The topbar is this component's only mount point
+   today; were it ever rendered outside a flex container, the two flex
+   properties are simply inert and `width: auto` behaves as before. */
 .container {
   position: relative;
-  width: 260px;
+  flex: 0 1 440px;
+  width: auto;
+  min-width: 0;
 }
 
 .field {
@@ -16,11 +29,21 @@
    own backdrop-filter forms a backdrop root, so the popover's blur could
    never sample the page behind it — the 86%-alpha chrome fill let page
    text/posters ghost through sharply under the results (2026-08-27 QA). */
+
+/* A1 (run UIFIX-2026-08-29): was `right: 0; width: 380px` — a popover
+   anchored to the bar's right edge because the field itself used to be
+   pinned there. The field is centred now, so a right-anchored 380px panel
+   would hang off it: the results must follow the FIELD, not the viewport.
+   `left: 0; right: 0; width: auto` makes the popover exactly as wide as the
+   container it is positioned in (this rule's own `position: absolute`
+   resolves against .container's `position: relative`), so the two edges
+   always line up whatever width the flex basis above resolves to. */
 .popover {
   position: absolute;
   top: calc(100% + var(--space-xs));
+  left: 0;
   right: 0;
-  width: 380px;
+  width: auto;
   max-height: 70vh;
   overflow-y: auto;
   background: var(--color-bg-raised);
