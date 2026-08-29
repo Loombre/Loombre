@@ -17,8 +17,11 @@
   color: var(--muted);
 }
 
+/* J4 (UIFIX-2026-08-29): was space-between. ONE footer convention across all
+   13 remote-wizard footers — actions sit together at the trailing edge, so a
+   step body never re-teaches the reader where its buttons live. */
 .actions {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: var(--space-sm);
 }

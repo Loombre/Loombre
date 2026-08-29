@@ -138,7 +138,7 @@ export function AdminStep({ onNext }: AdminStepProps): React.JSX.Element {
 
       {submitError && <div className={styles.error}>{submitError}</div>}
 
-      <div className={styles.actionsEnd}>
+      <div className={styles.actions}>
         <Button type="submit" variant="primary" disabled={submitting}>
           {submitting ? "Creating…" : "Create admin account"}
         </Button>

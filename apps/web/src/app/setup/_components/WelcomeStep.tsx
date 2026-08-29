@@ -117,7 +117,7 @@ export function WelcomeStep({ onNext }: WelcomeStepProps): React.JSX.Element {
         <span className={styles.hint}>Guessed from this page&apos;s address — change it if your server runs elsewhere.</span>
       </label>
       {error && <div className={styles.error}>{error}</div>}
-      <div className={styles.actionsEnd}>
+      <div className={styles.actions}>
         <Button type="submit" variant="primary" disabled={checking}>
           {checking ? "Checking…" : "Get started"}
         </Button>

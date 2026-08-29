@@ -22,6 +22,16 @@
 // header, "Transaction strategy" section) — this step polls status only
 // (queued/active/completed/failed/cancelled) and shows an honest "working"
 // state, never a fake percentage.
+//
+// L3 (UIFIX-2026-08-29): the dropzone is a real drop target. It LOOKED like
+// one — a dashed box captioned as somewhere to drop a file — but carried no
+// drag handlers at all, so a dropped archive hit the document's default
+// handler and the browser NAVIGATED AWAY from the half-finished wizard to
+// render the JSON. The handlers below both fix that (every one of them
+// preventDefault()s, which is what suppresses the navigation) and give the
+// hover a visible state. A dropped file goes through ingestArchive — the
+// exact path the <input> uses — so there is one upload implementation, not
+// two. (Native HTML5 drag, no library: ProviderChainEditor.tsx's precedent.)
 
 import { useEffect, useRef, useState } from "react";
 import { UploadCloud } from "lucide-react";
@@ -48,6 +58,7 @@ export function RestoreStep({ flags, onNext }: RestoreStepProps): React.JSX.Elem
   const [jobId, setJobId] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [dragover, setDragover] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Mirrors `job.status` into a ref so the poll effect below can be keyed
@@ -87,6 +98,13 @@ export function RestoreStep({ flags, onNext }: RestoreStepProps): React.JSX.Elem
   async function handleFileChange(event: React.ChangeEvent<HTMLInputElement>): Promise<void> {
     const file = event.target.files?.[0];
     if (!file) return;
+    await ingestArchive(file);
+  }
+
+  /** The ONE upload path — the file input and the dropzone both land here,
+   *  so a dropped archive is validated, parsed and enqueued identically to a
+   *  browsed one (L3). */
+  async function ingestArchive(file: File): Promise<void> {
     setFileError(null);
     setUploading(true);
     try {
@@ -121,6 +139,35 @@ export function RestoreStep({ flags, onNext }: RestoreStepProps): React.JSX.Elem
     }
   }
 
+  // dragenter AND dragover must both preventDefault: the drop is only
+  // allowed if the LAST dragover over this element was cancelled, and
+  // without that cancellation the browser treats the drop as a navigation
+  // to the dragged file (the bug L3 names). dragleave fires on every child
+  // boundary crossing too, but this dropzone's only child is the <input>,
+  // which sits inside its padding — a leave here really is a leave.
+  function handleDragOver(event: React.DragEvent<HTMLDivElement>): void {
+    if (uploading) return;
+    event.preventDefault();
+    setDragover(true);
+  }
+
+  function handleDragLeave(): void {
+    setDragover(false);
+  }
+
+  function handleDrop(event: React.DragEvent<HTMLDivElement>): void {
+    // preventDefault unconditionally — including while an upload is already
+    // running. Bailing out before it would hand the drop back to the
+    // browser, which navigates away; refusing the file is right, losing the
+    // wizard is not.
+    event.preventDefault();
+    setDragover(false);
+    if (uploading) return;
+    const file = event.dataTransfer?.files?.[0];
+    if (!file) return;
+    void ingestArchive(file);
+  }
+
   const view = deriveRestoreViewState(flags, job);
 
   return (
@@ -139,7 +186,7 @@ export function RestoreStep({ flags, onNext }: RestoreStepProps): React.JSX.Elem
             merging into data you didn&apos;t ask to touch). Go to Admin → Data after finishing
             setup if you still want to restore, on a fresh instance.
           </p>
-          <div className={styles.actionsEnd}>
+          <div className={styles.actions}>
             <Button type="button" variant="primary" onClick={onNext}>
               Continue
             </Button>
@@ -154,7 +201,14 @@ export function RestoreStep({ flags, onNext }: RestoreStepProps): React.JSX.Elem
             this instance is still empty. This step is entirely optional — skip it if you&apos;re
             starting fresh.
           </p>
-          <div className={styles.dropzone}>
+          <div
+            className={styles.dropzone}
+            data-dragover={dragover ? "true" : undefined}
+            onDragEnter={handleDragOver}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
             <input
               ref={fileInputRef}
               type="file"
@@ -184,7 +238,7 @@ export function RestoreStep({ flags, onNext }: RestoreStepProps): React.JSX.Elem
       {view === "succeeded" && (
         <>
           <div className={styles.success}>Restore completed successfully.</div>
-          <div className={styles.actionsEnd}>
+          <div className={styles.actions}>
             <Button type="button" variant="primary" onClick={onNext}>
               Continue
             </Button>
@@ -198,7 +252,7 @@ export function RestoreStep({ flags, onNext }: RestoreStepProps): React.JSX.Elem
             Restore failed{job?.lastError ? `: ${job.lastError}` : "."} You can try again from
             Admin → Data after finishing setup.
           </div>
-          <div className={styles.actionsEnd}>
+          <div className={styles.actions}>
             <Button type="button" variant="primary" onClick={onNext}>
               Continue anyway
             </Button>

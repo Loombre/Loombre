@@ -112,7 +112,7 @@ export function RestrictedStep({ adminPassword, onNext }: RestrictedStepProps): 
             libraries and the per-user opt-in/PIN flow. Off is the default, matching Loombre&apos;s
             policy of never enabling this capability implicitly.
           </p>
-          <div className={styles.actionsEnd}>
+          <div className={styles.actions}>
             <Button type="button" variant="primary" onClick={onNext}>
               Continue
             </Button>
@@ -147,7 +147,7 @@ export function RestrictedStep({ adminPassword, onNext }: RestrictedStepProps): 
             </label>
           )}
           {error && <div className={styles.error}>{error}</div>}
-          <div className={styles.actionsEnd}>
+          <div className={styles.actions}>
             <Button type="submit" variant="primary" disabled={submitting}>
               {submitting ? "Saving…" : "Continue"}
             </Button>

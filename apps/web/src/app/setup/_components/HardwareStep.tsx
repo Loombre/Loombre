@@ -128,7 +128,7 @@ export function HardwareStep({ onNext }: HardwareStepProps): React.JSX.Element {
 
       {pollError && <div className={styles.error}>Could not reach the server for a capability check — retrying automatically.</div>}
 
-      <div className={styles.actionsEnd}>
+      <div className={styles.actions}>
         <Button type="button" variant="primary" onClick={onNext}>
           Continue
         </Button>

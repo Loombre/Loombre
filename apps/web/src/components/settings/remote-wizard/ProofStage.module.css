@@ -5,6 +5,17 @@
   gap: var(--space-lg);
 }
 
+/* J5 (UIFIX-2026-08-29): title and subtitle are one unit, so they are wrapped
+   as one .stage child with their own gap. Previously they were two siblings
+   of .stage and inherited its --space-lg gap, which .subtitle then fought
+   with a negative top margin — a value tuned against a gap it could not see.
+   The wrapper makes the intended 4px pairing a real declaration. */
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+}
+
 .title {
   margin: 0;
   font-size: var(--text-lg);
@@ -12,7 +23,7 @@
 }
 
 .subtitle {
-  margin: calc(var(--space-2xs) * -1) 0 0;
+  margin: 0;
   font-size: var(--text-sm);
   color: var(--muted);
   line-height: var(--leading-normal);
@@ -109,9 +120,12 @@
   flex-wrap: wrap;
 }
 
+/* J4 (UIFIX-2026-08-29): was space-between. ONE footer convention across all
+   13 remote-wizard footers — actions sit together at the trailing edge, so a
+   step body never re-teaches the reader where its buttons live. */
 .actions {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: var(--space-sm);
 }
 

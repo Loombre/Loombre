@@ -11,41 +11,59 @@
   font-weight: var(--weight-semibold);
 }
 
-.steps {
+/* J1/J2 (UIFIX-2026-08-29): this stage used to render its own pill list
+   (.steps/.stepItem/.stepIndex/.stepLabel) INSIDE StageStepper's pill row —
+   two identical progress grammars nested one in the other, with nothing to
+   say which was the outer sequence. StageStepper keeps the pills because it
+   owns the STAGE level; the path's inner sequence is demoted to a different
+   form entirely — mono eyebrow counter + step title + a progress hairline —
+   so the two read as outer and inner instead of as rivals.
+
+   J2: a counter never has to hide its own label, so the old
+   `@media (width <= 767.98px) { .stepLabel { display: none } }` is gone
+   rather than migrated: "STEP 2 OF 4" IS the short form, at every width. */
+.progress {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-sm);
-  list-style: none;
+  flex-direction: column;
+  gap: var(--space-2xs);
+}
+
+/* An all-caps section eyebrow — the one place tokens.css:259-262 assigns
+   --track-mono-wide, at its --mono-md tier (UD-7). --color-text-muted, not
+   -subtle: LD-14 bans the AA-exception tiers on the mono scale outright. */
+.progressCount {
   margin: 0;
-  padding: 0;
-}
-
-.stepItem {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-3xs);
-  padding: var(--space-3xs) var(--space-sm);
-  border-radius: var(--radius-pill);
-  font-size: var(--text-xs);
-  color: var(--muted);
-  background: var(--fill-1);
-  border: 1px solid var(--color-border-subtle);
-}
-
-.stepItem[data-state="current"] {
-  color: var(--color-accent-text);
-  background: var(--color-accent);
-  border-color: var(--color-accent);
-}
-
-.stepItem[data-state="done"] {
-  color: var(--text);
-  background: var(--color-surface-hover);
-}
-
-.stepIndex {
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
+  font-size: var(--mono-md);
+  letter-spacing: var(--track-mono-wide);
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.progressTitle {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+
+/* The hairline. --space-3xs is the 2px tick of the spacing scale (UD-6 — no
+   new token invented), deliberately thinner than ui/ProgressBar's 4px bar so
+   it reads as a rule under the counter rather than as a second control.
+   --radius-pill is the sanctioned radius for progress (tokens.css:34). */
+.progressTrack {
+  height: var(--space-3xs);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-hover);
+  overflow: hidden;
+}
+
+/* P2.10 / UD-5: the fill advances on transform, never on width. */
+.progressFill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent);
+  transform-origin: left center;
+  transition: transform var(--motion-base) var(--ease-out);
 }
 
 .body {
@@ -53,10 +71,4 @@
   border-radius: var(--radius-md);
   border: 1px solid var(--color-border-subtle);
   background: var(--fill-1);
-}
-
-@media (width <= 767.98px) {
-  .stepLabel {
-    display: none;
-  }
 }
