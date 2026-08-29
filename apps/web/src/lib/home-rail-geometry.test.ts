@@ -15,6 +15,14 @@
 // stylesheet text is the evidence here (the same precedent as
 // components/restricted/ZoneFilterBar.test.tsx and
 // components/admin/settings/phosphor-mobile-css.test.ts).
+//
+// E3 / UD-18 (run UIFIX-2026-08-29): the cap moved from `.main`
+// (max-width: 1920px on the padded box, which also left every wider display
+// packed against the left edge) to `.main > *` (a 1646px CONTENT cap plus
+// margin-inline: auto, so the column centres). This file follows it: the
+// parser now reads the inner rule, and there is a second assertion that a
+// cap has NOT come back onto .main — a cap in both places would re-open the
+// dead-gutter defect while every count below still passed.
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -25,7 +33,6 @@ import {
   RAIL_CARD_TRACK_PX,
   RECENTLY_ADDED_VISIBLE_CARDS,
   SHELL_CONTENT_MAX_WIDTH_PX,
-  SHELL_MAIN_MAX_WIDTH_PX,
   railCardsInFold,
 } from "./home-rail-geometry.js";
 
@@ -34,14 +41,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const APP_SHELL_CSS = readFileSync(path.join(__dirname, "../components/shell/AppShell.module.css"), "utf8");
 
 /**
- * The `max-width` .main gets from the UNCONDITIONAL rule, in px, or null
- * when it has none. Media-nested `.main` rules are skipped deliberately: a
- * cap that only applies inside a breakpoint is exactly the shape of bug
- * this file exists to catch (see ZoneFilterBar.test.tsx's d4-w7 model).
+ * The `max-width` in px from the first UNCONDITIONAL rule whose selector
+ * matches `selector`, or null when it has none. Media-nested rules are
+ * skipped deliberately: a cap that only applies inside a breakpoint is
+ * exactly the shape of bug this file exists to catch (see
+ * ZoneFilterBar.test.tsx's d4-w7 model).
  */
-function mainMaxWidthPx(css: string): number | null {
+function maxWidthPx(css: string, selector: RegExp): number | null {
   const source = css.replace(/\/\*[\s\S]*?\*\//g, "");
-  for (const match of source.matchAll(/\.main\s*\{([^}]*)\}/g)) {
+  for (const match of source.matchAll(selector)) {
     const prefix = source.slice(0, match.index);
     const depth = (prefix.match(/\{/g) ?? []).length - (prefix.match(/\}/g) ?? []).length;
     if (depth !== 0) continue; // inside @media
@@ -51,8 +59,14 @@ function mainMaxWidthPx(css: string): number | null {
   return null;
 }
 
+/** `.main > * { ... }` — the content column, where the cap lives (UD-18). */
+const CONTENT_RULE = /\.main\s*>\s*\*\s*\{([^}]*)\}/g;
+
+/** `.main { ... }` alone — no `>`, no attribute selector. Must have no cap. */
+const MAIN_RULE = /\.main\s*\{([^}]*)\}/g;
+
 describe("Home rail geometry — the featured banner's fold (d4-w6)", () => {
-  const cap = mainMaxWidthPx(APP_SHELL_CSS);
+  const cap = maxWidthPx(APP_SHELL_CSS, CONTENT_RULE);
 
   it("shows no more Recently Added cards than the featured pool excludes, on a 2400px display", () => {
     expect(
@@ -62,12 +76,24 @@ describe("Home rail geometry — the featured banner's fold (d4-w6)", () => {
     ).toBe(RECENTLY_ADDED_VISIBLE_CARDS);
   });
 
-  it("caps .main at the width the count is derived from", () => {
+  it("caps the content column at the width the count is derived from", () => {
     expect(
       cap,
-      "components/shell/AppShell.module.css must cap .main at SHELL_MAIN_MAX_WIDTH_PX — the count in " +
+      "components/shell/AppShell.module.css must cap `.main > *` at SHELL_CONTENT_MAX_WIDTH_PX — the count in " +
         "lib/home-rail-geometry.ts is a stale literal on any wider display without it",
-    ).toBe(SHELL_MAIN_MAX_WIDTH_PX);
+    ).toBe(SHELL_CONTENT_MAX_WIDTH_PX);
+  });
+
+  it("centres that column rather than capping .main itself (E3/UD-18)", () => {
+    expect(
+      maxWidthPx(APP_SHELL_CSS, MAIN_RULE),
+      "a max-width is back on .main: capping the PADDED box is what left every display above the cap packed " +
+        "against the left edge (640px of dead gutter at 2560px). The cap belongs on `.main > *`, with margin-inline",
+    ).toBeNull();
+    expect(
+      /\.main\s*>\s*\*\s*\{[^}]*margin-inline:\s*auto/.test(APP_SHELL_CSS.replace(/\/\*[\s\S]*?\*\//g, "")),
+      "`.main > *` must carry `margin-inline: auto` — a capped column that is not centred is the defect, not the fix",
+    ).toBe(true);
   });
 
   it("leaves every narrower display alone (the exclusion may over-cover, never under-cover)", () => {
