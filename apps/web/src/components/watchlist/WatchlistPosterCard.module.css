@@ -201,12 +201,23 @@
   }
 }
 
+/* C1 (UIFIX-2026-08-29): the below-artwork caption wraps to TWO lines
+   instead of ellipsing on one — this card sizes to BOTH hosts (Home's
+   160px rail slot and /watchlist's grid cell), and single-line nowrap cut
+   most real titles mid-word at either width. line-height pinned to 1.25
+   because two lines now actually stack; same recipe as
+   components/home/PosterCard.module.css and browse/PosterCell.module.css.
+   .artTitle (the in-artwork treatment, kept per UD-1 keep-both) and
+   .subtitle are untouched. */
 .title {
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
-  white-space: nowrap;
+  white-space: normal;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .subtitle {

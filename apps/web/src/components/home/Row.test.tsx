@@ -57,7 +57,7 @@ function click(el: Element, init: MouseEventInit = {}): MouseEvent {
 
 function renderRow(): TestRender {
   return renderIntoBody(
-    <Row heading="Scenes" mobileHeading="SCENES" action={{ label: "ALL →", href: ACTION_HREF }}>
+    <Row heading="Scenes" action={{ label: "ALL →", href: ACTION_HREF }}>
       {[<div key="a">tile</div>]}
     </Row>,
   );
@@ -100,7 +100,7 @@ describe("Row — the rail action is a client-side navigation (QA C/zone-row-act
 
   it("renders no action at all when the caller passes none", () => {
     view = renderIntoBody(
-      <Row heading="Continue Watching" mobileHeading="KEEP WATCHING">
+      <Row heading="Continue Watching">
         {[<div key="a">tile</div>]}
       </Row>,
     );

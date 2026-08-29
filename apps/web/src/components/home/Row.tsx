@@ -3,13 +3,20 @@
 //
 // Section shell for Home's simple rails (Continue Watching, Recently
 // Added, New in Music — the Featured banner is its own component). ONE
-// component tree (U2): `heading` (desktop, title-case — e.g. "Continue
-// Watching") and `mobileHeading` (the phone form's mono/uppercase copy —
-// e.g. "KEEP WATCHING", a DIFFERENT word per the README's mobile section,
-// not just a re-cased desktop string) are both always in the DOM; CSS
-// (Row.module.css, the same 767.98px breakpoint literal as the rest of the
-// shell) decides which one paints, matching the established
-// Topbar/MobileHeader "both rendered, CSS-hidden" convention.
+// component tree (U2), and — since G1 (UIFIX-2026-08-29) — ONE heading
+// string in it. This used to render `heading` (desktop, title-case, e.g.
+// "Continue Watching") AND a `mobileHeading` sibling carrying different
+// copy (e.g. "KEEP WATCHING"), with Row.module.css swapping which one
+// painted at 767.98px; that was documented here as deliberate and is what
+// G1 reverses. Two vocabularies for one rail is a copy defect, not a
+// mobile affordance: a rail the viewer learns as "Continue Watching" on a
+// laptop must not become a different section name on their phone. The
+// phone form is now purely a CSS TREATMENT of this same <h2> (mono,
+// uppercase, muted — Row.module.css's 767.98px block, the same breakpoint
+// literal as the rest of the shell), so the phone copy is the desktop
+// string uppercased. The Topbar/MobileHeader "both rendered, CSS-hidden"
+// convention still applies where the two forms are genuinely different
+// WIDGETS; it never licensed two different STRINGS for one label.
 
 import type { ReactNode } from "react";
 import Link from "next/link";
@@ -22,17 +29,14 @@ export interface RowAction {
 
 export function Row({
   heading,
-  mobileHeading,
   meta,
   action,
   empty,
   children,
 }: {
+  /** The rail's ONE section label, at every width (G1). Title-case: the
+   *  phone form's uppercase is a CSS text-transform, not a second string. */
   heading: string;
-  /** Mobile phone-form section label — README §Mobile's own copy (mono,
-   *  uppercase), not derived from `heading`. Falls back to an uppercased
-   *  `heading` only if not supplied, so a caller can't forget it silently. */
-  mobileHeading?: string;
   /** Real, derived readout (e.g. an item count) — never invented fixture
    *  copy like the prototype's "SYNCED ACROSS 4 DEVICES · 12S AGO". */
   meta?: string;
@@ -44,7 +48,6 @@ export function Row({
     <section className={styles.row}>
       <div className={styles.headingRow}>
         <h2 className={styles.heading}>{heading}</h2>
-        <span className={styles.mobileHeading}>{mobileHeading ?? heading.toUpperCase()}</span>
         {meta && <span className={styles.meta}>{meta}</span>}
         {action && (
           // next/link, never a raw <a href> (QA C/zone-row-action-raw-anchor):

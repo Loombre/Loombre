@@ -87,16 +87,25 @@
 /* S7 poster signature: inner hairline, inset 7px / 1px rgba(255,255,255,.16)
    (dc's `position:absolute;inset:7px;border:1px solid
    rgba(255,255,255,.16)` on every 2:3/1:1 poster tile) — a pseudo-element
-   so no extra DOM node is needed; radius-sm is tokens.css's own "nested
-   chip" step, which is exactly what this is. Applies under the CW 16:9
-   scene art too (dc doesn't draw it there, but it's harmless — the
-   now-playing pulse already coexists on `::before`). */
+   so no extra DOM node is needed. Applies under the CW 16:9 scene art too
+   (dc doesn't draw it there, but it's harmless — the now-playing glow
+   already coexists on `::before`).
+
+   B2 (UIFIX-2026-08-29): the radius is DERIVED, not picked. This used to
+   read var(--radius-sm) on the reasoning that 10px is tokens.css's own
+   "nested chip" step — true of chips, wrong here: an inset border is
+   concentric with its parent only when its radius is the parent's minus
+   the inset, and --radius-md (14px) − 7px is 7px, not 10px. At 10px the
+   hairline's corners bowed away from the artwork's own. UD-16 amended the
+   stylelint border-radius allowed-list to admit exactly this calc() shape
+   for exactly this reason, so the arithmetic stays visible in the
+   declaration instead of collapsing to another literal. */
 .imageWrap::after {
   content: "";
   position: absolute;
   inset: 7px;
   border: 1px solid rgb(255 255 255 / 16%);
-  border-radius: var(--radius-sm);
+  border-radius: calc(var(--radius-md) - 7px);
   pointer-events: none;
 }
 
@@ -153,7 +162,7 @@
   pointer-events: none;
 }
 
-/* P2.11 now-playing pulse: a static-box-shadow ring whose OPACITY animates
+/* P2.11 now-playing glow: a static-box-shadow ring whose OPACITY animates
    (compositor-only per P2.10 — the box-shadow value itself never changes,
    only the pseudo-element's opacity does). Accent color reserved for
    interactive/now-playing per P2.11 (amber under Phosphor — U1). */
@@ -170,20 +179,29 @@
   transition: opacity var(--motion-fast) var(--ease-out);
 }
 
+/* F3 (UIFIX-2026-08-29 / UD-17): the local `now-playing-pulse` keyframe is
+   deleted; this consumes the SHARED app/globals.css keyframe instead — one
+   idea ("this is happening right now") had been shipping as six names on
+   three rhythms. GLOW, not `loombre-live-pulse`: this is a wash over an
+   opacity-0.35 base that BRIGHTENS (0.3 → 0.85), where the dot indicators
+   blink down from full strength (1 → 0.3). Swapping the two names inverts
+   this animation — darkest exactly where it should be brightest — and no
+   linter would catch it.
+
+   `global(...)`, not the bare name: this is a *.module.css file, and
+   postcss-modules-local-by-default localizes an `animation`/`animation-name`
+   identifier UNCONDITIONALLY in local mode — it does NOT check whether a
+   matching @keyframes was declared in this file. The bare name compiles to
+   `animation: PosterCard_loombre-live-glow__<hash>`, which matches no
+   keyframe at all and silently kills the animation (verified against
+   next 16.2.11's own bundled postcss-modules plugins; the build pins
+   --webpack, so this is the shipping path). `global()` is that plugin's
+   own escape and is unwrapped before emit, so the SHIPPED declaration is
+   byte-for-byte `animation: loombre-live-glow var(--pulse-duration)
+   var(--ease-out) infinite` — exactly UD-17's shorthand. */
 .imageWrap[data-now-playing="true"]::before {
   opacity: 0.35;
-  animation: now-playing-pulse 1.8s var(--ease-out) infinite;
-}
-
-@keyframes now-playing-pulse {
-  0%,
-  100% {
-    opacity: 0.3;
-  }
-
-  50% {
-    opacity: 0.85;
-  }
+  animation: global(loombre-live-glow) var(--pulse-duration) var(--ease-out) infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -302,12 +320,24 @@
   border-color: var(--color-accent);
 }
 
+/* C1 (UIFIX-2026-08-29): the below-artwork caption wraps to TWO lines
+   instead of ellipsing on one. A 160px tile (148px at 1:1) cuts most real
+   titles mid-word at --text-sm on a single nowrap line, and the tile's own
+   .artTitle is not a substitute — it is the in-artwork treatment (kept, per
+   UD-1 keep-both), not this caption. line-height is pinned to 1.25 rather
+   than left to inherit because two lines now actually stack. The
+   -webkit-box clamp is the same recipe FeaturedBanner .title and .blurb
+   already use; -webkit-line-clamp remains the only cross-browser two-line
+   clamp, so the vendor prefixes are load-bearing, not legacy. */
 .title {
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
-  white-space: nowrap;
+  white-space: normal;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .subtitle {
