@@ -25,8 +25,18 @@
 
   /* Deep paths must not widen the dialog. Truncating at the START keeps the
      leaf folder — the part that identifies where you are — visible, which
-     is the opposite of the default ellipsis behaviour. */
+     is the opposite of the default ellipsis behaviour.
+
+     I4 (UIFIX-2026-08-29): direction: rtl buys that start-truncation, but on
+     its own it also hands the whole string to the bidi algorithm as RTL
+     paragraph text — which reorders neutrals, so a trailing slash or a path
+     ending in punctuation renders at the wrong end ("/Volumes/Media/" as
+     "Volumes/Media//"). unicode-bidi: plaintext makes each run take its own
+     inherent direction (LTR for a POSIX path) while the RTL paragraph
+     direction still decides which END the ellipsis eats. Both are needed:
+     one for the truncation side, one for the character order. */
   direction: rtl;
+  unicode-bidi: plaintext;
   text-align: left;
   overflow: hidden;
   white-space: nowrap;
