@@ -26,11 +26,21 @@
   border-bottom: none;
 }
 
+/* J3 (UIFIX-2026-08-29): .wrap scrolls horizontally (the table's min-width is
+   560px), so on a phone the row's own axis label scrolls out of view and the
+   remaining cells become unlabelled. Pinning the axis column keeps the
+   question visible while the answers scroll past it.
+   The background is --color-bg-raised, NOT the --fill-1 it replaces: --fill-1
+   is translucent, and a translucent sticky cell lets the scrolled-under path
+   columns show straight through it. */
 .axisHeader {
+  position: sticky;
+  left: 0;
+  z-index: 1;
   width: 140px;
   font-weight: var(--weight-semibold);
   color: var(--muted);
-  background: var(--fill-1);
+  background: var(--color-bg-raised);
 }
 
 .pathHeader {

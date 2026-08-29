@@ -373,11 +373,14 @@ export function ProofStage({ path, onComplete, onBack, onSwitchToTunnel }: Proof
 
   return (
     <div className={styles.stage}>
-      <h3 className={styles.title}>Prove {PATH_LABELS[path]} actually reaches you</h3>
-      <p className={styles.subtitle}>
-        Scan this code with a phone on <strong>cellular data — turn off Wi-Fi first</strong>, not your home network.
-        The phone is the real outside test, not a third-party checking service.
-      </p>
+      {/* J5: title + subtitle are one unit — see .header in the stylesheet. */}
+      <div className={styles.header}>
+        <h3 className={styles.title}>Prove {PATH_LABELS[path]} actually reaches you</h3>
+        <p className={styles.subtitle}>
+          Scan this code with a phone on <strong>cellular data — turn off Wi-Fi first</strong>, not your home network.
+          The phone is the real outside test, not a third-party checking service.
+        </p>
+      </div>
 
       <div className={styles.qrRow}>
         {probe && <QrCode value={probe.qrPayload} label={`Reachability proof for ${PATH_LABELS[path]}`} />}

@@ -4,11 +4,17 @@
 // Loombre :: apps/web/src/components/settings/remote-wizard/PathFlowStage.tsx
 //
 // R8's "chosen path's guided flow" — renders the frozen PATH_FLOW_STEPS[path]
-// (packages/shared's wizard-state.ts, law) as a stepper, with each step's
-// body coming from PATH_FLOW_STEP_BODIES (./PathFlowStepSlot.tsx, the seam
-// U2 replaces entries in). This lane never hand-writes per-path UI itself —
-// only the sequencing chrome (stepper + Back/Continue wiring) around
-// whatever PATH_FLOW_STEP_BODIES[step] renders.
+// (packages/shared's wizard-state.ts, law), with each step's body coming from
+// PATH_FLOW_STEP_BODIES (./PathFlowStepSlot.tsx, the seam U2 replaces entries
+// in). This lane never hand-writes per-path UI itself — only the sequencing
+// chrome (progress indicator + Back/Continue wiring) around whatever
+// PATH_FLOW_STEP_BODIES[step] renders.
+//
+// J1 (UIFIX-2026-08-29): that indicator used to be a second pill stepper,
+// rendered inside StageStepper's pill stepper. It is now a counter + step
+// title + hairline instead — a deliberately DIFFERENT form, so the stage
+// sequence (pills, outer) and the path sequence (counter, inner) are
+// legible as a hierarchy. See PathFlowStage.module.css for the full note.
 
 import { useState } from "react";
 import { nextPathFlowStep, PATH_FLOW_STEPS, type PathFlowContext, type PathFlowStepId, type PathId } from "@loombre/shared/remote";
@@ -64,21 +70,33 @@ export function PathFlowStage({ path, initialStep, onComplete, onExit }: PathFlo
     setStep(previous);
   }
 
+  // Position within the frozen PATH_FLOW_STEPS list — the same basis the old
+  // pill row indexed on, so a skipped step (nextPathFlowStep's documented
+  // reverse-proxy skip) still counts against the path's real length rather
+  // than renumbering the flow mid-run.
+  const position = Math.max(0, steps.indexOf(step)) + 1;
+  const stepTitle = PATH_FLOW_STEP_LABELS[step];
+
   return (
     <div className={styles.stage}>
       <p className={styles.pathTitle}>Setting up {PATH_LABELS[path]}</p>
-      <ol className={styles.steps} aria-label={`${PATH_LABELS[path]} setup steps`}>
-        {steps.map((s, i) => (
-          <li
-            key={s}
-            className={styles.stepItem}
-            data-state={s === step ? "current" : history.includes(s) ? "done" : "upcoming"}
-          >
-            <span className={styles.stepIndex}>{i + 1}</span>
-            <span className={styles.stepLabel}>{PATH_FLOW_STEP_LABELS[s]}</span>
-          </li>
-        ))}
-      </ol>
+      <div className={styles.progress}>
+        <p className={styles.progressCount}>
+          Step {position} of {steps.length}
+        </p>
+        <p className={styles.progressTitle}>{stepTitle}</p>
+        <div
+          className={styles.progressTrack}
+          role="progressbar"
+          aria-label={`${PATH_LABELS[path]} setup progress`}
+          aria-valuemin={1}
+          aria-valuemax={steps.length}
+          aria-valuenow={position}
+          aria-valuetext={`Step ${position} of ${steps.length}: ${stepTitle}`}
+        >
+          <div className={styles.progressFill} style={{ transform: `scaleX(${position / steps.length})` }} />
+        </div>
+      </div>
       <div className={styles.body}>
         <StepBody path={path} step={step} context={context} onStepComplete={handleStepComplete} onBack={handleBack} />
       </div>

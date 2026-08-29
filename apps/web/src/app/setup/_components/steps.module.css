@@ -26,7 +26,11 @@
    files. These two rules cover all 7 wizard steps. */
 .title {
   font-size: var(--text-2xl);
-  font-weight: var(--weight-bold);
+
+  /* L4 (UIFIX-2026-08-29): was --weight-bold (700). Every other screen title
+     in the app is --weight-black (800); the setup wizard's was the one
+     exception, and read a step lighter than the screen it introduces. */
+  font-weight: var(--weight-black);
   font-stretch: var(--wdth-title);
   margin: 0;
   line-height: var(--leading-tight);
@@ -87,10 +91,15 @@
   color: var(--color-danger);
 }
 
+/* L1 (UIFIX-2026-08-29): this painted --color-accent-tint / --color-accent —
+   an error message wearing the app's "this is the thing to click" colour. It
+   now uses the danger tint at the same 14% both existing error banners use
+   (settings/sections/shared.module.css's .errorBanner, admin/JobsPanel's),
+   so a failed step reads as a failure everywhere in the product. */
 .error {
   border-radius: var(--radius-sm);
-  background: var(--color-accent-tint);
-  color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-danger) 14%, transparent);
+  color: var(--color-danger);
   padding: var(--space-sm);
   font-size: var(--text-sm);
 }
@@ -112,17 +121,15 @@
   font-size: var(--text-sm);
 }
 
+/* J4 (UIFIX-2026-08-29): there is ONE footer convention now — actions sit
+   together at the trailing edge — matching the 13 remote-wizard footers. The
+   old `.actionsEnd` was a second class that existed only to say "this footer
+   right-aligns", which is now what every footer does; it is deleted rather
+   than kept as an alias, and its call sites use `.actions`. */
 .actions {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--space-sm);
-  margin-top: var(--space-sm);
-}
-
-.actionsEnd {
-  display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: var(--space-sm);
   margin-top: var(--space-sm);
 }
@@ -179,6 +186,10 @@
 }
 
 
+/* L3 (UIFIX-2026-08-29): the dropzone is a real drop target now (see
+   RestoreStep.tsx) and says so while a file is over it. Colour-only
+   transitions, no geometry — a box that grew or moved under the cursor
+   would change where the drop lands mid-gesture. */
 .dropzone {
   border-radius: var(--radius-lg);
   border: 1px dashed var(--border);
@@ -186,4 +197,14 @@
   text-align: center;
   color: var(--muted);
   font-size: var(--text-sm);
+  transition:
+    border-color var(--motion-fast) var(--ease-out),
+    background-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
+}
+
+.dropzone[data-dragover="true"] {
+  border-color: var(--color-accent);
+  background: var(--color-accent-tint);
+  color: var(--color-accent);
 }

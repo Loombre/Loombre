@@ -23,7 +23,7 @@ export function DoneStep({ onFinish }: DoneStepProps): React.JSX.Element {
         Loombre is ready. Any library scans you started keep running in the background — check
         their progress anytime from Admin → Jobs.
       </p>
-      <div className={styles.actionsEnd}>
+      <div className={styles.actions}>
         <Button type="button" variant="primary" onClick={onFinish}>
           Go to your library
         </Button>
