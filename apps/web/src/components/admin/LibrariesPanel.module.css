@@ -54,7 +54,7 @@
   gap: var(--space-2xs);
   margin-left: auto;
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
+  font-size: var(--mono-md);
   letter-spacing: var(--track-mono);
   color: var(--color-accent);
   text-transform: uppercase;
@@ -120,18 +120,25 @@
    `font:600 9px 'IBM Plex Mono';letter-spacing:.08em;color:#E0A548;
    border:1px solid rgba(224,165,72,.35);border-radius:999px;
    padding:3px 11px`), not plain danger text — unmatched-needs-review is a
-   caution, not an error. */
+   caution, not an error.
+
+   G3/D1 (run UIFIX-2026-08-29, W2-B): the prototype's raw 9px is
+   SUPERSEDED — --mono-md (10px) is the glanced floor this run leaves
+   behind, and 3px/11px snap to --space-3xs/--space-sm (1px each way; the
+   pill grows with the type anyway). The same sweep lands identically on
+   .skippedSummary and .probeFailedSummary below, which transcribe this
+   same shape. */
 .unmatchedSummary {
   display: inline-flex;
   cursor: pointer;
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--mono-md);
   font-weight: var(--weight-semibold);
   letter-spacing: var(--track-mono);
   color: var(--color-warning);
   border: 1px solid color-mix(in srgb, var(--color-warning) 35%, transparent);
   border-radius: var(--radius-pill);
-  padding: 3px 11px;
+  padding: var(--space-3xs) var(--space-sm);
   text-transform: uppercase;
   list-style: none;
   transition: background-color var(--motion-fast) var(--ease-out);
@@ -166,7 +173,7 @@
 .unmatchedMain {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-3xs);
   flex: 1;
   min-width: 0;
 }
@@ -178,7 +185,7 @@
 
 .unmatchedPath {
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
+  font-size: var(--mono-md);
   color: var(--color-text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -198,13 +205,13 @@
   display: inline-flex;
   cursor: pointer;
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--mono-md);
   font-weight: var(--weight-semibold);
   letter-spacing: var(--track-mono);
   color: var(--color-text-muted);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-pill);
-  padding: 3px 11px;
+  padding: var(--space-3xs) var(--space-sm);
   text-transform: uppercase;
   list-style: none;
   transition: background-color var(--motion-fast) var(--ease-out);
@@ -231,13 +238,13 @@
   display: inline-flex;
   cursor: pointer;
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--mono-md);
   font-weight: var(--weight-semibold);
   letter-spacing: var(--track-mono);
   color: var(--color-text-muted);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-pill);
-  padding: 3px 11px;
+  padding: var(--space-3xs) var(--space-sm);
   text-transform: uppercase;
   list-style: none;
   transition: background-color var(--motion-fast) var(--ease-out);

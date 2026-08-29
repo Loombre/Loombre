@@ -20,6 +20,15 @@
 // evaluates imported CSS, so the wrap convention is pinned by reading the
 // stylesheet SOURCE (same technique as ld14-mono-scale-conformance.test.ts
 // and LibrariesPanel.test.ts).
+//
+// G3/UD-7/UD-19 (run UIFIX-2026-08-29, W2-B): the `.path` size pin below
+// was --mono-sm (9.5px). The run retires --mono-sm/--mono-xs from paint —
+// apps/web/.stylelintrc.json's font-size allowed-list omits both tiers, so
+// painting one now fails lint — and UD-7 puts "codec/container/path facts"
+// on the GLANCED tier, --mono-md (10px). The assertion is repointed there
+// deliberately (authority: UD-19); what it pins is unchanged — a path
+// stays on the --mono-* scale with the LD-14-conforming muted color, never
+// drifting onto --text-* or onto a subtle/hint color.
 
 import { readFileSync } from "node:fs";
 import nodePath from "node:path";
@@ -140,7 +149,9 @@ describe("VersionCard file path wrapping (LD-18 (rc.6))", () => {
 
   it("keeps the LD-14-conforming muted color on the --mono-* tier", () => {
     const rule = basePathRule(versionCardCss);
-    expect(rule).toMatch(/font-size:\s*var\(\s*--mono-sm\s*\)/);
+    expect(rule).toMatch(/font-size:\s*var\(\s*--mono-md\s*\)/);
+    // UD-7's retired floors may not come back through this rule either.
+    expect(rule).not.toMatch(/font-size:\s*var\(\s*--mono-(?:sm|xs)\s*\)/);
     expect(rule).toMatch(/color:\s*var\(\s*--color-text-muted\s*\)/);
   });
 

@@ -39,7 +39,7 @@
 
 .lastErrorLabel {
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
+  font-size: var(--mono-lg);
   letter-spacing: var(--track-mono);
   text-transform: uppercase;
   color: var(--color-danger);
@@ -82,7 +82,7 @@
   border-radius: var(--radius-sm);
   background: var(--color-bg);
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
+  font-size: var(--mono-lg);
   line-height: var(--leading-dense);
   color: var(--color-text-secondary);
   white-space: pre-wrap;

@@ -44,6 +44,7 @@
   /* weight-800-over-900 law (W3 fidelity-audit conflict 5): build follows
      the README, not the pre-Blaze retheme's 900 guess. */
   font-weight: var(--weight-black);
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- D1: brand wordmark lockup size (design/blaze README) — an optical size, deliberately off the --text-* scale */
   font-size: 30px;
   letter-spacing: 0.24em;
 
@@ -192,6 +193,7 @@
 
 @media (width <= 767.98px) {
   .wordmark {
+    /* stylelint-disable-next-line declaration-property-value-allowed-list -- D1: brand wordmark lockup size (design/blaze README) — an optical size, deliberately off the --text-* scale */
     font-size: 24px;
   }
 

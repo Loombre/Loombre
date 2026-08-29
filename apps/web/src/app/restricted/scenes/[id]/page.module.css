@@ -39,6 +39,7 @@
   flex-direction: column;
   gap: var(--space-md);
   padding-bottom: var(--space-2xl);
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- D1: measured hero-overlap geometry, not a spacing step */
   margin-top: -80px;
   position: relative;
 }
@@ -170,6 +171,7 @@
 
   .body {
     padding-bottom: var(--space-lg);
+    /* stylelint-disable-next-line declaration-property-value-allowed-list -- D1: measured hero-overlap geometry, not a spacing step */
     margin-top: -50px;
   }
 

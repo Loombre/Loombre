@@ -26,10 +26,11 @@
    'IBM Plex Mono'` — no tracking/uppercase here, unlike the chip labels
    elsewhere). LD-14/AUD-A4v3-003: the prototype's #61666E subtle tier is
    banned on the --mono-* scale, so the color is --color-text-muted
-   (7.4:1, AA-clean). */
+   (7.4:1, AA-clean). G3/UD-7 (W2-B): its 8.5px is superseded too — a cast
+   role is a glanced caption, so --mono-md, the floor this run leaves. */
 .role {
   font-family: var(--font-mono);
-  font-size: var(--mono-xs);
+  font-size: var(--mono-md);
   font-weight: var(--weight-medium);
   color: var(--color-text-muted);
   white-space: nowrap;

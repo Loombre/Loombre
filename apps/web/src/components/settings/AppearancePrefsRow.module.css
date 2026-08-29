@@ -20,7 +20,7 @@
 
 .groupLabel {
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
+  font-size: var(--mono-md);
   font-weight: var(--weight-medium);
   letter-spacing: var(--track-mono-wide);
   text-transform: uppercase;

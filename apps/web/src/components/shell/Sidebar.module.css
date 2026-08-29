@@ -52,6 +52,7 @@
   font-family: var(--font-sans);
   font-stretch: var(--wdth-wordmark);
   font-weight: var(--weight-black);
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- D1: brand wordmark lockup size (design/blaze README) — an optical size, deliberately off the --text-* scale */
   font-size: 14.5px;
   letter-spacing: 0.22em;
   color: var(--text);
@@ -99,7 +100,7 @@
    prototype's #61666E subtle tier. */
 .groupLabel {
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
+  font-size: var(--mono-md);
   font-weight: var(--weight-medium);
   letter-spacing: var(--track-mono-wide);
   text-transform: uppercase;
@@ -173,16 +174,21 @@
    live-indicator rhythm everywhere, so this dot, the jobs dot, the settings
    and hub dots and the stash-sync dot no longer beat against each other.
    loombre-live-pulse is the DOT keyframe (1 -> .3); loombre-live-glow is
-   the now-playing poster wash and swapping the two inverts the animation. */
+   the now-playing poster wash and swapping the two inverts the animation.
+
+   G3 (W2-B): the prototype's raw 9px/.08em are SUPERSEDED too — --mono-md
+   + --track-mono, byte-identical to the topbar twin AppShell .topbarScan
+   (which was authored in tokens from the start), so the two live-scan
+   readouts cannot drift apart. The 5px dot gap goes to --space-2xs. */
 .scanBadge {
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--space-2xs);
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--mono-md);
   font-weight: var(--weight-semibold);
-  letter-spacing: 0.08em;
+  letter-spacing: var(--track-mono);
   text-transform: uppercase;
   color: var(--color-accent);
 }
@@ -223,7 +229,7 @@
   background: transparent;
   border: 1px solid color-mix(in srgb, var(--color-warning) 35%, transparent);
   border-radius: var(--radius-pill);
-  padding: 2px 7px;
+  padding: var(--space-3xs) var(--space-xs);
 }
 
 /* Wave 1c: storage-pool meter (design/phosphor README Shell spec "POOL
@@ -257,7 +263,7 @@
    row is `letter-spacing:.1em`, not the .16em "wide" eyebrow tracking). */
 .poolLabel {
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
+  font-size: var(--mono-md);
   font-weight: var(--weight-medium);
   letter-spacing: var(--track-mono);
   text-transform: uppercase;
@@ -266,7 +272,7 @@
 
 .poolValue {
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
+  font-size: var(--mono-md);
   letter-spacing: var(--track-mono);
   color: var(--color-text-muted);
   white-space: nowrap;
@@ -326,7 +332,7 @@
   align-items: center;
   gap: var(--space-3xs);
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
+  font-size: var(--mono-md);
   letter-spacing: var(--track-mono);
   text-transform: uppercase;
   color: var(--color-text-muted);

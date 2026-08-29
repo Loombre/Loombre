@@ -140,7 +140,7 @@
   background: color-mix(in srgb, var(--color-text) 14%, transparent);
   color: inherit;
   font-family: var(--font-mono);
-  font-size: var(--mono-xs);
+  font-size: var(--mono-md);
 }
 
 .filterChip[data-active] .filterChipCount {

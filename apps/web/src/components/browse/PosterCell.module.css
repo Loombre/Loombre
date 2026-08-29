@@ -86,6 +86,7 @@
   left: 0;
   right: 0;
   bottom: 0;
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- D1/B1-scrim: pixel-tuned so the glyphs do not move — see the comment above */
   padding: var(--space-2xl) 13px 11px;
   background: linear-gradient(
     180deg,

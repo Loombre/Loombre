@@ -104,7 +104,7 @@
 .unmatchedList {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-3xs);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -116,7 +116,7 @@
   display: flex;
   gap: var(--space-2xs);
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
+  font-size: var(--mono-md);
   color: var(--color-text-muted);
   overflow: hidden;
   text-overflow: ellipsis;

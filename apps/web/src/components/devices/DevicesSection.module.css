@@ -85,7 +85,7 @@
 .rowMain {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-3xs);
   min-width: 0;
 }
 
@@ -119,12 +119,12 @@
 
 .currentBadge {
   flex-shrink: 0;
-  padding: 2px var(--space-xs);
+  padding: var(--space-3xs) var(--space-xs);
   border-radius: var(--radius-pill);
   background: var(--color-accent-tint);
   color: var(--color-accent);
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
+  font-size: var(--mono-md);
   letter-spacing: var(--track-mono);
   text-transform: uppercase;
 }
@@ -134,12 +134,12 @@
  * two read as one badge family, not two competing visual languages. */
 .remoteBadge {
   flex-shrink: 0;
-  padding: 2px var(--space-xs);
+  padding: var(--space-3xs) var(--space-xs);
   border-radius: var(--radius-pill);
   background: var(--fill-2);
   color: var(--muted);
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
+  font-size: var(--mono-md);
   letter-spacing: var(--track-mono);
   text-transform: uppercase;
   cursor: help;

@@ -56,9 +56,10 @@
    specificity than Button.module.css's `.ghost`/`.button` single-class
    rules, so it wins regardless of which CSS Modules file the bundler
    places later in the cascade (same pattern as RestrictedZoneToolbar's
-   zone-focus fix). */
+   zone-focus fix). D1 (W2-B): the prototype's 15px is expressed as
+   --text-base (14.5px) — the nearest scale step, half a pixel down. */
 .header .doneButton {
-  font-size: 15px;
+  font-size: var(--text-base);
   font-weight: var(--weight-medium);
   color: var(--color-accent);
 }

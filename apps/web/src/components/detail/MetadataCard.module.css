@@ -113,7 +113,7 @@
 @media (width <= 767.98px) {
   .value,
   .monoValue {
-    font-size: var(--mono-sm);
+    font-size: var(--mono-md);
     line-height: var(--leading-dense);
   }
 }

@@ -25,6 +25,7 @@
    deliberate exception to the other screens' shared --text-xl H1 size —
    literal, not tokenized, since no scale step lands on 40. */
 .name {
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- D1: prototype-exact display size, pinned by the comment above — no scale step lands on it */
   font-size: 40px;
   font-stretch: var(--wdth-title);
   font-weight: var(--weight-black);

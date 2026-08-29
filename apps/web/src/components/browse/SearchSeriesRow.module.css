@@ -75,7 +75,7 @@
 
 .meta {
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
+  font-size: var(--mono-md);
   letter-spacing: var(--track-mono);
   color: var(--color-text-muted);
 }

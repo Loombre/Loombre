@@ -57,25 +57,26 @@
 
 .statusPill {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--mono-md);
   font-weight: var(--weight-semibold);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--color-danger);
   border: 1px solid color-mix(in srgb, var(--color-danger) 35%, transparent);
   border-radius: var(--radius-pill);
-  padding: 4px 12px;
+  padding: var(--space-2xs) var(--space-sm);
   background: color-mix(in srgb, var(--color-danger) 7%, transparent);
 }
 
-/* --color-text-muted, not the subtle tier: a 9px mono label sits on the
-   --mono-* micro-scale, where LD-14/AUD-A4v3-003 (tokens.css) bans
+/* --color-text-muted, not the subtle tier: this mono label sits on the
+   --mono-* micro-scale (a raw 9px before W2-B's G3 sweep; --mono-md, the
+   glanced floor, after it), where LD-14/AUD-A4v3-003 (tokens.css) bans
    subtle/hint outright — "a mono label dimmer than --color-text-muted
    does not have a token; use muted (7.4:1) there". Same correction
    shell/Sidebar.module.css's .tagline/.groupLabel/.poolLabel carry. */
 .statusNote {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--mono-md);
   font-weight: var(--weight-medium);
   letter-spacing: var(--track-mono);
   text-transform: uppercase;
@@ -143,9 +144,9 @@
 }
 
 .reasonCode {
-  margin-left: 15px;
+  margin-left: var(--space-md);
   font-family: var(--font-mono);
-  font-size: var(--mono-xs);
+  font-size: var(--mono-md);
   letter-spacing: var(--track-mono);
   color: var(--color-text-muted);
 }

@@ -76,10 +76,20 @@
   background: var(--color-danger);
 }
 
+/* UD-20c / handoff-K (W2-B): the viewport is `pointer-events: none` — a
+   toast is a passive notification — so the ONE control that is not passive
+   re-enables them on itself. This lived as an inline style on the Button
+   while Lane K built the action slot; it is a paint-layer concern, so it
+   belongs here. Toast.test.tsx pins the rule's existence AND the absence of
+   the old inline style, so the move cannot silently drop the behaviour. */
+.action {
+  pointer-events: auto;
+}
+
 .message {
   color: var(--text);
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
+  font-size: var(--mono-lg);
   letter-spacing: var(--track-mono);
   text-transform: uppercase;
 

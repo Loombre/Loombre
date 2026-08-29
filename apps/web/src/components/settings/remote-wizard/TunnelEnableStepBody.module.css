@@ -42,7 +42,7 @@
 }
 
 .connectorPill {
-  padding: 4px var(--space-sm);
+  padding: var(--space-2xs) var(--space-sm);
   border-radius: var(--radius-pill);
   font-size: var(--mono-lg);
   font-weight: var(--weight-medium);

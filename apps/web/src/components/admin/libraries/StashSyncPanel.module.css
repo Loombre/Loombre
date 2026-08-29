@@ -22,12 +22,12 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-3xs);
-  padding: 2px var(--space-xs);
+  padding: var(--space-3xs) var(--space-xs);
   border-radius: var(--radius-pill);
   background: var(--color-accent-tint);
   color: var(--color-accent);
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
+  font-size: var(--mono-md);
   letter-spacing: var(--track-mono);
   text-transform: uppercase;
 }
@@ -60,7 +60,7 @@
 
 .jobId {
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
+  font-size: var(--mono-md);
 }
 
 .errorText {
@@ -100,14 +100,14 @@
 
 .countsGrid dt {
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
+  font-size: var(--mono-lg);
   letter-spacing: var(--track-mono);
   text-transform: uppercase;
   color: var(--muted);
 }
 
 .countsGrid dd {
-  margin: 2px 0 0;
+  margin: var(--space-3xs) 0 0;
   font-size: var(--text-md);
   font-weight: var(--weight-semibold);
   font-variant-numeric: tabular-nums;
@@ -147,7 +147,7 @@
 .sceneList {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-3xs);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -163,7 +163,7 @@
   padding: var(--space-3xs) var(--space-2xs);
   border-radius: var(--radius-sm);
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
+  font-size: var(--mono-md);
 }
 
 .sceneRow:hover {

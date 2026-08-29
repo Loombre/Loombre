@@ -80,7 +80,7 @@
 
 .label {
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
+  font-size: var(--mono-lg);
   letter-spacing: 0.14em;
   text-transform: uppercase;
 

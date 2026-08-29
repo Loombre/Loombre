@@ -34,6 +34,7 @@
   font-family: var(--font-sans);
   font-stretch: var(--wdth-wordmark);
   font-weight: var(--weight-black);
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- D1: brand wordmark lockup size (design/blaze README) — an optical size, deliberately off the --text-* scale */
   font-size: 30px;
   letter-spacing: 0.24em;
   padding-left: 0.24em;
@@ -163,6 +164,7 @@
 
 @media (width <= 767.98px) {
   .wordmark {
+    /* stylelint-disable-next-line declaration-property-value-allowed-list -- D1: brand wordmark lockup size (design/blaze README) — an optical size, deliberately off the --text-* scale */
     font-size: 24px;
   }
 

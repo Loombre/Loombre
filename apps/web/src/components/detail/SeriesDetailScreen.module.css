@@ -42,6 +42,7 @@
   margin: 0;
   font-stretch: var(--wdth-display);
   font-weight: var(--weight-black);
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- D1: prototype-exact display size, pinned by the comment above — no scale step lands on it */
   font-size: 54px;
   line-height: 0.96;
   text-transform: uppercase;
@@ -90,7 +91,7 @@
 
 .seasonMeta {
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
+  font-size: var(--mono-md);
   letter-spacing: var(--track-mono);
   color: var(--color-text-muted);
 }
@@ -131,7 +132,7 @@
   display: block;
   margin-bottom: var(--space-sm);
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
+  font-size: var(--mono-md);
   letter-spacing: var(--track-mono);
   color: var(--color-text-muted);
 }

@@ -24,7 +24,7 @@
 
 .recentLabel {
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
+  font-size: var(--mono-md);
   letter-spacing: var(--track-mono-wide);
   color: var(--color-text-muted);
 }
@@ -58,6 +58,7 @@
   overflow-wrap: anywhere;
   font-stretch: var(--wdth-title);
   font-weight: 900;
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- D1: decorative watermark word (5% white), sized to the empty state — not a type-scale step */
   font-size: 40px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -67,8 +68,8 @@
 
 .ghostSub {
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
-  letter-spacing: var(--track-mono-wide);
+  font-size: var(--mono-lg);
+  letter-spacing: var(--track-mono);
   color: var(--color-text-muted);
   margin-top: var(--space-xs);
 }
@@ -79,6 +80,7 @@
   }
 
   .ghost {
+    /* stylelint-disable-next-line declaration-property-value-allowed-list -- D1: decorative watermark word (5% white), sized to the empty state — not a type-scale step */
     font-size: 30px;
   }
 

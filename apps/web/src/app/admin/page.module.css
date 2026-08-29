@@ -28,8 +28,8 @@
 
 .statusLine {
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
-  letter-spacing: var(--track-mono-wide);
+  font-size: var(--mono-md);
+  letter-spacing: var(--track-mono);
   text-transform: uppercase;
 
   /* AUD-A4v3-003: --mono-* may never pair with subtle/hint. */

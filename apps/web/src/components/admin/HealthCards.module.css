@@ -38,9 +38,9 @@
 
 .label {
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
+  font-size: var(--mono-lg);
   text-transform: uppercase;
-  letter-spacing: var(--track-mono-wide);
+  letter-spacing: var(--track-mono);
   color: var(--color-text-muted);
 }
 

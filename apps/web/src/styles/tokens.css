@@ -256,6 +256,10 @@
      unpainted rather than un-defined: repointing 81 existing declarations
      is a sweep (W2-B owns it, UD-19), and a token that still resolves keeps
      that sweep mechanical instead of a mass of undefined-var collapses.
+     That sweep is DONE (W2-B) and the ban is now machine-enforced, not a
+     convention: apps/web/.stylelintrc.json's declaration-property-value-
+     allowed-list for `font-size` admits --text-* and --mono-lg/-md only,
+     so painting either floor again fails `pnpm lint`.
      Wide tracking (--track-mono-wide) belongs to EYEBROWS ONLY — an
      all-caps section header at --mono-md. Everything else that needs
      tracking uses --track-mono; a glanced fact or a read label with 0.16em

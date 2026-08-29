@@ -53,12 +53,12 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-3xs);
-  padding: 2px var(--space-xs);
+  padding: var(--space-3xs) var(--space-xs);
   border-radius: var(--radius-pill);
   background: var(--fill-4);
   color: var(--muted);
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
+  font-size: var(--mono-md);
   letter-spacing: var(--track-mono);
   text-transform: uppercase;
 }

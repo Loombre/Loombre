@@ -169,7 +169,7 @@
 
 .blazeSurfaceLabel {
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
+  font-size: var(--mono-md);
   letter-spacing: var(--track-mono-wide);
   text-transform: uppercase;
   color: var(--color-text-muted);
@@ -204,7 +204,7 @@
 
 .blazeCellLabel {
   font-family: var(--font-mono);
-  font-size: var(--mono-xs);
+  font-size: var(--mono-md);
   letter-spacing: var(--track-mono);
   text-transform: uppercase;
 

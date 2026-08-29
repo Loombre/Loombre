@@ -269,6 +269,7 @@
 .facts {
   display: flex;
   flex-direction: column;
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- D1: 1px hairline between stacked rows — a border width, not a spacing step */
   gap: 1px;
   margin: 0;
   border: 1px solid var(--color-border-subtle);

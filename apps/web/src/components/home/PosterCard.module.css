@@ -141,6 +141,7 @@
   left: 0;
   right: 0;
   bottom: 0;
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- D1/B1-scrim: pixel-tuned so the glyphs do not move — see the comment above */
   padding: var(--space-2xl) 13px 11px;
   background: linear-gradient(
     180deg,
@@ -258,6 +259,7 @@
   font-family: var(--font-sans);
   font-stretch: var(--wdth-poster);
   font-weight: var(--weight-black);
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- D1/S5: decorative oversized fallback letterform, sized to its surface — not a type-scale step */
   font-size: 96px;
   line-height: 1;
   color: rgb(255 255 255 / 13%);
@@ -266,6 +268,7 @@
 
 .tile[data-aspect="1/1"] .artInitial,
 .tile[data-aspect="16/9"] .artInitial {
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- D1/S5: decorative oversized fallback letterform, sized to its surface — not a type-scale step */
   font-size: 64px;
 }
 

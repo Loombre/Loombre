@@ -16,6 +16,7 @@
   gap: var(--space-md);
   max-width: 520px;
   margin: var(--space-3xl) auto 0;
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- D1/H10: prototype-exact frame (dc:1148 `padding:54px 40px`) — no scale step lands on either value */
   padding: 54px 40px;
   border: 1px dashed color-mix(in srgb, var(--color-warning) 30%, transparent);
   border-radius: var(--radius-md);
@@ -57,7 +58,7 @@
 .sessionLine {
   margin: 0;
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
+  font-size: var(--mono-lg);
   letter-spacing: var(--track-mono);
   text-transform: uppercase;
   color: var(--color-text-muted);

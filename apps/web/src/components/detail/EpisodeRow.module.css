@@ -73,6 +73,7 @@
   font-family: var(--font-sans);
   font-stretch: var(--wdth-poster);
   font-weight: var(--weight-black);
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- D1/S5: decorative oversized fallback letterform, sized to its surface — not a type-scale step */
   font-size: 56px;
   line-height: 1;
   color: rgb(255 255 255 / 13%);
@@ -81,6 +82,7 @@
 
 @media (width <= 767.98px) {
   .thumbInitial {
+    /* stylelint-disable-next-line declaration-property-value-allowed-list -- D1/S5: decorative oversized fallback letterform, sized to its surface — not a type-scale step */
     font-size: 32px;
   }
 }
@@ -148,7 +150,7 @@
 
 .meta {
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
+  font-size: var(--mono-md);
   letter-spacing: 0.06em;
   color: var(--color-text-muted);
 }
@@ -159,7 +161,7 @@
   align-items: center;
   gap: var(--space-3xs);
   font-family: var(--font-mono);
-  font-size: var(--mono-xs);
+  font-size: var(--mono-md);
   font-weight: var(--weight-semibold);
   letter-spacing: var(--track-mono);
   color: var(--color-accent);
@@ -175,11 +177,13 @@
 
 /* H13: accent-outlined "RESUME mm:ss" pill — design/phosphor prototype's
    exact recipe (font 500 9px mono, .1em tracking, accent text on a
-   accent-tinted-transparent 1px border, pill radius). */
+   accent-tinted-transparent 1px border, pill radius). G3/UD-7 (W2-B):
+   the 9px is superseded — a badge carrying a timecode is glanced, so
+   --mono-md. */
 .resumeBadge {
   flex-shrink: 0;
   font-family: var(--font-mono);
-  font-size: var(--mono-xs);
+  font-size: var(--mono-md);
   font-weight: var(--weight-medium);
   letter-spacing: var(--track-mono);
   color: var(--color-accent);

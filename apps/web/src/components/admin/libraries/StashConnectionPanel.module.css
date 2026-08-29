@@ -33,7 +33,7 @@
 
 .disabledNote {
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
+  font-size: var(--mono-lg);
   letter-spacing: var(--track-mono);
   text-transform: uppercase;
   color: var(--color-warning);
@@ -55,14 +55,14 @@
 
 .statusMeta dt {
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
+  font-size: var(--mono-lg);
   letter-spacing: var(--track-mono);
   text-transform: uppercase;
   color: var(--muted);
 }
 
 .statusMeta dd {
-  margin: 2px 0 0;
+  margin: var(--space-3xs) 0 0;
   font-size: var(--text-sm);
 }
 

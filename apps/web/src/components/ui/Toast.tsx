@@ -136,15 +136,14 @@ export function ToastProvider({ children }: { children: ReactNode }): React.JSX.
           </span>
           {/* UD-20c: the viewport is `pointer-events: none` (a toast is a
               passive notification), so the ONE control that is not passive
-              re-enables them on itself. Inline because that is a functional
-              property of this element, not a look — Toast.module.css stays
-              exactly as it was, and a toast with no action still has no
-              clickable surface at all. */}
+              re-enables them on itself — via Toast.module.css's `.action`
+              rule (handoff-K, moved off an inline style by W2-B; a toast
+              with no action still has no clickable surface at all). */}
           {state?.action && (
             <Button
               type="button"
               variant="ghost"
-              style={{ pointerEvents: "auto" }}
+              className={styles.action}
               onClick={() => {
                 const run = state.action?.onAction;
                 dismiss();

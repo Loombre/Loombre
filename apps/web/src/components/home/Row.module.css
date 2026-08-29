@@ -28,7 +28,7 @@
 
 .meta {
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
+  font-size: var(--mono-md);
   letter-spacing: var(--track-mono);
   color: var(--color-text-muted);
 }
@@ -73,7 +73,7 @@
   }
 
   .headingRow {
-    margin: 0 0 10px;
+    margin: 0 0 calc(var(--space-xs) + var(--space-3xs));
   }
 
   /* README §Foundations: "Mobile touch targets are never below 44px."
@@ -113,14 +113,16 @@
    `.tile:hover .imageWrap`). With zero top padding the lift and the top
    half of its shadow were sheared off flat against this edge; the tile
    appeared to grow a hard line instead of rising. 10px clears the 4px
-   travel plus the visible part of the shadow. (This is the same clipping
+   travel plus the visible part of the shadow — written as
+   --space-xs + --space-3xs (exactly 10px) since no single scale step is,
+   D1/W2-B. (This is the same clipping
    ancestor the poster tiles' INSET focus ring already works around — that
    fix made the ring survive; it could not make the lift survive.) */
 .scroller {
   display: flex;
   gap: var(--space-md);
   overflow-x: auto;
-  padding: 10px 0 var(--space-xs);
+  padding: calc(var(--space-xs) + var(--space-3xs)) 0 var(--space-xs);
   scroll-snap-type: x proximity;
 }
 

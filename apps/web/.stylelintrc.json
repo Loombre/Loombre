@@ -24,6 +24,26 @@
         "/^var\\(--radius-(pill|lg|md|sm|full)\\)$/",
         "0",
         "inherit"
+      ],
+      "/^(gap|row-gap|column-gap)$/": [
+        "/^(?:[\\d.]+(?:%|em)|0|auto|inherit|(?:var|env)\\([^()]*\\)|(?:calc|min|max|clamp)\\((?:[^()]|\\([^()]*\\))*var\\([^()]*\\)(?:[^()]|\\([^()]*\\))*\\))(?:\\s+(?:[\\d.]+(?:%|em)|0|auto|inherit|(?:var|env)\\([^()]*\\)|(?:calc|min|max|clamp)\\((?:[^()]|\\([^()]*\\))*var\\([^()]*\\)(?:[^()]|\\([^()]*\\))*\\)))?$/"
+      ],
+      "/^(margin|padding)$/": [
+        "/^(?:[\\d.]+(?:%|em)|0|auto|inherit|(?:var|env)\\([^()]*\\)|(?:calc|min|max|clamp)\\((?:[^()]|\\([^()]*\\))*var\\([^()]*\\)(?:[^()]|\\([^()]*\\))*\\))(?:\\s+(?:[\\d.]+(?:%|em)|0|auto|inherit|(?:var|env)\\([^()]*\\)|(?:calc|min|max|clamp)\\((?:[^()]|\\([^()]*\\))*var\\([^()]*\\)(?:[^()]|\\([^()]*\\))*\\))){0,3}$/"
+      ],
+      "/^(margin|padding)-(top|right|bottom|left)$/": [
+        "/^(?:[\\d.]+(?:%|em)|0|auto|inherit|(?:var|env)\\([^()]*\\)|(?:calc|min|max|clamp)\\((?:[^()]|\\([^()]*\\))*var\\([^()]*\\)(?:[^()]|\\([^()]*\\))*\\))$/"
+      ],
+      "/^(margin|padding)-(inline|block)$/": [
+        "/^(?:[\\d.]+(?:%|em)|0|auto|inherit|(?:var|env)\\([^()]*\\)|(?:calc|min|max|clamp)\\((?:[^()]|\\([^()]*\\))*var\\([^()]*\\)(?:[^()]|\\([^()]*\\))*\\))(?:\\s+(?:[\\d.]+(?:%|em)|0|auto|inherit|(?:var|env)\\([^()]*\\)|(?:calc|min|max|clamp)\\((?:[^()]|\\([^()]*\\))*var\\([^()]*\\)(?:[^()]|\\([^()]*\\))*\\)))?$/"
+      ],
+      "/^(margin|padding)-(inline|block)-(start|end)$/": [
+        "/^(?:[\\d.]+(?:%|em)|0|auto|inherit|(?:var|env)\\([^()]*\\)|(?:calc|min|max|clamp)\\((?:[^()]|\\([^()]*\\))*var\\([^()]*\\)(?:[^()]|\\([^()]*\\))*\\))$/"
+      ],
+      "/^font-size$/": [
+        "/^var\\(--(?:text-(?:display|2xl|xl|lg|md|base|sm|xs)|mono-(?:lg|md))\\)$/",
+        "/^(?:calc|min|max|clamp)\\((?:[-+*/,.\\d\\s]|var\\(--(?:text-(?:display|2xl|xl|lg|md|base|sm|xs)|mono-(?:lg|md))\\))+\\)$/",
+        "inherit"
       ]
     },
     "declaration-property-value-disallowed-list": {
@@ -50,6 +70,26 @@
             "/^var\\(--radius-(pill|lg|md|sm|full)\\)$/",
             "12px",
             "0",
+            "inherit"
+          ],
+          "/^(gap|row-gap|column-gap)$/": [
+            "/^(?:[\\d.]+(?:%|em)|0|auto|inherit|(?:var|env)\\([^()]*\\)|(?:calc|min|max|clamp)\\((?:[^()]|\\([^()]*\\))*var\\([^()]*\\)(?:[^()]|\\([^()]*\\))*\\))(?:\\s+(?:[\\d.]+(?:%|em)|0|auto|inherit|(?:var|env)\\([^()]*\\)|(?:calc|min|max|clamp)\\((?:[^()]|\\([^()]*\\))*var\\([^()]*\\)(?:[^()]|\\([^()]*\\))*\\)))?$/"
+          ],
+          "/^(margin|padding)$/": [
+            "/^(?:[\\d.]+(?:%|em)|0|auto|inherit|(?:var|env)\\([^()]*\\)|(?:calc|min|max|clamp)\\((?:[^()]|\\([^()]*\\))*var\\([^()]*\\)(?:[^()]|\\([^()]*\\))*\\))(?:\\s+(?:[\\d.]+(?:%|em)|0|auto|inherit|(?:var|env)\\([^()]*\\)|(?:calc|min|max|clamp)\\((?:[^()]|\\([^()]*\\))*var\\([^()]*\\)(?:[^()]|\\([^()]*\\))*\\))){0,3}$/"
+          ],
+          "/^(margin|padding)-(top|right|bottom|left)$/": [
+            "/^(?:[\\d.]+(?:%|em)|0|auto|inherit|(?:var|env)\\([^()]*\\)|(?:calc|min|max|clamp)\\((?:[^()]|\\([^()]*\\))*var\\([^()]*\\)(?:[^()]|\\([^()]*\\))*\\))$/"
+          ],
+          "/^(margin|padding)-(inline|block)$/": [
+            "/^(?:[\\d.]+(?:%|em)|0|auto|inherit|(?:var|env)\\([^()]*\\)|(?:calc|min|max|clamp)\\((?:[^()]|\\([^()]*\\))*var\\([^()]*\\)(?:[^()]|\\([^()]*\\))*\\))(?:\\s+(?:[\\d.]+(?:%|em)|0|auto|inherit|(?:var|env)\\([^()]*\\)|(?:calc|min|max|clamp)\\((?:[^()]|\\([^()]*\\))*var\\([^()]*\\)(?:[^()]|\\([^()]*\\))*\\)))?$/"
+          ],
+          "/^(margin|padding)-(inline|block)-(start|end)$/": [
+            "/^(?:[\\d.]+(?:%|em)|0|auto|inherit|(?:var|env)\\([^()]*\\)|(?:calc|min|max|clamp)\\((?:[^()]|\\([^()]*\\))*var\\([^()]*\\)(?:[^()]|\\([^()]*\\))*\\))$/"
+          ],
+          "/^font-size$/": [
+            "/^var\\(--(?:text-(?:display|2xl|xl|lg|md|base|sm|xs)|mono-(?:lg|md))\\)$/",
+            "/^(?:calc|min|max|clamp)\\((?:[-+*/,.\\d\\s]|var\\(--(?:text-(?:display|2xl|xl|lg|md|base|sm|xs)|mono-(?:lg|md))\\))+\\)$/",
             "inherit"
           ]
         }

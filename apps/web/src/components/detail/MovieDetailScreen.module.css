@@ -32,6 +32,7 @@
    instead of being stretched to the row's cross-axis height. */
 .pullUp {
   position: relative;
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- D1: measured hero-overlap geometry, not a spacing step */
   margin-top: -190px;
   padding: 0 var(--space-xl);
   display: flex;
@@ -42,6 +43,7 @@
 .metaColumn {
   flex: 1;
   min-width: 0;
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- D1: measured hero-overlap geometry, not a spacing step */
   padding-top: 66px;
 }
 
@@ -155,13 +157,15 @@
    app-wide `:focus-visible` ring is a non-inset 3px box-shadow
    (globals.css). The rule had padding-bottom only. Byte-identical shape to
    home/Row .scroller, so it takes the identical fix: headroom above.
-   The 10px top is the handoff's literal — the spacing scale has no 10px
-   step (8/12), so it is NOT tokenizable here; recorded for W2-B. */
+   The 10px top is the handoff's literal. D1/W2-B: no single scale step is
+   10px (8/12), but --space-xs + --space-3xs is exactly 10 — so it is
+   written as that sum rather than as a bare literal, and moves no pixel.
+   Same expression in home/Row .scroller. */
 .castRail {
   display: flex;
   gap: var(--space-md);
   overflow-x: auto;
-  padding: 10px 0 var(--space-xs);
+  padding: calc(var(--space-xs) + var(--space-3xs)) 0 var(--space-xs);
 }
 
 /* ── Mobile ────────────────────────────────────────────────────────── */

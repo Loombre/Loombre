@@ -97,7 +97,7 @@
 .paletteHint {
   flex-shrink: 0;
   font-family: var(--font-mono);
-  font-size: var(--mono-xs);
+  font-size: var(--mono-md);
   font-weight: var(--weight-medium);
   letter-spacing: var(--track-mono);
   text-transform: uppercase;

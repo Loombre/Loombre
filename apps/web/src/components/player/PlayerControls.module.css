@@ -268,14 +268,14 @@
 
 .capabilityChip {
   font-family: var(--font-mono);
-  font-size: var(--mono-xs);
+  font-size: var(--mono-md);
   font-weight: var(--weight-semibold);
   letter-spacing: var(--track-mono);
   text-transform: uppercase;
   border-radius: var(--radius-pill);
   border: 1px solid var(--color-border);
   color: var(--color-text-muted);
-  padding: 6px 12px;
+  padding: calc(var(--space-2xs) + var(--space-3xs)) var(--space-sm);
   white-space: nowrap;
 }
 

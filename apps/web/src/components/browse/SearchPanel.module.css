@@ -7,8 +7,8 @@
 
 .readout {
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
-  letter-spacing: var(--track-mono-wide);
+  font-size: var(--mono-md);
+  letter-spacing: var(--track-mono);
   color: var(--color-accent);
 }
 

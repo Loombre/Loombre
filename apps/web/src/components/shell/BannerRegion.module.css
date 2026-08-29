@@ -9,7 +9,9 @@
 
 .banner {
   position: relative;
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- D1: mirrors AppShell/Sidebar fixed-chrome geometry exactly (see this file header) — not a spacing step */
   margin-top: 64px;
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- D1: mirrors AppShell/Sidebar fixed-chrome geometry exactly (see this file header) — not a spacing step */
   margin-left: 210px;
   display: flex;
   align-items: flex-start;
@@ -20,6 +22,7 @@
 
 @media (width <= 1279.98px) {
   .banner {
+    /* stylelint-disable-next-line declaration-property-value-allowed-list -- D1: mirrors AppShell/Sidebar fixed-chrome geometry exactly (see this file header) — not a spacing step */
     margin-left: 76px;
   }
 }
@@ -69,7 +72,7 @@
 
 .countdown {
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
+  font-size: var(--mono-md);
   letter-spacing: var(--track-mono);
   color: inherit;
 }

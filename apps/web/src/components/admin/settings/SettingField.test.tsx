@@ -70,16 +70,25 @@ describe("SettingField.module.css — W8 tail (.caution/.lockedValue onto the ty
 // NEVER on --mono-* tiers — every --mono-* tier sits below --text-xs by
 // construction, which is what made the OLD "never below --text-xs" wording
 // self-contradictory). Self-flagged during that review: .sourcePill/
-// .restartPill share font-size: var(--mono-xs) (8.5px) — a --mono-* tier —
-// and the "default" source variant paired that with --color-text-subtle
-// (the 3.4:1 accepted-exception hint tier), which the amended rule now
-// forbids outright regardless of size. The "environment"/"database"
-// variants use --color-warning/--color-accent (full-strength, non-exception
-// colors) so they were never implicated.
+// .restartPill share ONE badge size — a --mono-* tier — and the "default"
+// source variant paired that with --color-text-subtle (the 3.4:1
+// accepted-exception hint tier), which the amended rule now forbids
+// outright regardless of size. The "environment"/"database" variants use
+// --color-warning/--color-accent (full-strength, non-exception colors) so
+// they were never implicated.
+//
+// G3/UD-7/UD-19 (run UIFIX-2026-08-29, W2-B): that shared size WAS
+// --mono-xs (8.5px). The run retires --mono-xs/--mono-sm from paint
+// altogether — apps/web/.stylelintrc.json's font-size allowed-list omits
+// both tiers, so painting one now fails lint — and these pills are badges,
+// which UD-7 puts on the GLANCED tier: --mono-md (10px). The assertion
+// below is repointed to that, deliberately (the authority is UD-19); what
+// it is really pinning is unchanged — one shared badge size across all
+// three source pills plus the restart pill, never a per-variant carve-out.
 describe("SettingField.module.css — LD-14 sourcePill conformance", () => {
   const css = readFileSync(path.join(__dirname, "SettingField.module.css"), "utf8");
 
-  it("the default-source pill never pairs an AA-exception subtle/hint color with the shared --mono-xs badge size", () => {
+  it("the default-source pill never pairs an AA-exception subtle/hint color with the shared badge size", () => {
     const rule = ruleFor(css, '.sourcePill[data-source="default"]');
     expect(rule).not.toMatch(/color:\s*var\(--color-text-subtle\)/);
     expect(rule).not.toMatch(/color:\s*var\(--color-text-hint\)/);
@@ -93,7 +102,9 @@ describe("SettingField.module.css — LD-14 sourcePill conformance", () => {
     // keeps the environment/database/default trio visually uniform.
     const sharedSizeMatch = /\.sourcePill,\s*\.restartPill\s*\{([^}]*)\}/.exec(css);
     expect(sharedSizeMatch, "expected the shared .sourcePill, .restartPill rule").not.toBeNull();
-    expect(sharedSizeMatch![1]).toMatch(/font-size:\s*var\(--mono-xs\);/);
+    expect(sharedSizeMatch![1]).toMatch(/font-size:\s*var\(--mono-md\);/);
+    // UD-7's retired floors may not come back through this rule either.
+    expect(sharedSizeMatch![1]).not.toMatch(/font-size:\s*var\(--mono-(?:xs|sm)\)/);
   });
 });
 

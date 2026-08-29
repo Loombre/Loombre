@@ -20,7 +20,7 @@
    l/1/I and O/0 is load-bearing when someone is checking it by eye. */
 .currentPath {
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
+  font-size: var(--mono-md);
   color: var(--color-text-muted);
 
   /* Deep paths must not widen the dialog. Truncating at the START keeps the

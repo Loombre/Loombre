@@ -32,12 +32,12 @@
 
 .defaultBadge {
   font-family: var(--font-mono);
-  font-size: var(--mono-xs);
+  font-size: var(--mono-md);
   font-weight: var(--weight-semibold);
   letter-spacing: var(--track-mono);
   background: var(--color-accent);
   color: var(--color-accent-text);
-  padding: 2px var(--space-xs);
+  padding: var(--space-3xs) var(--space-xs);
   border-radius: var(--radius-pill);
 }
 
@@ -79,7 +79,7 @@
   flex: 1;
   min-width: 0;
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
+  font-size: var(--mono-md);
   letter-spacing: 0.06em;
   color: var(--color-text-muted);
   white-space: normal;

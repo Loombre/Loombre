@@ -64,7 +64,7 @@
 .header {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-3xs);
   padding: var(--space-xs) var(--space-sm) var(--space-2xs);
 }
 
@@ -79,7 +79,7 @@
 
 .headerMeta {
   font-family: var(--font-mono);
-  font-size: var(--mono-xs);
+  font-size: var(--mono-md);
   letter-spacing: var(--track-mono);
   text-transform: uppercase;
   color: var(--muted);

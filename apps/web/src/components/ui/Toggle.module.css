@@ -18,6 +18,7 @@
   width: 1px;
   height: 1px;
   padding: 0;
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- D1: the visually-hidden recipe (1px box, -1px margin) — a clip offset, not a spacing step */
   margin: -1px;
   overflow: hidden;
   clip-path: inset(50%);

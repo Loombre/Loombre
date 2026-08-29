@@ -101,7 +101,7 @@
 
 .mobileMeta {
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
+  font-size: var(--mono-md);
   color: var(--color-text-muted);
 }
 

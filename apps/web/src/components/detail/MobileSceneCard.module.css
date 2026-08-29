@@ -33,6 +33,7 @@
   font-family: var(--font-sans);
   font-stretch: var(--wdth-poster);
   font-weight: var(--weight-black);
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- D1/S5: decorative oversized fallback letterform, sized to its surface — not a type-scale step */
   font-size: 120px;
   line-height: 1;
   color: rgb(255 255 255 / 13%);
@@ -65,7 +66,7 @@
 
 .meta {
   font-family: var(--font-mono);
-  font-size: var(--mono-xs);
+  font-size: var(--mono-md);
   letter-spacing: var(--track-mono);
   color: var(--color-text-muted);
 }

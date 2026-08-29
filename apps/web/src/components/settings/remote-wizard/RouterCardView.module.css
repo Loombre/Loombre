@@ -56,7 +56,7 @@
 .stepBody {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-3xs);
   min-width: 0;
 }
 
@@ -75,7 +75,7 @@
 .diagram {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-3xs);
   padding: var(--space-sm) var(--space-md);
   border-radius: var(--radius-sm);
   border: 1px dashed var(--color-border);

@@ -56,10 +56,16 @@
    never the mono/uppercase/tracked treatment mono LABELS elsewhere use
    (prototype `mobTabs`: `font-size:10px;font-weight:500;
    letter-spacing:-.01em`, no font-family override -> inherits body's
-   Archivo). */
+   Archivo).
+
+   G3 (run UIFIX-2026-08-29, W2-B): the raw 10px literal is now
+   var(--mono-md), which IS exactly 10px — the token is borrowed for its
+   SIZE alone. The family stays --font-sans and the tracking stays the
+   prototype's negative -0.01em, so nothing about H7's ruling changes; the
+   sweep only removes the last hardcoded sub-12px literal in the tree. */
 .tabLabel {
   font-family: var(--font-sans);
-  font-size: 10px;
+  font-size: var(--mono-md);
   font-weight: var(--weight-medium);
   letter-spacing: -0.01em;
   white-space: nowrap;

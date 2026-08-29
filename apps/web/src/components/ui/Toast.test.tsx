@@ -214,9 +214,33 @@ describe("ToastProvider / useToast", () => {
       const button = actionButton(view.container);
       expect(button).toBeTruthy();
       expect(getLiveRegion(view.container).contains(button!)).toBe(true);
-      // The viewport is pointer-events: none for passive toasts, so the ONE
-      // interactive element re-enables them on itself.
-      expect(button!.style.pointerEvents).toBe("auto");
+    });
+
+    // handoff-K (W2-B): the pointer-events re-enable moved off an inline
+    // style onto Toast.module.css's `.action`. Both halves are pinned —
+    // the class is actually applied to the control, and the stylesheet
+    // actually declares the property — so the move cannot silently drop
+    // the behaviour, and neither can a later edit to either file. (jsdom
+    // never evaluates imported CSS, so the rule is read from source, the
+    // same posture as the reduced-motion assertion above.)
+    it("re-enables pointer events on the control through the stylesheet, not an inline style", () => {
+      view = renderProvider();
+      act(() => {
+        latestToastApi!.showToast("CONCURRENCY SET TO 6", { action: { label: "Undo", onAction: () => {} } });
+      });
+      const button = actionButton(view.container);
+      expect(button).toBeTruthy();
+      expect(button!.style.pointerEvents).toBe("");
+
+      const css = readFileSync(path.join(__dirname, "Toast.module.css"), "utf8");
+      const actionRule = /\.action\s*\{([^}]*)\}/.exec(css);
+      expect(actionRule, "expected an .action rule in Toast.module.css").not.toBeNull();
+      expect(actionRule![1]).toMatch(/pointer-events:\s*auto;/);
+
+      // The control carries that class (CSS Modules hashes the name in a
+      // real build; the test transform keeps it recognizable).
+      const actionClass = /(^|\s)([\w-]*action[\w-]*)(\s|$)/i.exec(button!.className);
+      expect(actionClass, `expected an action class on ${button!.className}`).not.toBeNull();
     });
 
     it("invoking it runs the action exactly once and dismisses the toast", () => {
