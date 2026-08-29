@@ -12,9 +12,13 @@
    module.css already use) so sizing/padding/track-hugging fixes there
    apply here automatically, with only the warning tone kept local.
    densityTrack composes the same track shell; densitySegment stays its
-   own recipe (fixed 36x36 icon squares, not a label pill — a different
-   shape than the padding-around-a-label defect this consolidation
-   fixes). */
+   own recipe (icon squares, not a label pill — a different shape than
+   the padding-around-a-label defect this consolidation fixes).
+   K1 (H/UD-6, run UIFIX-2026-08-29) retires the "fixed 36x36" half of
+   that sentence: the square is no longer a literal, it rides
+   --control-height like every other control here (36 on a fine pointer,
+   44 on a coarse one). Only the SHAPE stays local — see .densitySegment
+   below. */
 
 .sortTrack {
   composes: track from "../ui/SegmentedControl.module.css";
@@ -62,13 +66,26 @@
   color: var(--color-warning-text);
 }
 
+/* K1 (H, UD-6) — was a flat `36px` on both axes, the literal the header
+   comment above used to defend. The same token on both axes, so the square
+   stays a square (--radius-pill needs one): 36x36 with a mouse, 44x44 under
+   `pointer: coarse`. tokens.css owns that swap — this file adds no pointer
+   branch of its own, and deliberately does not hang the size off the
+   767.98px width media block below either (a touchscreen laptop at 1280px
+   is coarse and a 380px desktop window is not).
+   `padding: 0` goes with it, the same pin ui/Button `.iconOnly` carries:
+   a <button> keeps its UA inline padding otherwise, and globals.css's
+   `svg { max-width: 100% }` sizes the 20px dense Icon to whatever content
+   column that leaves rather than overflowing it. At padding 0 the flex
+   centring places the icon in the full square at either size. */
 .densitySegment {
   border: none;
   background: transparent;
   color: var(--muted);
   border-radius: var(--radius-pill);
-  width: 36px;
-  height: 36px;
+  padding: 0;
+  width: var(--control-height);
+  height: var(--control-height);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -211,9 +228,16 @@
   min-width: 0;
 }
 
+/* K4 (UD-7): was --mono-md (10px) — the same size as the band chips
+   underneath it, so the label naming a facet and the values inside it were
+   typographically indistinguishable. A facet legend is named in UD-7's
+   READ-AS-LANGUAGE tier (--mono-lg, 11px); the chips leave the mono scale
+   entirely (see .bandChip), so the pair now differs in size AND family.
+   --track-mono, not --track-mono-wide: 0.16em is for section eyebrows
+   only. */
 .filterLegend {
   font-family: var(--font-mono);
-  font-size: var(--mono-md);
+  font-size: var(--mono-lg);
   letter-spacing: var(--track-mono);
   text-transform: uppercase;
   color: var(--color-text-muted);
@@ -221,12 +245,20 @@
   padding: 0;
 }
 
+/* K3 — no inner scroller. .filterPanel above already caps itself at 60vh
+   and scrolls (its comment documents that cap as the disclosure's own
+   bound), so the 160px `max-height` + `overflow-y: auto` this rule used to
+   carry only nested a second scroll region inside the first: a long
+   performer list scrolled in a 160px window that the reader then had to
+   scroll the panel to finish reading. Dropping the two declarations is
+   exactly `max-height: none; overflow: visible` — both are the initial
+   values, and nothing else in the cascade sets either on .checklist — so
+   the facet list now grows to its content and the panel's one cap does
+   all the bounding. */
 .checklist {
   display: flex;
   flex-direction: column;
   gap: var(--space-3xs);
-  max-height: 160px;
-  overflow-y: auto;
 }
 
 .checklistRow {
@@ -244,15 +276,25 @@
   gap: var(--space-2xs);
 }
 
+/* K4 (UD-7's sans-at---text-sm switch — band chips are one of its three
+   named sites): a resolution band is a control the reader picks, not a
+   glanced-at fact, so it comes off the mono scale onto the interface face
+   at --text-sm with normal tracking. --control-height gives it the same
+   floor as every other control (36/44) instead of the ~16px box 2px of
+   vertical padding produced; the row is wrap-flex, so at 44px the bands
+   take roughly twice the height inside the 60vh-capped panel — accepted,
+   UD-7 locks the switch. --radius-pill stays: a band label cannot wrap
+   (UD-8). */
 .bandChip {
   border: 1px solid var(--border);
   background: transparent;
   color: var(--muted);
   border-radius: var(--radius-pill);
   padding: var(--space-3xs) var(--space-sm);
-  font-family: var(--font-mono);
-  font-size: var(--mono-md);
-  letter-spacing: var(--track-mono);
+  min-height: var(--control-height);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  letter-spacing: normal;
   cursor: pointer;
 }
 
@@ -268,20 +310,43 @@
   gap: var(--space-2xs);
 }
 
+/* K2 (H/UD-6) — these measured ~22px tall: 2px of vertical padding, two
+   1px borders and a 13px line box, roughly half of every other control on
+   the screen and far under the Phosphor touch floor. Height now comes from
+   --control-height (36 fine / 44 coarse) with the vertical padding dropped
+   into it, --radius-pill to match the other input primitives (tokens.css
+   scopes that radius to "all buttons/chips/tags/badges/inputs/…"), and
+   --space-sm of side inset.
+   The `width: 0 / flex: 1 / min-width` triple STAYS as it is: the zero
+   basis is what lets the Min/Max pair split their row evenly regardless of
+   their content, and the 56px floor is what stops either collapsing when
+   the row is narrow. The new 12px insets do eat into that floor — 56 − 24
+   − 2 leaves ~30px of content, and a 4-digit year at --text-sm measures
+   ~29px — but the floor only binds on a row under ~126px, and the panel
+   never gets that narrow: at a 380px viewport .main's --space-md padding
+   and the panel's own leave a 316px single column, so each input is
+   ~150px. No new min-width (UD-6). */
 .rangeInput {
   width: 0;
   flex: 1;
   min-width: 56px;
+  min-height: var(--control-height);
   border: 1px solid var(--border);
   background: var(--color-surface);
   color: var(--text);
-  border-radius: var(--radius-sm);
-  padding: var(--space-3xs) var(--space-2xs);
+  border-radius: var(--radius-pill);
+  padding: 0 var(--space-sm);
   font-size: var(--text-sm);
 }
 
+/* K2 / UD-15 (LD-14's contrast law as amended, 2026-08-29): the en dash
+   between Min and Max is text the reader has to resolve to know the two
+   fields are one range, so it moves off the 3.4:1 --color-text-subtle
+   exception onto --color-text-muted (7.4:1). The LD-14 sweep passed it by
+   because that rule's ban is scoped to declarations carrying a --mono-*
+   size, and this one inherits its size from the panel. */
 .rangeSep {
-  color: var(--color-text-subtle);
+  color: var(--color-text-muted);
 }
 
 /* Phones get the same in-flow disclosure, one facet per row — NOT the
