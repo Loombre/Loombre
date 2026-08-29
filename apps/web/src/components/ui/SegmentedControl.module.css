@@ -38,10 +38,20 @@
      'extra' padding around the label. */
   padding: var(--space-2xs) var(--space-sm);
 
-  /* AUD-A4v2-001 (audit fafa47f): the worst offender of the shared
-     primitives — measured 26.84px, 61% of the Phosphor 44px floor (A4a
-     REFERENCE APPENDIX §B) and near WCAG 2.5.8's separate 24px minimum. */
-  min-height: 44px;
+  /* H (UD-6, run UIFIX-2026-08-29) — was a flat `min-height: 44px`, landed
+     by AUD-A4v2-001 (audit fafa47f) when this was the worst offender of
+     the shared primitives at a measured 26.84px, 61% of the Phosphor 44px
+     floor (A4a REFERENCE APPENDIX §B) and near WCAG 2.5.8's separate 24px
+     minimum. The floor moves to --control-height (tokens.css: 36px fine /
+     44px coarse), so the touch case is still 44px and the mouse case stops
+     being one. MINUS --space-xs, unlike .input/.button: a segment nests
+     INSIDE .track, which adds its own --space-3xs padding and a 1px border
+     on both edges, so a segment at the full token would make the track
+     taller than every sibling control. 36 − 8 = 28px segment inside a
+     28 + 4 + 2 = 34px track; 44 − 8 = 36px inside a 42px track on touch.
+     min-height ONLY — the padding above is D-2/AUD-A4v2-002's and is
+     pinned by SegmentedControl.test.tsx as a two-value shorthand. */
+  min-height: calc(var(--control-height) - var(--space-xs));
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
   cursor: pointer;

@@ -5,11 +5,18 @@
   border: 1px solid var(--border);
   background: var(--color-surface);
   color: var(--text);
-  padding: var(--space-sm) var(--space-lg);
 
-  /* AUD-A4v2-001 (audit fafa47f): Phosphor 44px touch-target floor —
-     padding alone measured 42.5px. */
-  min-height: 44px;
+  /* H (UD-6, run UIFIX-2026-08-29) — was `min-height: 44px` +
+     `padding: var(--space-sm) var(--space-lg)`, landed by AUD-A4v2-001
+     (audit fafa47f) to hold the Phosphor 44px touch floor when padding
+     alone measured 42.5px. That floor is not repealed, it is RELOCATED:
+     --control-height is 36px under a fine pointer and 44px under a coarse
+     one (tokens.css), so a mouse gets a pill that reads as a pill and a
+     finger still gets its 44px target — instead of every desktop input
+     paying the touch tax. Vertical padding drops to 0 because the height
+     is now the token's job; an input centres its single line box itself. */
+  min-height: var(--control-height);
+  padding: 0 var(--space-md);
   font-size: var(--text-base);
   transition:
     border-color var(--motion-fast) var(--ease-out),

@@ -6,13 +6,18 @@
   gap: var(--space-xs);
   border: 1px solid transparent;
   border-radius: var(--radius-pill);
-  padding: var(--space-xs) var(--space-lg);
 
-  /* AUD-A4v2-001 (audit fafa47f): Phosphor's 44px touch-target floor
-     (A4a REFERENCE APPENDIX §B — "touch targets never below 44px");
-     measured 36.84px before. align-items/justify-content: center already
-     handle the taller box. */
-  min-height: 44px;
+  /* H (UD-6, run UIFIX-2026-08-29) — was `min-height: 44px` +
+     `padding: var(--space-xs) var(--space-lg)`, landed by AUD-A4v2-001
+     (audit fafa47f) to hold Phosphor's 44px touch-target floor (A4a
+     REFERENCE APPENDIX §B) against a measured 36.84px. The floor still
+     applies where it belongs: --control-height resolves to 44px under
+     `pointer: coarse` and 36px under a fine pointer (tokens.css), so the
+     rule is now "a touch target is 44px", not "every button everywhere is
+     44px". Vertical padding drops to 0 — the token owns the height and
+     align-items/justify-content: center already own the centring. */
+  min-height: var(--control-height);
+  padding: 0 var(--space-md);
   font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
   cursor: pointer;
@@ -171,11 +176,22 @@
   }
 }
 
+/* H (UD-6) — orchestrator-sanctioned in-file extension of the H block,
+   which named only `.button`. This was a flat 44px square (AUD-A4v2-001:
+   "40px was a 4px near-miss of the 44px floor"), the one remaining
+   hardcoded control height in this file; leaving it behind would make an
+   icon button taller than the labelled button beside it at every desktop
+   width. Same token, both axes, so it stays a true square (--radius-full
+   needs one) and still resolves to 44×44 under `pointer: coarse`.
+   width/height, not min-*: the handoff's own square-control shape
+   (`.iconButtonInline`, `.densitySegment`). The padding goes with it —
+   `padding: var(--space-xs)` inside a 36px border-box leaves an 18px
+   content column, and globals.css's `svg { max-width: 100% }` would squash
+   the 20px dense Icon into it. At padding 0 the flex centring places that
+   icon in a 34px content box untouched. */
 .iconOnly {
   border-radius: var(--radius-full);
-  padding: var(--space-xs);
-
-  /* AUD-A4v2-001: 40px was a 4px near-miss of the 44px floor. */
-  min-height: 44px;
-  min-width: 44px;
+  padding: 0;
+  width: var(--control-height);
+  height: var(--control-height);
 }

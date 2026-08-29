@@ -16,6 +16,7 @@
       "/^border-radius$/": [
         "/^var\\(--radius-(pill|lg|md|sm|full)\\)$/",
         "/^var\\(--radius-(pill|lg|md|sm|full)\\) var\\(--radius-(pill|lg|md|sm|full)\\)( var\\(--radius-(pill|lg|md|sm|full)\\) var\\(--radius-(pill|lg|md|sm|full)\\))?$/",
+        "/^calc\\(\\s*var\\(--radius-md\\)\\s*-\\s*7px\\s*\\)$/",
         "0",
         "inherit"
       ],
@@ -31,5 +32,28 @@
         "/minmax\\(\\s*min\\(\\s*[\\d.]/"
       ]
     }
-  }
+  },
+  "overrides": [
+    {
+      "files": ["src/components/settings/advanced/**/*.css"],
+      "rules": {
+        "declaration-property-value-allowed-list": {
+          "/^border-radius$/": [
+            "/^var\\(--radius-(pill|lg|md|sm|full)\\)$/",
+            "/^var\\(--radius-(pill|lg|md|sm|full)\\) var\\(--radius-(pill|lg|md|sm|full)\\)( var\\(--radius-(pill|lg|md|sm|full)\\) var\\(--radius-(pill|lg|md|sm|full)\\))?$/",
+            "/^calc\\(\\s*var\\(--radius-md\\)\\s*-\\s*7px\\s*\\)$/",
+            "12px",
+            "0",
+            "inherit"
+          ],
+          "/^border-(top|bottom)-(left|right)-radius$/": [
+            "/^var\\(--radius-(pill|lg|md|sm|full)\\)$/",
+            "12px",
+            "0",
+            "inherit"
+          ]
+        }
+      }
+    }
+  ]
 }

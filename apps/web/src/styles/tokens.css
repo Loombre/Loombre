@@ -44,6 +44,17 @@
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 
+  /* F3 (UD-6 adds this token, UD-17 fixes its shape): the ONE rhythm every
+     live / "this is happening" indicator breathes on. Its two shared
+     keyframes live in app/globals.css — loombre-live-pulse for the dot
+     indicators, loombre-live-glow for the now-playing poster wash — and
+     both run `var(--pulse-duration) var(--ease-out) infinite`. Deliberately
+     NOT a --motion-* tier: those three are interaction durations
+     (150/240/400ms, one-shot); this is an ambient loop two orders of
+     magnitude longer. prefers-reduced-motion needs no entry here —
+     globals.css already clamps every animation-duration to 100ms under it. */
+  --pulse-duration: 1.8s;
+
   /* ── Phosphor: cool near-black, white-alpha surfaces ── */
   --color-bg: #0b0c0f;
   --color-bg-raised: #111318; /* modals, popovers, command palette */
@@ -75,10 +86,23 @@
      exception (design/phosphor/README.md "Text contrast — known AA
      exception, accepted by the owner"): the tonal range across the four
      grey tiers is load-bearing for this direction and flattening it costs
-     more than the contrast gain. DO NOT brighten #61666E/#4A4E55 to "fix"
-     this — that is a review failure, not an improvement.
+     more than the contrast gain — so the TOKENS stay as measured.
 
-     RULE AMENDED (LD-14/AUD-A4v3-003): this floor used to read "never
+     CLAUSE SUPERSEDED (UD-15, reports/state/DECISIONS.md, 2026-08-29 UI
+     audit): this block used to end "DO NOT brighten #61666E/#4A4E55 to
+     'fix' this — that is a review failure, not an improvement". The audit
+     IS the updated law and that sentence no longer governs which text
+     takes which tier. Current rule: glanceable FACTS (definition-list
+     values, counts, timestamps, codec/path facts), NAVIGATION cues
+     (chevrons, separators) and INTERACTIVE-AFFORDANCE text read at
+     --color-text-muted (7.4:1). --color-text-subtle keeps only genuinely
+     decorative/tertiary text — a dimmed prefix, a hairline label that
+     carries no fact on its own. Moving one of those five audit-flagged
+     halves up to muted is now the correct call, not a regression; what
+     stays banned is re-tinting the token values themselves.
+
+     RULE AMENDED (LD-14/AUD-A4v3-003) — UNCHANGED by UD-15, still in
+     force exactly as written: this floor used to read "never
      below --text-xs" without saying whether that covered --mono-* too —
      every --mono-* tier (--mono-lg/-md/-sm/-xs: 11/10/9.5/8.5px) sits
      below --text-xs (12px) BY CONSTRUCTION, so the old wording left real
@@ -171,6 +195,28 @@
   --space-2xl: 48px;
   --space-3xl: 64px;
 
+  /* ── Control geometry (H, UD-6 — exactly two of the run's three new
+     tokens) ──────────────────────────────────────────────────────────────
+     One height for every generic control. --control-height is what
+     components read; --control-height-touch is the coarse-pointer value it
+     swaps to (see the `@media (pointer: coarse)` rule below :root — the
+     ONLY place the swap happens, so no component carries a pointer branch
+     of its own). Consumers: ui/Input .input, ui/Button .button (and
+     .iconOnly, square), ui/SegmentedControl .segment (minus one --space-xs
+     — it nests inside the track's own --space-3xs padding), plus the later
+     lanes' Sidebar .navItem, MetadataCard .actionPill and ZoneControls.
+     36px is the pointer-precise size these controls should always have
+     been; 44px is the Phosphor touch floor (A4a §B) that the flat `44px`
+     literals they used to hardcode were defending everywhere, including on
+     a mouse.
+     Branch on POINTER, never on viewport width: a touchscreen laptop at
+     1280px is coarse and a 380px-wide desktop window is not. The 44px
+     literals that live inside width-media blocks are a DIFFERENT axis and
+     are not swept by this token (phosphor-mobile-css.test.ts pins seven of
+     them). */
+  --control-height: 36px;
+  --control-height-touch: 44px;
+
   /* ── Type ── */
   --font-sans: "Archivo", system-ui, -apple-system, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
@@ -189,14 +235,49 @@
   --text-sm: 13px;
   --text-xs: 12px;
 
-  /* Mono scale — labels, counts, paths, log lines */
-  --mono-lg: 11px;
-  --mono-md: 10px;
-  --mono-sm: 9.5px;
-  --mono-xs: 8.5px;
+  /* ── Mono scale — labels, counts, paths, log lines ─────────────────────
+     TWO PAINTABLE TIERS, not four (G3 / UD-7, reports/state/DECISIONS.md,
+     2026-08-29 UI audit). The four sizes stay DEFINED — nothing is deleted,
+     and the definitions are what LD-14's conformance test and the G3 sweep
+     are written against — but only the top two are ever PAINTED after this
+     run:
+
+       --mono-lg (11px)  READ AS LANGUAGE. Text the eye actually reads as a
+                         sentence or a name: field labels, security
+                         notices, facet legends, help text.
+       --mono-md (10px)  GLANCED AT. A fact recognised, not read: eyebrows,
+                         counts, badges, codec/container/path facts,
+                         timecodes, status chips.
+       --mono-sm (9.5px) DEFINED, NEVER PAINTED from this run on.
+       --mono-xs (8.5px) DEFINED, NEVER PAINTED from this run on.
+
+     Below 10px the mono face stops resolving as type at normal viewing
+     distance and starts reading as texture, which is why the two floors go
+     unpainted rather than un-defined: repointing 81 existing declarations
+     is a sweep (W2-B owns it, UD-19), and a token that still resolves keeps
+     that sweep mechanical instead of a mass of undefined-var collapses.
+     Wide tracking (--track-mono-wide) belongs to EYEBROWS ONLY — an
+     all-caps section header at --mono-md. Everything else that needs
+     tracking uses --track-mono; a glanced fact or a read label with 0.16em
+     on it is a bug, not a style. See also the LD-14 amendment in this
+     file's Text-contrast block: no tier of this scale may take
+     --color-text-subtle/-hint at all. */
+  --mono-lg: 11px; /* read as language (UD-7) */
+  --mono-md: 10px; /* glanced at (UD-7) */
+  --mono-sm: 9.5px; /* defined, never painted (UD-7) */
+  --mono-xs: 8.5px; /* defined, never painted (UD-7) */
   --track-mono: 0.1em; /* default label tracking */
-  --track-mono-wide: 0.16em; /* section eyebrows */
-  --leading-display: 1;
+  --track-mono-wide: 0.16em; /* section eyebrows ONLY (UD-7) */
+
+  /* C2 (UD-6's one amendment): was 1. The display tier is multi-line in
+     practice — home/FeaturedBanner .title is uppercase, 40px and already
+     -webkit-line-clamp: 2, so it is guaranteed to wrap — and at exactly 1
+     the second line's ascenders touched the first line's descenders. 1.05
+     is the smallest value that clears them without loosening the
+     single-line look. A single-line glyph run that must NOT gain the 5%
+     pins line-height: 1 locally instead (globals.css .nf-code is the one
+     such consumer). */
+  --leading-display: 1.05;
   --leading-tight: 1.15;
   --leading-normal: 1.45;
   --leading-dense: 1.55; /* mono blocks, log tails */
@@ -381,6 +462,24 @@
 
 :root[data-accent="blue"] {
   --color-accent: #8ab8ff;
+}
+
+/* ── Coarse-pointer control height (H, UD-6) ── the ENTIRE touch-target
+   mechanism: one media query, one property. Every control reads
+   --control-height and gets 44px here for free, so no component ships a
+   pointer branch of its own — the same one-mechanism posture as the
+   [data-accent] overrides directly above.
+   `pointer: coarse` describes the PRIMARY input device, which is the thing
+   the 44px floor is actually about — it is true on a phone and on a
+   touchscreen laptop at 1280px, and false on a 380px-wide desktop window.
+   That is deliberately NOT the 767.98px width literal this file documents
+   in "Mobile chrome layout": the two axes are independent, and the width
+   media blocks that hardcode 44px stay as they are (see --control-height's
+   own comment). */
+@media (pointer: coarse) {
+  :root {
+    --control-height: var(--control-height-touch);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
