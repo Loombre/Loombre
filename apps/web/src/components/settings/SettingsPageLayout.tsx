@@ -29,7 +29,7 @@
 // Deliberately unopinionated about its parent's layout mode so ONE
 // component works in both real call sites:
 //   - SettingsShell.tsx's desktop pane: a ROW flex item sitting to the
-//     right of the 200px SettingsTabs column — `flex: 1 1 0%` here lets it
+//     right of the SettingsTabs column — `flex: 1 1 0%` here lets it
 //     grow to fill that remaining row width (a no-op outside a flex
 //     container, so this doesn't fight the other call site below).
 //   - admin/layout.tsx's page body and the two standalone /settings/data

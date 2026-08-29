@@ -69,7 +69,7 @@ function buttonsIn(view: TestRender): HTMLButtonElement[] {
 }
 
 function fixMatchButton(view: TestRender): HTMLButtonElement | undefined {
-  return buttonsIn(view).find((b) => b.textContent === "FIX MATCH");
+  return buttonsIn(view).find((b) => b.textContent === "Fix match");
 }
 
 function renderCard(isAdmin: boolean): TestRender {
@@ -96,7 +96,7 @@ describe("MetadataCard FIX MATCH admin gate", () => {
     view = renderCard(false);
 
     expect(fixMatchButton(view)).toBeUndefined();
-    expect(view.container.textContent).not.toContain("FIX MATCH");
+    expect(view.container.textContent).not.toContain("Fix match");
   });
 
   it("REGRESSION GUARD: mounts no FixMatch sheet for a non-admin, so no admin request can ever fire", () => {

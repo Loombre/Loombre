@@ -93,7 +93,7 @@ function installApiGetMock(fetchMovie: () => Promise<unknown>): void {
 }
 
 function fixMatchButtons(view: TestRender): HTMLButtonElement[] {
-  return Array.from(view.container.querySelectorAll("button")).filter((b) => b.textContent === "FIX MATCH");
+  return Array.from(view.container.querySelectorAll("button")).filter((b) => b.textContent === "Fix match");
 }
 
 async function flush(): Promise<void> {

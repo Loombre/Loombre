@@ -193,7 +193,7 @@
   flex-shrink: 0;
   border-radius: var(--radius-full);
   background: var(--color-accent);
-  animation: loombre-live-pulse var(--pulse-duration) var(--ease-out) infinite;
+  animation: global(loombre-live-pulse) var(--pulse-duration) var(--ease-out) infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {

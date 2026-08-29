@@ -3,8 +3,12 @@
 
 // Loombre :: apps/web/src/components/settings/SettingsTabs.tsx
 //
-// Desktop pill tab list (README "Settings. 200px pill tab list + a 760px
-// max-width pane"). Real navigation — each tab is a Link to its section's
+// Desktop tab column. I5/UD-8 (UIFIX-2026-08-29) superseded the README's
+// "Settings. 200px pill tab list" line this file used to cite: the column
+// is now fluid — width: clamp(168px, 18vw, 200px) — and each tab is a
+// --radius-md row on the --control-height floor (a tab label can wrap
+// inside a 168px column; a pill is for things that cannot wrap).
+// Real navigation — each tab is a Link to its section's
 // own route (section-registry.ts); clicking a tab is a normal client-side
 // route change to /settings/<key> (or bare /settings for "account"), which
 // is what lets a deep link to any single section ALSO render inside the

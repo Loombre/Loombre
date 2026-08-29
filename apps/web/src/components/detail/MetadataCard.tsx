@@ -87,12 +87,12 @@ export function MetadataCard({ itemId, itemTitle, isAdmin, people, defaultFile, 
             disabled
             title="Editing item metadata isn't available yet — no server-side item-update endpoint exists (metadata_lock/provider-refresh semantics need an owner decision first)"
           >
-            EDIT
+            Edit
           </button>
           {isAdmin && (
             <>
               <button type="button" className={styles.actionPill} onClick={() => setFixMatchOpen(true)}>
-                FIX MATCH
+                Fix match
               </button>
               <FixMatch
                 itemId={itemId}

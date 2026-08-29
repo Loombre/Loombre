@@ -10,8 +10,10 @@
 // read (useMediaQuery, the same legitimate viewport-measurement escape
 // hatch SheetOrModal.tsx already uses — not user-agent branching) picks
 // which of the two RESPONSIVE FORMS to show:
-//   - Desktop (> 767.98px): pill tabs (SettingsTabs, README "200px pill
-//     tab list") + a content pane (SettingsPageLayout.tsx — W7/D-4: a
+//   - Desktop (> 767.98px): a fluid tab column (SettingsTabs — I5/UD-8
+//     superseded the README's "200px pill tab list": now
+//     clamp(168px, 18vw, 200px), --radius-md rows) + a content pane
+//     (SettingsPageLayout.tsx — W7/D-4: a
 //     readable ~1120px max width, CENTERED in the space right of the tab
 //     column rather than left-hugging it; see that file's header for the
 //     defect this replaced) — regardless of which /settings* URL rendered

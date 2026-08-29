@@ -295,15 +295,21 @@ describe("RemoteWizard — Direct's real acme/reverse-proxy branch (R5, exercise
   it("choosing 'I already have a reverse proxy' SKIPS direct-acme-test straight to direct-enable (nextPathFlowStep's documented skip)", async () => {
     await render({ initialPath: "direct" });
     await click("I already have a reverse proxy");
-    // The step LIST still lists every one of the path's possible steps
-    // (including the skipped one, as an "upcoming"/never-visited entry) —
-    // what must be true is which one is CURRENT, not that the label is
-    // absent from the page entirely.
-    const stepsList = document.body.querySelector('ol[aria-label$="setup steps"]');
-    const current = stepsList?.querySelector('[data-state="current"]');
-    expect(current?.textContent).toContain("Enable Direct access");
-    const done = stepsList?.querySelectorAll('[data-state="done"]');
-    expect(Array.from(done ?? []).some((el) => (el.textContent ?? "").includes("Test certificate issuance"))).toBe(false);
+    // J1 (UIFIX-2026-08-29) repoint. The path's inner stepper used to be a
+    // pill list carrying a data-state per step, and this test read the skip
+    // off those states. It is now a counter + current-step title + progress
+    // hairline (PathFlowStage.module.css — a deliberately different form
+    // from the STAGE-level pills it used to nest inside), so the surface
+    // moves to that progressbar. The FACT under test is unchanged: after
+    // the reverse-proxy answer the current step is direct-enable, and
+    // direct-acme-test was skipped rather than visited.
+    const progress = document.body.querySelector('[role="progressbar"]');
+    expect(progress?.getAttribute("aria-valuetext")).toContain("Enable Direct access");
+    expect(progress?.getAttribute("aria-valuetext")).not.toContain("Test certificate issuance");
+    // The counter is positional against the FROZEN step list, so the skipped
+    // step still counts against the path's length — the flow does not
+    // renumber itself mid-run.
+    expect(progress?.getAttribute("aria-valuemax")).toBe(String(PATH_FLOW_STEPS.direct.length));
   });
 
   it("PATH_FLOW_STEPS['direct'] itself still lists direct-acme-test (only the UI transition skips it, not the frozen table)", () => {

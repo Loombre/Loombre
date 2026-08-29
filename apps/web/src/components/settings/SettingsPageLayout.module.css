@@ -12,7 +12,7 @@
   min-width: 0;
 
   /* Row-flex context (SettingsShell's `.shell`): grow to fill the space
-     right of the 200px tabs column. Ignored outside a flex container
+     right of the tabs column. Ignored outside a flex container
      (block contexts fall back to `width: 100%` above), so this is safe in
      both call sites. */
   flex: 1 1 0%;
