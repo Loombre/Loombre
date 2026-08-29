@@ -357,7 +357,7 @@ export function HomeContent(): React.JSX.Element {
             <FeaturedBanner pool={featuredPool} serverUrl={serverUrl} accessToken={accessToken} />
           )}
 
-          <Row heading="Continue Watching" mobileHeading="KEEP WATCHING" empty="Nothing in progress — start watching something.">
+          <Row heading="Continue Watching" empty="Nothing in progress — start watching something.">
             {continueWatching.map((entry) => (
               <PosterCard
                 key={entry.item.id}
@@ -380,7 +380,6 @@ export function HomeContent(): React.JSX.Element {
 
           <Row
             heading="Recently Added"
-            mobileHeading="RECENTLY ADDED"
             action={{ label: "ALL →", href: "/browse" }}
             empty="Nothing added yet — scan a library to get started."
           >
@@ -406,7 +405,7 @@ export function HomeContent(): React.JSX.Element {
               (not even the heading). L3's rail in L9's slot (Wave-2
               landing reconciliation). */}
           {(watchlist ?? []).length > 0 && (
-            <Row heading="Your Watchlist" mobileHeading="WATCHLIST">
+            <Row heading="Your Watchlist">
               {(watchlist ?? []).map((entry) => (
                 <div key={entry.item.id} className={styles.watchlistCell}>
                   <WatchlistPosterCard
@@ -425,7 +424,7 @@ export function HomeContent(): React.JSX.Element {
             </Row>
           )}
 
-          <Row heading="New in Music" mobileHeading="ALBUMS" action={{ label: "LIBRARY →", href: "/browse" }} empty="No new albums yet.">
+          <Row heading="New in Music" action={{ label: "LIBRARY →", href: "/browse" }} empty="No new albums yet.">
             {recentlyAddedAlbums.map((entry) => {
               const album = entry.item as { artistId?: string; year?: number | null };
               return (

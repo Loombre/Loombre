@@ -1,10 +1,40 @@
 /* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* This route sizes itself to the viewport on purpose — VirtualPosterGrid
+   windows against a fixed-height scroll box, so `height` here IS the
+   windowing viewport, not decoration.
+   E1 (UIFIX-2026-08-29): the budget it subtracts has to be the REAL one,
+   and 100vh is the wrong unit on a phone. 100vh is the tallest the
+   viewport ever gets (URL bar retracted); 100dvh is what is actually on
+   screen right now, so the grid stops overrunning by the height of the
+   browser chrome. The desktop subtraction (topbar + the shell's two
+   var(--space-xl) gutters) is unchanged apart from the unit. */
 .page {
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
-  height: calc(100vh - 64px - (var(--space-xl) * 2));
+  height: calc(100dvh - 64px - (var(--space-xl) * 2));
   min-height: 480px;
+}
+
+/* E1, phone form: the desktop budget names none of the phone chrome. Below
+   767.98px (the shared mobile-breakpoint literal — tokens.css "Mobile
+   chrome layout") the shell swaps the 64px topbar for MobileHeader and
+   adds MobileTabBar underneath, and AppShell's `.main` padding drops from
+   var(--space-xl) to var(--space-md); the safe-area insets on top of that
+   are real pixels on a notched device. Subtracting the desktop numbers
+   there left the grid ~76px taller than the space it had, so its last row
+   sat behind the tab bar. Complete axis reset (LD-21 (rc.6)): this
+   re-declares the whole height calculation rather than patching one term
+   of the desktop one. */
+@media (width <= 767.98px) {
+  .page {
+    height: calc(
+      100dvh - var(--mobile-header-height) - var(--mobile-tabbar-height) -
+        env(safe-area-inset-top, 0) - env(safe-area-inset-bottom, 0) -
+        (var(--space-md) * 2)
+    );
+  }
 }
 
 .toolbar {

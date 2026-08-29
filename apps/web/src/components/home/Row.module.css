@@ -26,20 +26,6 @@
   margin: 0;
 }
 
-.mobileHeading {
-  display: none;
-  font-family: var(--font-mono);
-  font-size: var(--mono-md);
-  font-weight: var(--weight-medium);
-  letter-spacing: var(--track-mono-wide);
-
-  /* Accepted AA exception tier (U4) — never the only signal here: the
-     section's identity is also carried by its position/order and the row
-     content itself, this label is a redundant-but-load-bearing-for-style
-     readout, not the sole way to know which section this is. */
-  color: var(--color-text-muted);
-}
-
 .meta {
   font-family: var(--font-mono);
   font-size: var(--mono-sm);
@@ -63,12 +49,27 @@
 }
 
 @media (width <= 767.98px) {
+  /* G1 (UIFIX-2026-08-29): ONE heading, one string. The phone form used to
+     be a SECOND DOM node carrying DIFFERENT copy ("KEEP WATCHING" beside
+     the desktop "Continue Watching"), with this block doing a display swap
+     between the two — Row.tsx's own header documented that as deliberate.
+     It shipped two vocabularies for one rail, so the second node and its
+     `mobileHeading` prop are gone: the phone form is a CSS TREATMENT of
+     the same <h2>, and the phone copy is now the desktop string uppercased
+     by CSS. font-stretch resets to normal because the desktop rule sets
+     --wdth-title on the sans face and the mono face has no width axis.
+     Wide tracking is lawful here and only here: tokens.css reserves
+     --track-mono-wide for "an all-caps section header at --mono-md", which
+     is exactly what this is. --color-text-muted (7.4:1) — the subtle/hint
+     tiers are banned outright on the --mono-* scale (LD-14). */
   .heading {
-    display: none;
-  }
-
-  .mobileHeading {
-    display: inline;
+    font-family: var(--font-mono);
+    font-size: var(--mono-md);
+    font-weight: var(--weight-medium);
+    font-stretch: normal;
+    letter-spacing: var(--track-mono-wide);
+    text-transform: uppercase;
+    color: var(--color-text-muted);
   }
 
   .headingRow {
@@ -104,11 +105,22 @@
   }
 }
 
+/* B3 (UIFIX-2026-08-29): the TOP padding is the fix, not decoration.
+   `overflow-x: auto` forces `overflow-y` to compute to `auto` too (CSS
+   Overflow spec), so this box clips vertically as well — and every poster
+   tile's hover/focus state lifts `translateY(-4px)` and paints a 12px
+   ambient shadow above itself (see PosterCard.module.css's
+   `.tile:hover .imageWrap`). With zero top padding the lift and the top
+   half of its shadow were sheared off flat against this edge; the tile
+   appeared to grow a hard line instead of rising. 10px clears the 4px
+   travel plus the visible part of the shadow. (This is the same clipping
+   ancestor the poster tiles' INSET focus ring already works around — that
+   fix made the ring survive; it could not make the lift survive.) */
 .scroller {
   display: flex;
   gap: var(--space-md);
   overflow-x: auto;
-  padding-bottom: var(--space-xs);
+  padding: 10px 0 var(--space-xs);
   scroll-snap-type: x proximity;
 }
 

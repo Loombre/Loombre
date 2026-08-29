@@ -170,7 +170,7 @@ function RestrictedHomeContent(): React.JSX.Element | null {
         <p className={styles.railsSummary}>{count} {count === 1 ? "item" : "items"} in this zone.</p>
       ) : (
         <div className={styles.rails}>
-          <Row heading="Continue Watching" mobileHeading="KEEP WATCHING" empty="Nothing in progress in this zone.">
+          <Row heading="Continue Watching" empty="Nothing in progress in this zone.">
             {home.continueWatchingInZone.map((entry) => (
               <ZonePosterCard
                 key={entry.item.id}
@@ -191,7 +191,6 @@ function RestrictedHomeContent(): React.JSX.Element | null {
 
           <Row
             heading="Recently Added"
-            mobileHeading="RECENTLY ADDED"
             action={{ label: "ALL →", href: "/restricted/browse" }}
             empty="Nothing added to this zone yet."
           >
@@ -212,7 +211,6 @@ function RestrictedHomeContent(): React.JSX.Element | null {
 
           <Row
             heading="Studios"
-            mobileHeading="STUDIOS"
             action={{ label: "ALL →", href: "/restricted/studios" }}
             empty="No studios in this zone yet."
           >
@@ -232,7 +230,6 @@ function RestrictedHomeContent(): React.JSX.Element | null {
 
           <Row
             heading="Performers"
-            mobileHeading="PERFORMERS"
             action={{ label: "ALL →", href: "/restricted/performers" }}
             empty="No performers in this zone yet."
           >
