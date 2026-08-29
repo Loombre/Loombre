@@ -32,28 +32,22 @@
   text-transform: uppercase;
 }
 
+/* F3 (UIFIX, UD-17): the local `loombre-stash-sync-pulse` keyframe is
+   deleted; this is a DOT indicator, so it runs the shared
+   loombre-live-pulse from app/globals.css. Its 1 -> 0.3 body was already
+   the shared one; the 1.6s/ease-in-out pair normalises to
+   --pulse-duration/--ease-out with the rest of the live-indicator set. */
 .liveDot {
   width: 6px;
   height: 6px;
   border-radius: var(--radius-full);
   background: currentcolor;
-  animation: loombre-stash-sync-pulse 1.6s ease-in-out infinite;
+  animation: loombre-live-pulse var(--pulse-duration) var(--ease-out) infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .liveDot {
     animation: none;
-  }
-}
-
-@keyframes loombre-stash-sync-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-
-  50% {
-    opacity: 0.3;
   }
 }
 

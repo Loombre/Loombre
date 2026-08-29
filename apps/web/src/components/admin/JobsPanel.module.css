@@ -63,29 +63,22 @@
   min-width: 90px;
 }
 
+/* F3 (UIFIX, UD-17): the local `loombre-pulse` keyframe is deleted; this is
+   a DOT indicator, so it runs the shared loombre-live-pulse from
+   app/globals.css. The body folds 1 -> 0.35 into the shared 1 -> 0.3 (delta
+   accepted); the 1.8s literal becomes --pulse-duration, the same number. */
 .liveDot {
   width: 8px;
   height: 8px;
   border-radius: var(--radius-full);
   background: var(--color-success);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-success) 25%, transparent);
-  animation: loombre-pulse 1.8s var(--ease-out) infinite;
+  animation: loombre-live-pulse var(--pulse-duration) var(--ease-out) infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .liveDot {
     animation: none;
-  }
-}
-
-@keyframes loombre-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-
-  50% {
-    opacity: 0.35;
   }
 }
 
