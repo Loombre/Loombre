@@ -62,7 +62,16 @@
 
 /* ── Shared form recipe (login/page.module.css's own field/label/error/
    submit/footnote shapes, reused rather than reinvented — see this file's
-   header) ─────────────────────────────────────────────────────────────── */
+   header) ───────────────────────────────────────────────────────────────
+   G4 (UIFIX-2026-08-29, UD-7): .formHeading / .label / .footnote all read
+   at --mono-lg (11px). AUD-A4v3-003 had fixed only the COLOUR half of
+   these three (muted, never subtle/hint — that half is unchanged) and
+   left them at --mono-md / --mono-sm / --mono-xs; the sizes are fixed
+   too now, because every one of them is text a user READS — a heading,
+   "New password", a security footnote — not a glanced fact, which is the
+   line tokens.css draws between --mono-lg and --mono-md. Sizes, tracking
+   and casing stay byte-identical to login/page.module.css; keep the two
+   in step. */
 
 .form {
   display: flex;
@@ -73,7 +82,7 @@
 
 .formHeading {
   font-family: var(--font-mono);
-  font-size: var(--mono-md);
+  font-size: var(--mono-lg);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--color-text-muted);
@@ -106,8 +115,8 @@
 
 .label {
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
-  letter-spacing: 0.14em;
+  font-size: var(--mono-lg);
+  letter-spacing: var(--track-mono);
   text-transform: uppercase;
   color: var(--color-text-muted);
 }
@@ -129,9 +138,9 @@
 
 .footnote {
   font-family: var(--font-mono);
-  font-size: var(--mono-xs);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  font-size: var(--mono-lg);
+  letter-spacing: 0.06em;
+  text-transform: none;
   color: var(--color-text-muted);
   text-align: center;
   margin-top: var(--space-sm);
