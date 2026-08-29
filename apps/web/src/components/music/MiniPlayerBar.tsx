@@ -52,10 +52,16 @@ export function MiniPlayerBar(): React.JSX.Element | null {
 
   return (
     <div className={styles.bar} role="region" aria-label="Music player">
-      <div className={styles.cover}>{coverSrc && <img src={coverSrc} alt="" />}</div>
-      <div className={styles.meta}>
-        <span className={styles.title}>{track.title}</span>
-        {track.subtitle && <span className={styles.subtitle}>{track.subtitle}</span>}
+      {/* A2/C4 (UIFIX-2026-08-29): cover + meta are ONE zone, not two flat
+          children — the bar is a three-zone layout (meta / transport /
+          right controls) and only the wrapper can carry the flex that
+          keeps the transport centred. See MiniPlayerBar.module.css. */}
+      <div className={styles.metaZone}>
+        <div className={styles.cover}>{coverSrc && <img src={coverSrc} alt="" />}</div>
+        <div className={styles.meta}>
+          <span className={styles.title}>{track.title}</span>
+          {track.subtitle && <span className={styles.subtitle}>{track.subtitle}</span>}
+        </div>
       </div>
 
       <div className={styles.transport}>

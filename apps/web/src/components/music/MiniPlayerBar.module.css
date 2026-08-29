@@ -8,12 +8,22 @@
    player surface. 767.98px is the same repeated literal as
    AppShell.module.css/Sidebar.module.css/MobileTabBar.module.css (see
    tokens.css's "Mobile chrome layout" note); --mobile-tabbar-height MUST
-   stay in sync with MobileTabBar.module.css's own height. */
+   stay in sync with MobileTabBar.module.css's own height.
+
+   A2 (UIFIX-2026-08-29): the bar is position:fixed against the VIEWPORT,
+   so a plain `left: var(--space-lg)` ran it under the fixed sidebar —
+   cover art and title sat behind the nav. Its left inset now clears the
+   sidebar the same way AppShell.module.css's .main padding does: the
+   210px/76px widths and the 1279.98px cutover are the same repeated
+   literals Sidebar.module.css owns (@media cannot consume var(); see
+   tokens.css's "Mobile chrome layout" note), so keep this file in sync
+   with those two by hand. Below 767.98px the sidebar is gone entirely
+   and the phone block resets left to its own gutter. */
 
 .bar {
   composes: glass from global;
   position: fixed;
-  left: var(--space-lg);
+  left: calc(210px + var(--space-lg));
   right: var(--space-lg);
   bottom: var(--space-lg);
   z-index: 60;
@@ -38,6 +48,22 @@
   }
 }
 
+/* A2/C4 (UIFIX-2026-08-29) three-zone layout. The bar used to render five
+   flat flex children, with .meta pinned to a fixed 160px and .scrubberArea
+   the only growing one — so the title/subtitle truncated at a width that
+   had nothing to do with the space available, and the transport drifted
+   off centre as the window resized. Now: .metaZone (cover + meta) and
+   .rightControls both grow, .transport keeps its intrinsic width between
+   them, and the scrubber is capped — which centres the transport by
+   construction and lets the title use whatever is left. */
+.metaZone {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
 .cover {
   width: 44px;
   height: 44px;
@@ -57,8 +83,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  width: 160px;
-  flex-shrink: 0;
+  width: auto;
 }
 
 .title {
@@ -90,6 +115,7 @@
   align-items: center;
   gap: var(--space-sm);
   min-width: 120px;
+  max-width: 260px;
 }
 
 .time {
@@ -103,7 +129,8 @@
   display: flex;
   align-items: center;
   gap: var(--space-xs);
-  flex-shrink: 0;
+  flex: 1;
+  justify-content: flex-end;
 }
 
 .volumeSlider {
@@ -111,12 +138,20 @@
   accent-color: var(--color-accent);
 }
 
+/* A2/C4: the former hardcoded 36px square is the --control-height token
+   now, so this bar's controls pick up the coarse-pointer 44px floor for
+   free (tokens.css). `padding: 0` is load-bearing, not tidying — a
+   <button> carries UA padding globals.css never resets, and
+   globals.css's `svg { max-width: 100% }` would squash the 24px default
+   Icon into whatever content box was left. Same reason Button.module.css
+   `.iconOnly` zeroes its own. */
 .iconButtonInline {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  padding: 0;
+  width: var(--control-height);
+  height: var(--control-height);
   border-radius: var(--radius-full);
   border: none;
   background: transparent;
@@ -134,6 +169,16 @@
   background: var(--color-accent-tint);
 }
 
+/* A2: the sidebar collapses to its 76px icon rail here (Sidebar.module.css
+   uses the same 1279.98px literal) — the bar's own gutter is unchanged, so
+   only the sidebar half of the calc moves. Must stay ABOVE the phone block:
+   equal specificity, so source order is what lets 767.98px win. */
+@media (width <= 1279.98px) {
+  .bar {
+    left: calc(76px + var(--space-lg));
+  }
+}
+
 @media (width <= 767.98px) {
   .bar {
     left: var(--space-sm);
@@ -143,9 +188,18 @@
     gap: var(--space-sm);
   }
 
-  .meta {
-    width: auto;
-    flex: 1;
+  /* A2/C4: the wrapper's internal gap tracks the bar's own at this
+     breakpoint. .meta needs no override any more — the fixed 160px it used
+     to undo is gone, and .metaZone is the growing zone now. */
+  .metaZone {
+    gap: var(--space-sm);
+  }
+
+  /* With the scrubber hidden, .rightControls holds one button; letting it
+     keep its desktop `flex: 1` would push the transport to the middle of
+     the phone bar and squeeze the title. Only .metaZone grows here. */
+  .rightControls {
+    flex: 0 0 auto;
   }
 
   .scrubberArea,
