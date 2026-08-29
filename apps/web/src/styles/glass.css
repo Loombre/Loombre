@@ -35,10 +35,10 @@
  * now-playing bar (music/MiniPlayerBar.module.css `.bar`, mounted by
  * AppProviders). Both are position: fixed and both mount at the top of the
  * tree with no backdrop-root ancestor between them and the page, so both
- * satisfy the three assumptions below by construction. Eight other modules
+ * satisfy the three assumptions below by construction. Seven other modules
  * compose .glass today — they are tolerated, not blessed, and none was
- * re-verified against these assumptions. Check all three before adding an
- * eleventh.
+ * re-verified against these assumptions. Check all three before adding a
+ * tenth.
  *
  * The rule below sets three properties and nothing else. That minimalism
  * is deliberate, but it makes the recipe correct only on an element that
@@ -57,7 +57,7 @@
  *    `.bottomBar` (18px), `.pickerPopover` (18px) and `.backButton` (6px).
  *
  * 2. THE ELEMENT MUST SUPPLY ITS OWN POSITION AND STACKING. .glass
- *    contributes no position, no inset and no z-index; nine of the ten
+ *    contributes no position, no inset and no z-index; eight of the nine
  *    current consumers declare their own. The reverse direction bites
  *    too: backdrop-filter makes the element a containing block for its
  *    fixed/absolute descendants, so a .glass surface silently changes the
@@ -79,13 +79,19 @@
  * comment in shell/QuickSearch.module.css records it at the call site.
  * That is why QuickSearch is not among the consumers above.
  *
- * THE SAME SHAPE IS STILL LIVE in one place: player/Scrubber.module.css
- * `.hoverPreview` composes .glass while sitting position: absolute inside
- * PlayerControls `.bottomBar`, itself a backdrop root (blur 18px). Its
- * blur is neutered exactly as QuickSearch's was; it reads as far less
- * broken only because the preview is a small tooltip over a near-opaque
- * bar. Described here on purpose and left alone — LD-20 (rc.6) is a
- * documentation decision and changes no consumer.
+ * THE SAME SHAPE WAS LIVE in one more place until UIFIX-2026-08-29:
+ * player/Scrubber.module.css `.hoverPreview` composed .glass while sitting
+ * position: absolute inside PlayerControls `.bottomBar`, itself a backdrop
+ * root (blur 18px). Its blur was neutered exactly as QuickSearch's was; it
+ * read as far less broken only because the preview is a small tooltip over
+ * a near-opaque bar. LD-20 (rc.6) described it and deliberately left it
+ * alone, being a documentation decision that changed no consumer — F2 /
+ * UD-21(i) SUPERSEDES that leave-alone for this consumer only: the bubble
+ * still renders, but on the same raised-popover recipe QuickSearch moved
+ * to (--color-bg-raised + --color-border + --shadow-lg), with the standing
+ * comment in Scrubber.module.css recording it at the call site. No other
+ * part of LD-20 is reopened, and the two sanctioned consumers above are
+ * unchanged.
  */
 
 .glass {
