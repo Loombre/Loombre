@@ -87,13 +87,17 @@
   gap: var(--space-sm);
 }
 
+/* AUD-A4v3-003 fixed the COLOUR half here (--mono-* may never pair with
+   subtle/hint) and left the size; G4 (UIFIX-2026-08-29, UD-7) fixes the
+   size too — 10 → 11px. This is the form's own heading, a line the eye
+   reads ("Sign in to this server"), so it takes tokens.css's
+   read-as-language tier rather than the glanced --mono-md. The wider
+   eyebrow tracking is deliberate and stays. */
 .formHeading {
   font-family: var(--font-mono);
-  font-size: var(--mono-md);
+  font-size: var(--mono-lg);
   letter-spacing: 0.18em;
   text-transform: uppercase;
-
-  /* AUD-A4v3-003: --mono-* may never pair with subtle/hint. */
   color: var(--color-text-muted);
   text-align: center;
   margin-bottom: var(--space-2xs);
@@ -130,15 +134,19 @@
   gap: var(--space-2xs);
 }
 
+/* AUD-A4v3-003 fixed the COLOUR half here (--mono-* may never pair with
+   subtle/hint — muted, unchanged) and explicitly left the size at
+   --mono-sm; G4 (UIFIX-2026-08-29, UD-7) fixes the size too — 9.5 →
+   11px. These are the "Username or email"/"Password" field labels: real
+   functional text every user reads to sign in, i.e. exactly the
+   read-as-language tier tokens.css names, and --mono-sm goes unpainted
+   from this run on. Tracking follows the same rule — --track-mono, not a
+   hand-set 0.14em. */
 .label {
   font-family: var(--font-mono);
-  font-size: var(--mono-sm);
-  letter-spacing: 0.14em;
+  font-size: var(--mono-lg);
+  letter-spacing: var(--track-mono);
   text-transform: uppercase;
-
-  /* AUD-A4v3-003: --mono-* may never pair with subtle/hint — these are
-     the "Username or email"/"Password" field labels, real functional
-     text every user reads to sign in, not decoration. */
   color: var(--color-text-muted);
 }
 
@@ -165,15 +173,18 @@
   margin-top: var(--space-2xs);
 }
 
+/* AUD-A4v3-003 fixed the COLOUR half here (--mono-* may never pair with
+   subtle/hint — muted, unchanged) and left the size at --mono-xs; G4
+   (UIFIX-2026-08-29, UD-7) fixes the size too — 8.5 → 11px. This is the
+   "Credentials never leave your network" security disclosure, a sentence
+   a user should be able to actually READ, so it drops the all-caps
+   label treatment and its label tracking with it: sentence case at the
+   read-as-language tier, 0.06em. */
 .footnote {
   font-family: var(--font-mono);
-  font-size: var(--mono-xs);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-
-  /* AUD-A4v3-003: --mono-* may never pair with subtle/hint — this is the
-     "Credentials never leave your network" security disclosure, real
-     content a user should be able to actually read. */
+  font-size: var(--mono-lg);
+  letter-spacing: 0.06em;
+  text-transform: none;
   color: var(--color-text-muted);
   text-align: center;
   margin-top: var(--space-sm);
