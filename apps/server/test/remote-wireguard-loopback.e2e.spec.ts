@@ -35,6 +35,7 @@ import { fileURLToPath } from "node:url";
 import dgram from "node:dgram";
 import { randomFillSync } from "node:crypto";
 import request from "supertest";
+import { WebSocket } from "ws";
 import { NestFactory } from "@nestjs/core";
 import type { INestApplication } from "@nestjs/common";
 import { ensureTestDatabase, getRemoteWireguardState } from "@loombre/db";
@@ -218,6 +219,34 @@ describe.skipIf(!available)("Loombre Remote — WireGuard loopback (real Express
 
     const statusAfter = await asAdmin().get("/admin/remote/wireguard/status");
     expect(statusAfter.body.peerCount).toBe(1);
+  });
+
+  it("(a2) the RG2 backend listener completes the /v1/events WebSocket upgrade (remote-access verification finding 2026-08-30: the upgrade handler lived only on Nest's own http.Server, so live events silently died through the tunnel)", async () => {
+    // The tunnel raw-TCP-pipes to the loopback backend (RG2), so a WS
+    // connect straight at the backend port exercises the exact bytes a
+    // tunnel peer's /v1/events handshake produces without needing a WS
+    // client inside netstack (WgTestClientFetch is HTTP-only). Reaching
+    // into the service's private runtime for the ephemeral port is
+    // deliberate — exposing it on the public surface just for this pin
+    // isn't worth the API.
+    const remoteWireguardService = app.get(RemoteWireguardService);
+    const runtime = (remoteWireguardService as unknown as { runtime: { backendServer: import("node:http").Server } | null }).runtime;
+    expect(runtime, "WG runtime must be live after (a)").not.toBeNull();
+    const address = runtime!.backendServer.address();
+    if (address === null || typeof address === "string") throw new Error("unreachable: backend listener has no AddressInfo");
+
+    const ws = new WebSocket(`ws://127.0.0.1:${address.port}/v1/events?token=${adminToken}`);
+    try {
+      await expect(
+        new Promise<void>((resolve, reject) => {
+          ws.once("open", () => resolve());
+          ws.once("error", reject);
+        }),
+      ).resolves.toBeUndefined();
+      expect(ws.readyState).toBe(WebSocket.OPEN);
+    } finally {
+      ws.close();
+    }
   });
 
   it("(b) SILENCE: raw UDP garbage and a wrong-key handshake initiation receive zero response bytes", async () => {

@@ -70,6 +70,7 @@ import { RemoteActivePathReader } from "../active-path-reader.js";
 import { ConnectorManager, type ConnectorState } from "./connector-manager.js";
 import { TunnelProvider, TunnelProviderError, type DnsRouteResult, type ProvisionTunnelResult } from "./tunnel-provider.js";
 import { TunnelTokenService } from "./tunnel-token.service.js";
+import { SettingsService } from "../../settings/settings.service.js";
 
 export type RemoteTunnelConnectorContractState = "stopped" | "starting" | "running" | "degraded" | "error";
 
@@ -108,7 +109,56 @@ export class RemoteTunnelService {
     private readonly tokenService: TunnelTokenService,
     private readonly connectorManager: ConnectorManager,
     private readonly activePathReader: RemoteActivePathReader,
+    private readonly settingsService: SettingsService,
   ) {}
+
+  /**
+   * Remote-access verification finding (2026-08-30): the registry
+   * description for `remote.tunnelHostname` has always promised "Loombre
+   * sets this automatically when you turn on the Tunnel option" — but
+   * nothing ever wrote it (the hostname only reached
+   * remote_tunnel_state.hostname), so the posture card's
+   * public-url-coherence check hard-failed on every freshly-enabled
+   * tunnel until an admin hand-typed the setting. Written HERE, after the
+   * enable's atomic state commit, and cleared on disable (auto-managed,
+   * symmetric with remote_tunnel_state's own no-leftover-identifiers
+   * posture). `network.publicUrl` is filled ONLY when currently empty —
+   * an admin's explicit value is never clobbered — and never auto-cleared
+   * (mail links and other paths may still depend on it).
+   *
+   * Best-effort BY DESIGN: by the time this runs the tunnel is
+   * provisioned, the connector is up and the state row is committed —
+   * failing the whole enable over a settings write (e.g. the key is
+   * env-pinned, a legal deployment shape updateSetting 409s on) would be
+   * strictly worse than the pre-fix behavior the posture card already
+   * surfaces honestly.
+   */
+  private async writeAutoManagedTunnelSettings(hostname: string, actorUserId: string, nowMs: number): Promise<void> {
+    try {
+      await this.settingsService.updateSetting({ key: "remote.tunnelHostname", value: hostname, actorUserId, nowMs });
+    } catch (err) {
+      console.warn(`remote-tunnel: could not auto-write remote.tunnelHostname: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    try {
+      const currentPublicUrl = (this.settingsService.getEffective("network.publicUrl")?.value as string | undefined) ?? "";
+      if (currentPublicUrl === "") {
+        await this.settingsService.updateSetting({ key: "network.publicUrl", value: `https://${hostname}`, actorUserId, nowMs });
+      }
+    } catch (err) {
+      console.warn(`remote-tunnel: could not auto-fill network.publicUrl: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /** The disable half of writeAutoManagedTunnelSettings — see its doc
+   *  comment for the ownership split (hostname auto-managed, publicUrl
+   *  admin-owned once set). */
+  private async clearAutoManagedTunnelSettings(actorUserId: string, nowMs: number): Promise<void> {
+    try {
+      await this.settingsService.updateSetting({ key: "remote.tunnelHostname", value: "", actorUserId, nowMs });
+    } catch (err) {
+      console.warn(`remote-tunnel: could not auto-clear remote.tunnelHostname: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
 
   private connectorCredentialsSecretKey(): string {
     const { dataDir } = resolveAppPaths(process.platform, process.env);
@@ -347,6 +397,8 @@ export class RemoteTunnelService {
       throw err;
     }
 
+    await this.writeAutoManagedTunnelSettings(hostname, input.actorUserId, nowMs);
+
     return this.toStatusDto(row);
   }
 
@@ -403,6 +455,7 @@ export class RemoteTunnelService {
     await this.clearConnectorCredentials();
 
     const row = await disableTunnelStateAndEmit(this.dbProvider.db, { actorUserId: input.actorUserId, nowMs });
+    await this.clearAutoManagedTunnelSettings(input.actorUserId, nowMs);
     return this.toStatusDto(row);
   }
 }

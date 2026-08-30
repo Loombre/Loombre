@@ -10,8 +10,8 @@ import { resolveJwtSecret } from "@loombre/secrets";
 import { LOOMBRE_VERSION_FULL } from "@loombre/shared";
 import { AppModule } from "./app.module.js";
 import { applyHsts } from "./tls/hsts.js";
-import { loadTlsConfig } from "./tls/config.js";
-import { createTlsRuntime } from "./tls/runtime.js";
+import { loadTlsConfig, type TlsConfig } from "./tls/config.js";
+import { createTlsRuntime, type CreateTlsRuntimeOptions } from "./tls/runtime.js";
 import { hydrateTlsEnvFromSettings } from "./tls/settings-boot-bridge.js";
 import { bootstrapProvisioning, getProvisioningController } from "./bootstrap/provisioning.js";
 import { wireServerIpc } from "./ipc/index.js";
@@ -19,6 +19,7 @@ import { resolveAppPaths } from "./cli/app-paths.js";
 import { installCrashHandlers, installGracefulShutdown, type ShutdownSignal } from "./crash/index.js";
 import { RESTART_REQUESTED_EXIT_CODE, ServerPowerService } from "./common/server-power.service.js";
 import { SettingsService } from "./settings/settings.service.js";
+import { WsUpgradeRegistry } from "./common/ws-upgrade.registry.js";
 import { ConnectorManager } from "./remote/tunnel/connector-manager.js";
 
 /**
@@ -214,6 +215,55 @@ export interface BootstrapResult {
   closeServer: () => Promise<void>;
 }
 
+export interface TlsListenResult {
+  /** The port the https.Server actually bound — equals tlsConfig.httpsPort
+   *  in production; reading it off server.address() is what lets TLS-mode
+   *  integration tests pass httpsPort 0 for an ephemeral bind. */
+  boundPort: number;
+  /** tlsRuntime.close() only — stops renewal/watchers and the listening
+   *  https.Server. The caller still owns app.close() (see bootstrap()'s
+   *  closeListenServer comment for why both halves are load-bearing). */
+  close: () => Promise<void>;
+}
+
+/**
+ * The manual/acme half of bootstrap()'s listen branch, extracted
+ * (applyTrustProxy's own precedent above) so TLS-mode integration tests
+ * can drive the EXACT sequence the real entrypoint runs — app.init(), TLS
+ * runtime creation, WS upgrade-handler attachment, listen — without
+ * invoking bootstrap() itself (which also provisions a database and seeds
+ * a JWT secret). `acmeTestDeps` forwards tls/runtime.ts's test-only pebble
+ * knobs; production callers pass nothing.
+ */
+export async function listenWithTls(
+  app: INestApplication,
+  tlsConfig: Exclude<TlsConfig, { mode: "off" }>,
+  opts: CreateTlsRuntimeOptions = {},
+): Promise<TlsListenResult> {
+  await app.init();
+  const tlsRuntime = await createTlsRuntime(tlsConfig, app.getHttpAdapter().getInstance(), opts);
+  const httpsServer = tlsRuntime.server;
+  if (httpsServer === null) throw new Error("unreachable: tlsConfig.mode !== 'off' but createTlsRuntime returned server=null");
+  // The https.Server is a DIFFERENT server object from the http.Server
+  // Nest created during init() — the /v1/events WS upgrade handler
+  // (gateway/ws-broadcaster.service.ts) must be attached to it explicitly
+  // or every WS handshake on the TLS path falls through to the REST stack
+  // (common/ws-upgrade.registry.ts's header has the full story).
+  app.get(WsUpgradeRegistry).attach(httpsServer);
+  await new Promise<void>((resolve, reject) => {
+    httpsServer.once("error", reject);
+    httpsServer.listen(tlsConfig.httpsPort, () => resolve());
+  });
+  const address = httpsServer.address();
+  const boundPort = address !== null && typeof address === "object" ? address.port : tlsConfig.httpsPort;
+  return {
+    boundPort,
+    close: async () => {
+      await tlsRuntime.close();
+    },
+  };
+}
+
 async function bootstrap(): Promise<BootstrapResult> {
   // STATE.md P4.2 (lane B): resolves external-vs-embedded PostgreSQL and
   // exports the working DATABASE_URL into process.env BEFORE anything
@@ -293,24 +343,17 @@ async function bootstrap(): Promise<BootstrapResult> {
       await app.close();
     };
   } else {
-    await app.init();
-    const tlsRuntime = await createTlsRuntime(tlsConfig, app.getHttpAdapter().getInstance());
-    const httpsServer = tlsRuntime.server;
-    if (httpsServer === null) throw new Error("unreachable: tlsConfig.mode !== 'off' but createTlsRuntime returned server=null");
-    await new Promise<void>((resolve, reject) => {
-      httpsServer.once("error", reject);
-      httpsServer.listen(tlsConfig.httpsPort, () => resolve());
-    });
-    boundPort = tlsConfig.httpsPort;
+    const tlsListen = await listenWithTls(app, tlsConfig);
+    boundPort = tlsListen.boundPort;
     console.log(`@loombre/server listening on port ${boundPort} (TLS mode: ${tlsConfig.mode})`);
     closeListenServer = async () => {
-      // tlsRuntime.close() stops cert renewal/watchers and closes the
+      // tlsListen.close() stops cert renewal/watchers and closes the
       // ACTUAL listening https.Server; app.close() additionally triggers
       // Nest's OnModuleDestroy lifecycle (DbProvider.db.destroy() —
       // "end the pool", task spec) on a Nest instance that itself never
       // called .listen() in this branch, so it's a fast, harmless no-op
       // for the HTTP-serving side but load-bearing for the DB pool.
-      await tlsRuntime.close();
+      await tlsListen.close();
       await app.close();
     };
   }

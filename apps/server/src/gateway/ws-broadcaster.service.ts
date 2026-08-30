@@ -95,13 +95,14 @@
 import { Injectable, type OnApplicationBootstrap, type OnModuleDestroy } from "@nestjs/common";
 import { HttpAdapterHost } from "@nestjs/core";
 import type { IncomingMessage, Server } from "node:http";
-import type { Socket } from "node:net";
+import type { Duplex } from "node:stream";
 import { WebSocket, WebSocketServer } from "ws";
 import { filterEventsForViewer, getUserById, markEventsProcessed, readUnprocessedEvents } from "@loombre/db";
 import { uuidv7 } from "@loombre/shared";
 import { TokenService, type AccessTokenClaims } from "../session/token.service.js";
 import { DbProvider } from "../common/db.provider.js";
 import { ViewerContextProvider, type ViewerSurfacePair } from "../common/viewer-context.provider.js";
+import { WsUpgradeRegistry } from "../common/ws-upgrade.registry.js";
 import { ADMIN_ONLY_EVENT_TYPES } from "../plugins/event-taxonomy.js";
 
 const EVENTS_PATH = "/v1/events";
@@ -175,19 +176,41 @@ export class WsBroadcasterService implements OnApplicationBootstrap, OnModuleDes
   private wss: WebSocketServer | undefined;
   private pollTimer: NodeJS.Timeout | undefined;
   private readonly sockets = new Map<WebSocket, SocketState>();
+  /** DB work in flight outside any request/response lifecycle (the
+   *  fire-and-forget connection-setup IIFEs below, and the current poll()
+   *  tick). onModuleDestroy AWAITS these before returning: gateway is
+   *  destroyed before CommonModule, so anything still running here when
+   *  DbProvider.onModuleDestroy calls pool.end() can be mid-CLIENT-
+   *  ACQUISITION — and pg.Pool.end() during an in-flight connect never
+   *  resolves (observed 2026-08-30: two established-but-never-queried
+   *  connections held a graceful shutdown forever; resolveSurfaces's
+   *  3-way Promise.all is exactly the burst that spawns fresh pool
+   *  clients). A socket closing does NOT cancel its setup IIFE, so any
+   *  client that connects and immediately drops leaves this work racing
+   *  shutdown — every production disconnect was a loaded die. */
+  private readonly pendingSetups = new Set<Promise<void>>();
+  private pollInFlight: Promise<void> | undefined;
 
   constructor(
     private readonly httpAdapterHost: HttpAdapterHost,
     private readonly tokenService: TokenService,
     private readonly viewerContextProvider: ViewerContextProvider,
     private readonly dbProvider: DbProvider,
+    private readonly wsUpgradeRegistry: WsUpgradeRegistry,
   ) {}
 
   onApplicationBootstrap(): void {
     const httpServer = this.httpAdapterHost.httpAdapter.getHttpServer() as Server;
     this.wss = new WebSocketServer({ noServer: true });
 
-    httpServer.on("upgrade", (req: IncomingMessage, socket: Socket, head: Buffer) => {
+    // Registered through WsUpgradeRegistry (common/ws-upgrade.registry.ts),
+    // never directly on one server: Nest's own http.Server below is only
+    // ONE of the servers that front this Express app — the built-in-TLS
+    // https.Server (main.ts listenWithTls) and each WireGuard loopback
+    // backend (RG2) need the SAME handler or their WS handshakes fall
+    // through to the REST stack and die (the 2026-08-30 remote-access
+    // verification finding).
+    this.wsUpgradeRegistry.setHandler((req: IncomingMessage, socket: Duplex, head: Buffer) => {
       let url: URL;
       try {
         url = new URL(req.url ?? "", "http://internal.invalid");
@@ -222,9 +245,10 @@ export class WsBroadcasterService implements OnApplicationBootstrap, OnModuleDes
           socket.destroy();
         });
     });
+    this.wsUpgradeRegistry.attach(httpServer);
 
     this.wss.on("connection", (ws: WebSocket, claims: AccessTokenClaims) => {
-      void (async () => {
+      const setup = (async () => {
         const nowMs = Date.now();
         try {
           const pair = await this.viewerContextProvider.resolveSurfaces(claims.sub, nowMs);
@@ -237,6 +261,14 @@ export class WsBroadcasterService implements OnApplicationBootstrap, OnModuleDes
             // zone subscription (RZI-D5c) — fail-closed by construction.
             zoneSubscribed: false,
           });
+          if (ws.readyState === WebSocket.CLOSING || ws.readyState === WebSocket.CLOSED) {
+            // The client dropped while resolveSurfaces was in flight — its
+            // "close" handler already ran against an ABSENT map entry, so
+            // the set() above would otherwise leave a zombie entry that
+            // keeps poll() doing per-tick DB work for a dead socket
+            // forever.
+            this.sockets.delete(ws);
+          }
         } catch {
           // Fail-closed: if the initial context can't be resolved, the
           // socket is never added to the delivery map (it receives
@@ -245,6 +277,8 @@ export class WsBroadcasterService implements OnApplicationBootstrap, OnModuleDes
           ws.close();
         }
       })();
+      this.pendingSetups.add(setup);
+      void setup.finally(() => this.pendingSetups.delete(setup));
 
       ws.on("message", (data) => {
         // RZI-D5c zone-subscription control frames — see the constants'
@@ -274,7 +308,13 @@ export class WsBroadcasterService implements OnApplicationBootstrap, OnModuleDes
     });
 
     this.pollTimer = setInterval(() => {
-      void this.poll();
+      const tick = this.poll();
+      this.pollInFlight = tick;
+      // Rejection semantics unchanged from the previous `void this.poll()`
+      // — this only records the in-flight tick for onModuleDestroy.
+      void tick.finally(() => {
+        if (this.pollInFlight === tick) this.pollInFlight = undefined;
+      });
     }, POLL_INTERVAL_MS);
     this.pollTimer.unref?.();
   }
@@ -363,8 +403,16 @@ export class WsBroadcasterService implements OnApplicationBootstrap, OnModuleDes
     );
   }
 
-  onModuleDestroy(): void {
+  async onModuleDestroy(): Promise<void> {
     if (this.pollTimer) clearInterval(this.pollTimer);
+    // Drain this service's own in-flight DB work BEFORE returning — Nest
+    // destroys CommonModule (DbProvider → pool.end()) after this module,
+    // and pool.end() during an in-flight client acquisition hangs forever
+    // (see pendingSetups' doc comment). allSettled: a failing setup/tick
+    // must not turn shutdown into a throw.
+    const inFlight: Promise<void>[] = [...this.pendingSetups];
+    if (this.pollInFlight !== undefined) inFlight.push(this.pollInFlight);
+    await Promise.allSettled(inFlight);
     for (const ws of this.sockets.keys()) {
       ws.close();
     }

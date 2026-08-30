@@ -92,6 +92,7 @@ import {
 import { WgNativeClient, generateWgKeyPair, type WgPeerConfig } from "@loombre/wg-native";
 import { buildProvisioningConfig } from "@loombre/shared";
 import { DbProvider } from "../../common/db.provider.js";
+import { WsUpgradeRegistry } from "../../common/ws-upgrade.registry.js";
 import { SettingsService } from "../../settings/settings.service.js";
 import { resolveAppPaths } from "../../cli/app-paths.js";
 import { conflict, notFound, unprocessableEntity, serviceUnavailable } from "../../gateway/problem.exception.js";
@@ -157,6 +158,7 @@ export class RemoteWireguardService implements OnApplicationBootstrap, OnModuleD
     private readonly settingsService: SettingsService,
     private readonly httpAdapterHost: HttpAdapterHost,
     private readonly activePathReader: RemoteActivePathReader,
+    private readonly wsUpgradeRegistry: WsUpgradeRegistry,
   ) {}
 
   /** R8 boot resume: if the persisted intent is "enabled", restart the
@@ -538,6 +540,14 @@ export class RemoteWireguardService implements OnApplicationBootstrap, OnModuleD
 
   private async startBackendListener(): Promise<http.Server> {
     const server = http.createServer(this.requestListener());
+    // A tunnel peer's /v1/events WebSocket handshake arrives HERE (RG2
+    // raw-TCP-pipes tunnel connections to this listener), not on Nest's
+    // own http.Server — without the broadcaster's upgrade handler the
+    // handshake falls through to the REST stack and live events silently
+    // die for every remote device (common/ws-upgrade.registry.ts's header
+    // has the full story; the registry queues this attach if boot-resume
+    // runs before the broadcaster's own bootstrap hook).
+    this.wsUpgradeRegistry.attach(server);
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
       server.listen(0, "127.0.0.1", () => {

@@ -84,6 +84,7 @@ import { CloudflareTunnelProvider } from "../src/remote/tunnel/cloudflare-tunnel
 import { ConnectorManager } from "../src/remote/tunnel/connector-manager.js";
 import type { CloudflaredConnectorManager, SpawnFn } from "../src/remote/tunnel/cloudflared-connector-manager.js";
 import { RemoteTunnelBootResumerService } from "../src/remote/tunnel/remote-tunnel-boot-resumer.service.js";
+import { SettingsService } from "../src/settings/settings.service.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_PKG_ROOT = path.resolve(__dirname, "../../../packages/db");
@@ -473,6 +474,51 @@ describe("full enable -> disable cycle: verified teardown (R8) and event shapes 
     const secondDisable = await request(app.getHttpServer()).post("/admin/remote/tunnel/disable").set("Authorization", `Bearer ${adminToken}`);
     expect(secondDisable.status).toBe(200);
     expect(cfCallLog).toEqual([]);
+  });
+
+  it("enable auto-writes remote.tunnelHostname (the registry text's promise) and fills an EMPTY network.publicUrl; disable clears the hostname; a hand-set publicUrl is never clobbered (remote-access verification finding 2026-08-30: the setting was read by the posture card's public-url-coherence check but nothing ever wrote it, so every freshly-enabled tunnel hard-failed posture until an admin hand-typed it)", async () => {
+    const settingsService = app.get(SettingsService);
+    // Order-independent baseline: an earlier test's enable may have
+    // auto-filled publicUrl (that is the feature under test) — start empty.
+    await settingsService.updateSetting({ key: "network.publicUrl", value: "", actorUserId: adminUserId, nowMs: Date.now() });
+    expect(settingsService.getEffective("remote.tunnelHostname")?.value).toBe("");
+    expect(settingsService.getEffective("network.publicUrl")?.value).toBe("");
+
+    await request(app.getHttpServer()).post("/admin/remote/tunnel/token").set("Authorization", `Bearer ${adminToken}`).send({ token: "good-token" });
+    const enableRes = await request(app.getHttpServer())
+      .post("/admin/remote/tunnel/enable")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ hostname: "media.example.com" });
+    expect(enableRes.status).toBe(200);
+
+    expect(settingsService.getEffective("remote.tunnelHostname")?.value).toBe("media.example.com");
+    // publicUrl was empty -> auto-filled so probe minting, mail links and
+    // the posture coherence check all see the tunnel's public entry point.
+    expect(settingsService.getEffective("network.publicUrl")?.value).toBe("https://media.example.com");
+
+    const disableRes = await request(app.getHttpServer()).post("/admin/remote/tunnel/disable").set("Authorization", `Bearer ${adminToken}`);
+    expect(disableRes.status).toBe(200);
+    // The hostname setting is auto-managed (registry description), so
+    // disable clears it; publicUrl is NOT auto-cleared (mail links and
+    // other paths may still depend on it — an admin owns removing it).
+    expect(settingsService.getEffective("remote.tunnelHostname")?.value).toBe("");
+    expect(settingsService.getEffective("network.publicUrl")?.value).toBe("https://media.example.com");
+
+    // A hand-set publicUrl survives a later enable untouched.
+    await settingsService.updateSetting({ key: "network.publicUrl", value: "https://custom.example.net", actorUserId: adminUserId, nowMs: Date.now() });
+    await request(app.getHttpServer()).post("/admin/remote/tunnel/token").set("Authorization", `Bearer ${adminToken}`).send({ token: "good-token" });
+    const reEnable = await request(app.getHttpServer())
+      .post("/admin/remote/tunnel/enable")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ hostname: "media.example.com" });
+    expect(reEnable.status).toBe(200);
+    expect(settingsService.getEffective("network.publicUrl")?.value).toBe("https://custom.example.net");
+    expect(settingsService.getEffective("remote.tunnelHostname")?.value).toBe("media.example.com");
+
+    // Leave the shared DB the way this test found it (beforeEach's disable
+    // clears the hostname; publicUrl is this test's own residue).
+    await request(app.getHttpServer()).post("/admin/remote/tunnel/disable").set("Authorization", `Bearer ${adminToken}`);
+    await settingsService.updateSetting({ key: "network.publicUrl", value: "", actorUserId: adminUserId, nowMs: Date.now() });
   });
 
   it("events: remote.enabled (no path field, frozen Wave-0 shape) + remote.path.changed(newPath=tunnel) on enable; remote.disabled + remote.path.changed(newPath=none) on disable; NO secrets in any payload", async () => {
