@@ -213,6 +213,7 @@ function toSceneDto(detail: RestrictedSceneDetail) {
     markers: detail.chapters.map((c) => ({ id: c.id, title: c.title, startMs: c.startMs })),
     progress: detail.progress,
     quality: toQualityDto(detail.resolution, detail.hdr),
+    watchlisted: detail.watchlisted,
   };
 }
 

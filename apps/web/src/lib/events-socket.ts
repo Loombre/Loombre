@@ -43,6 +43,9 @@ export interface WebSocketLike {
   onerror: (() => void) | null;
   onmessage: ((event: { data: unknown }) => void) | null;
   close(): void;
+  /** RZI-D5c: the zone-subscription control frames are the one thing this
+   *  client ever sends (setRestrictedZoneSubscribed below). */
+  send(data: string): void;
 }
 export type WebSocketCtor = new (url: string) => WebSocketLike;
 
@@ -73,6 +76,7 @@ export class EventsSocket {
   private closedByUser = true;
   private status: SocketStatus = "closed";
   private connectToken = 0;
+  private restrictedZoneSubscribed = false;
 
   constructor(private readonly options: EventsSocketOptions) {}
 
@@ -143,6 +147,11 @@ export class EventsSocket {
       if (myToken !== this.connectToken) return;
       this.reconnectAttempts = 0;
       this.setStatus("open");
+      // RZI-D5c: re-arm the zone subscription after every (re)connect — a
+      // socket that dropped while the viewer was inside /restricted must
+      // come back still subscribed, or the zone silently stops receiving
+      // its own events until the next route change.
+      if (this.restrictedZoneSubscribed) this.sendZoneFrame(true);
     };
     ws.onmessage = (event) => this.handleMessage(event.data);
     ws.onclose = () => {
@@ -192,6 +201,29 @@ export class EventsSocket {
     const specific = this.listeners.get(event.type);
     if (specific) for (const listener of specific) listener(event);
     for (const listener of this.wildcardListeners) listener(event);
+  }
+
+  /**
+   * RZI-D5c zone subscription: the server's WS broadcaster delivers
+   * restricted-item events only to sockets that opened this subscription
+   * (AND whose five-gate clearance holds — the subscription never widens
+   * clearance). RestrictedProvider drives it from the route: on while the
+   * viewer is inside /restricted, off everywhere else. Desired state is
+   * remembered and re-sent on every reconnect (see onopen above).
+   */
+  setRestrictedZoneSubscribed(on: boolean): void {
+    if (this.restrictedZoneSubscribed === on) return;
+    this.restrictedZoneSubscribed = on;
+    if (this.status === "open") this.sendZoneFrame(on);
+  }
+
+  private sendZoneFrame(on: boolean): void {
+    try {
+      this.ws?.send(JSON.stringify({ type: on ? "restricted.subscribe" : "restricted.unsubscribe" }));
+    } catch {
+      // Socket raced closed mid-send — the desired state is re-sent on the
+      // next successful open, so a lost frame here self-heals.
+    }
   }
 
   /** Subscribe to exactly one event `type` (e.g. "restricted.locked"). */

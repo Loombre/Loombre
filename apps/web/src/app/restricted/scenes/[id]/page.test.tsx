@@ -27,6 +27,7 @@ import { Suspense, act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { components } from "@loombre/sdk";
 import { renderIntoBody, type TestRender } from "../../../../components/ui/test-render.js";
+import { ToastProvider } from "../../../../components/ui/Toast.js";
 
 /** Records what a real next/link click would hand to the client router. */
 const clientNav = vi.hoisted(() => ({ pushes: [] as string[] }));
@@ -147,6 +148,7 @@ const SCENE: components["schemas"]["RestrictedScene"] = {
   markers: [],
   progress: null,
   quality: { is4k: false, hdr: "none", resolution: "FHD" },
+  watchlisted: false,
 };
 
 async function flush(): Promise<void> {
@@ -177,9 +179,14 @@ function fulfilled<T>(value: T): Promise<T> {
 
 async function renderScene(): Promise<TestRender> {
   const view = renderIntoBody(
-    <Suspense fallback={null}>
-      <RestrictedScenePage params={fulfilled({ id: SCENE_ID })} />
-    </Suspense>,
+    // ToastProvider: the RZI-D2a ZoneWatchlistToggle in the actions row
+    // calls useToast(), same wrapping MovieDetailScreen.test.tsx uses for
+    // the general WatchlistToggle.
+    <ToastProvider>
+      <Suspense fallback={null}>
+        <RestrictedScenePage params={fulfilled({ id: SCENE_ID })} />
+      </Suspense>
+    </ToastProvider>,
   );
   await flush();
   await flush();

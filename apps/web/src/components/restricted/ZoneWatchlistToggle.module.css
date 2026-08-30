@@ -1,0 +1,32 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* Loombre :: apps/web/src/components/restricted/ZoneWatchlistToggle.module.css
+ *
+ * detail/WatchlistToggle.module.css's two-state pill, re-cut in the zone's
+ * warning-amber instead of accent — the zone keeps its own colour
+ * (design/phosphor README.md: "Active genre/filter chips fill amber …
+ * the zone keeps its warning colour"), and the toggle is a zone-only
+ * control (RZI-D2a: the general watchlist never renders restricted rows,
+ * so this control never appears outside /restricted). */
+.button {
+  composes: button secondary from "../ui/Button.module.css";
+  width: fit-content;
+}
+
+.button[data-active="true"] {
+  background: color-mix(in srgb, var(--color-warning) 16%, transparent);
+  border-color: color-mix(in srgb, var(--color-warning) 45%, transparent);
+  color: var(--color-warning);
+}
+
+.button[data-active="true"]:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-warning) 24%, transparent);
+}
+
+/* Mobile hard line: touch targets never below 44px (design/phosphor
+   README.md — "Mobile touch targets are never below 44px"). */
+@media (width <= 767.98px) {
+  .button {
+    min-height: 44px;
+  }
+}

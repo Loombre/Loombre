@@ -39,6 +39,7 @@
 // per the task's instruction — never fails open.
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import { apiGet, apiPost, LoombreApiError } from "../../lib/api-client.js";
 import { getAuthStore } from "../../lib/auth-store.js";
 import { getEventsSocket, type EventEnvelope } from "../../lib/events-socket.js";
@@ -157,6 +158,22 @@ export function RestrictedProvider({ children }: { children: ReactNode }): React
       unsubAuth();
     };
   }, [patch]);
+
+  // RZI-D5c zone subscription: the server delivers restricted-item events
+  // only to sockets that opened it, so restricted `item.added` toasts (and
+  // every other restricted-item envelope) can never surface while the
+  // viewer is on a general page — even inside a live unlock window. Driven
+  // by the route: on inside /restricted, off everywhere else; the socket
+  // itself re-arms the frame after reconnects (events-socket.ts).
+  const pathname = usePathname();
+  useEffect(() => {
+    const socket = getEventsSocket();
+    // pathname is null outside a router (jsdom component tests mount this
+    // provider bare); null is never inside the zone.
+    const inZone = pathname !== null && (pathname === "/restricted" || pathname.startsWith("/restricted/"));
+    socket.setRestrictedZoneSubscribed(inZone);
+    return () => socket.setRestrictedZoneSubscribed(false);
+  }, [pathname]);
 
   // Websocket: instant cross-tab/device lock/unlock + self-expiry ticking.
   useEffect(() => {

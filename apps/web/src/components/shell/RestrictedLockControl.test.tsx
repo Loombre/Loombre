@@ -60,7 +60,7 @@ vi.mock("../../lib/auth-store.js", () => ({
 }));
 
 vi.mock("../../lib/events-socket.js", () => ({
-  getEventsSocket: () => ({ subscribe: () => () => {} }),
+  getEventsSocket: () => ({ subscribe: () => () => {}, setRestrictedZoneSubscribed: () => {} }),
 }));
 
 vi.mock("../../lib/catalog-invalidation.js", () => ({

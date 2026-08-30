@@ -57,6 +57,9 @@ vi.mock("../../lib/events-socket.js", () => ({
       set.add(listener);
       return () => set!.delete(listener);
     },
+    // RZI-D5c zone subscription — a no-op here; these tests mount the
+    // provider outside a router (pathname null), which is never in-zone.
+    setRestrictedZoneSubscribed: () => {},
   }),
 }));
 

@@ -4011,6 +4011,8 @@ export interface components {
         RestrictedScene: components["schemas"]["CatalogItemBase"] & {
             /** @constant */
             itemType: "movie";
+            /** @description Whether the CALLER has this scene watchlisted (RZI-D2a). Carried on the scene detail because the general watchlist surfaces never see restricted rows under §6.4 surface scoping — the zone answers membership itself, and the zone home's watchlistInZone rail is where the rows render. */
+            watchlisted: boolean;
             /**
              * Format: int64
              * @description K1 editorial premiere date (movie_details.premiere_at_ms); null falls back to `year`.

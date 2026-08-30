@@ -21,6 +21,7 @@ import { AppShell } from "../../../../components/shell/AppShell.js";
 import { RestrictedGate } from "../../../../components/restricted/RestrictedGate.js";
 import { RestrictedZoneChip } from "../../../../components/restricted/RestrictedZoneChip.js";
 import { PlayLink } from "../../../../components/detail/PlayLink.js";
+import { ZoneWatchlistToggle } from "../../../../components/restricted/ZoneWatchlistToggle.js";
 import { Skeleton } from "../../../../components/skeleton/Skeleton.js";
 import { useRestricted } from "../../../../components/restricted/RestrictedProvider.js";
 import { hasRestrictedZoneEntitlement, useRestrictedZoneCount } from "../../../../lib/restricted-zone-count.js";
@@ -147,6 +148,9 @@ function SceneContent({ id }: { id: string }): React.JSX.Element | null {
 
         <div className={styles.actions}>
           <PlayLink itemId={scene.id} />
+          {/* RZI-D2a: zone-scoped toggle — key on scene id so navigating
+              between scenes reseeds the membership state. */}
+          <ZoneWatchlistToggle key={scene.id} itemId={scene.id} initialWatchlisted={scene.watchlisted} />
         </div>
 
         {scene.performers.length > 0 && (

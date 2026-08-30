@@ -637,6 +637,12 @@ export interface RestrictedSceneDetail {
     playCount: number;
     updatedAtMs: number;
   } | null;
+  /** RZI-D2a: whether the CALLER has this scene watchlisted — the zone
+   *  detail page's toggle state. Carried here because the general
+   *  watchlist surfaces (GET /watchlist + lib/watchlist-sync's id map)
+   *  never see restricted rows under §6.4 surface scoping, so the zone
+   *  must answer membership itself. */
+  watchlisted: boolean;
 }
 
 /**
@@ -709,7 +715,7 @@ export async function getRestrictedSceneDetail(
 
   if (!row) return undefined;
 
-  const [images, studioRows, performerRows, tagRows, chapterRows, progressRow] = await Promise.all([
+  const [images, studioRows, performerRows, tagRows, chapterRows, progressRow, watchlistRow] = await Promise.all([
     fetchBrowseImagesBatch(db, [row.id]),
     applyContentClassFilter(
       db
@@ -761,6 +767,12 @@ export async function getRestrictedSceneDetail(
       .where('item_id', '=', row.id)
       .where('user_id', '=', ctx.userId)
       .executeTakeFirst(),
+    db
+      .selectFrom('watchlists')
+      .select('item_id')
+      .where('item_id', '=', row.id)
+      .where('user_id', '=', ctx.userId)
+      .executeTakeFirst(),
   ]);
 
   return {
@@ -795,5 +807,6 @@ export async function getRestrictedSceneDetail(
           updatedAtMs: progressRow.updated_at_ms,
         }
       : null,
+    watchlisted: watchlistRow !== undefined,
   };
 }

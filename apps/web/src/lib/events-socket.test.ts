@@ -8,6 +8,7 @@ class FakeSocket implements WebSocketLike {
   onerror: (() => void) | null = null;
   onmessage: ((event: { data: unknown }) => void) | null = null;
   closed = false;
+  sent: string[] = [];
 
   constructor(public readonly url: string) {
     instances.push(this);
@@ -17,6 +18,10 @@ class FakeSocket implements WebSocketLike {
     if (this.closed) return;
     this.closed = true;
     this.onclose?.();
+  }
+
+  send(data: string): void {
+    this.sent.push(data);
   }
 
   triggerOpen(): void {
@@ -184,5 +189,49 @@ describe("EventsSocket", () => {
     await vi.advanceTimersByTimeAsync(1000);
     await vi.waitFor(() => expect(instances).toHaveLength(1));
     expect(instances[0]?.url).toContain("finally-a-token");
+  });
+
+  // RZI-D5c zone subscription (run RZI-2026-08-30): restricted-item events
+  // are delivered only to sockets that opened the zone subscription, so
+  // the client must send the control frames at the right moments AND
+  // re-arm after reconnects (a dropped socket inside /restricted must come
+  // back subscribed).
+  describe("setRestrictedZoneSubscribed (RZI-D5c)", () => {
+    it("sends the subscribe frame immediately on an open socket, and the unsubscribe frame when turned off", async () => {
+      const socket = makeSocket();
+      socket.connect();
+      await vi.waitFor(() => expect(instances).toHaveLength(1));
+      instances[0]!.triggerOpen();
+
+      socket.setRestrictedZoneSubscribed(true);
+      expect(instances[0]!.sent).toEqual([JSON.stringify({ type: "restricted.subscribe" })]);
+
+      // Idempotent: same desired state sends nothing new.
+      socket.setRestrictedZoneSubscribed(true);
+      expect(instances[0]!.sent).toHaveLength(1);
+
+      socket.setRestrictedZoneSubscribed(false);
+      expect(instances[0]!.sent).toEqual([
+        JSON.stringify({ type: "restricted.subscribe" }),
+        JSON.stringify({ type: "restricted.unsubscribe" }),
+      ]);
+    });
+
+    it("remembers the desired state while closed and re-sends the subscribe frame on every (re)connect", async () => {
+      const socket = makeSocket();
+      // Desired ON before any socket exists — nothing to send yet.
+      socket.setRestrictedZoneSubscribed(true);
+      socket.connect();
+      await vi.waitFor(() => expect(instances).toHaveLength(1));
+      instances[0]!.triggerOpen();
+      expect(instances[0]!.sent).toEqual([JSON.stringify({ type: "restricted.subscribe" })]);
+
+      // Server drops the socket; the reconnect must re-arm the subscription.
+      instances[0]!.triggerServerClose();
+      await vi.advanceTimersByTimeAsync(500);
+      await vi.waitFor(() => expect(instances).toHaveLength(2));
+      instances[1]!.triggerOpen();
+      expect(instances[1]!.sent).toEqual([JSON.stringify({ type: "restricted.subscribe" })]);
+    });
   });
 });

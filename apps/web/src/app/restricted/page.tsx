@@ -189,6 +189,25 @@ function RestrictedHomeContent(): React.JSX.Element | null {
             ))}
           </Row>
 
+          {/* RZI-D2a: the ONLY surface a watchlisted restricted title
+              renders on — the general /watchlist list refuses them
+              unconditionally (guard-enforced surface scoping). */}
+          <Row heading="Watchlist" empty="Nothing watchlisted in this zone.">
+            {home.watchlistInZone.map((entry) => (
+              <ZonePosterCard
+                key={entry.item.id}
+                serverUrl={serverUrl}
+                accessToken={accessToken}
+                itemId={entry.item.id}
+                itemType={entry.item.itemType}
+                title={entry.item.title}
+                subtitle={entry.item.year ? String(entry.item.year) : undefined}
+                blurhash={entry.item.images.find((img) => img.kind === "poster")?.blurhash ?? null}
+                href={`/restricted/scenes/${entry.item.id}`}
+              />
+            ))}
+          </Row>
+
           <Row
             heading="Recently Added"
             action={{ label: "ALL →", href: "/restricted/browse" }}
