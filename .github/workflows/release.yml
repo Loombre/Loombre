@@ -120,7 +120,19 @@ jobs:
       - name: Stamp release version (root package.json -> packages/shared/src/version.ts, no -dev suffix)
         run: node scripts/release/stamp-version.mjs --release
 
+      - name: Set up Go (packages/wg-native's c-shared library — pin mirrors ci.yml + native/go.mod)
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.5"
+
       - name: Build workspace
+        # LOOMBRE_REQUIRE_WG=1: a release artifact must never silently ship
+        # without the embedded WireGuard library (wg-native's build.mjs
+        # Go-missing skip is a local-dev convenience only) — before this,
+        # whether an installer carried the library depended on incidental
+        # runner state (2026-08-30 remote-access verification finding).
+        env:
+          LOOMBRE_REQUIRE_WG: "1"
         run: pnpm build
 
       - name: Prepare release output directory
@@ -175,7 +187,19 @@ jobs:
       - name: Stamp release version
         run: node scripts/release/stamp-version.mjs --release
 
+      - name: Set up Go (packages/wg-native's c-shared library — pin mirrors ci.yml + native/go.mod)
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.5"
+
       - name: Build workspace
+        # LOOMBRE_REQUIRE_WG=1: a release artifact must never silently ship
+        # without the embedded WireGuard library (wg-native's build.mjs
+        # Go-missing skip is a local-dev convenience only) — before this,
+        # whether an installer carried the library depended on incidental
+        # runner state (2026-08-30 remote-access verification finding).
+        env:
+          LOOMBRE_REQUIRE_WG: "1"
         run: pnpm build
 
       - name: Prepare release output directory
@@ -269,7 +293,19 @@ jobs:
       - name: Stamp release version
         run: node scripts/release/stamp-version.mjs --release
 
+      - name: Set up Go (packages/wg-native's c-shared library — pin mirrors ci.yml + native/go.mod)
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.5"
+
       - name: Build workspace
+        # LOOMBRE_REQUIRE_WG=1: a release artifact must never silently ship
+        # without the embedded WireGuard library (wg-native's build.mjs
+        # Go-missing skip is a local-dev convenience only) — before this,
+        # whether an installer carried the library depended on incidental
+        # runner state (2026-08-30 remote-access verification finding).
+        env:
+          LOOMBRE_REQUIRE_WG: "1"
         run: pnpm build
 
       - name: Prepare release output directory

@@ -39,6 +39,7 @@
      xmlns:fw="http://wixtoolset.org/schemas/v4/wxs/firewall">
   <?include ServerPort.wxi ?>
   <?include WebPort.wxi ?>
+  <?include WgPort.wxi ?>
   <Fragment>
     <ComponentGroup Id="FirewallComponents" Directory="INSTALLFOLDER">
       <Component Id="cmp.FirewallException" Guid="*">
@@ -75,6 +76,23 @@
           Description="Allows incoming connections to the Loombre web client, for access from other devices on your network."
           Port="$(var.WebPort)"
           Protocol="tcp"
+          Scope="any"
+          Profile="all"
+          IgnoreFailure="yes" />
+        <!-- Loombre Remote's embedded WireGuard listener (docs/PLAN.md
+             §10, STATE.md "Loombre Remote" R1): UDP, default 51820, inert
+             until an admin enables the Remote path. Without this rule the
+             one router step the wizard instructs (forward UDP 51820)
+             dead-ends at the Windows host firewall — 2026-08-30
+             remote-access verification finding. WgPort.wxi's header
+             covers the runtime-configurable-port caveat. Same Scope/
+             Profile/IgnoreFailure posture as the two rules above. -->
+        <fw:FirewallException
+          Id="fw.LoombreRemoteWireguard"
+          Name="Loombre Remote (WireGuard)"
+          Description="Allows incoming WireGuard connections for Loombre Remote, so your devices can reach Loombre away from home."
+          Port="$(var.WgPort)"
+          Protocol="udp"
           Scope="any"
           Profile="all"
           IgnoreFailure="yes" />

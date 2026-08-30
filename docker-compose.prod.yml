@@ -24,8 +24,10 @@
 #   - `web` runs the separate web-client image (`web` target) — the
 #     Dockerfile's header also explains why THAT one is its own image.
 #
-# No ports beyond the server's HTTP port and the web client's port are
-# published — this is a LAN/localhost-reachable stack by default.
+# Published ports: the server's HTTP port, the web client's port, and the
+# Loombre Remote WireGuard UDP port (inert until an admin enables that
+# path — see the mapping's own comment) — this is otherwise a
+# LAN/localhost-reachable stack by default.
 # Reverse-proxy + TLS (80/443) is the documented real-deployment path
 # (docs/install/docker.md; the reverse-proxy and ACME mechanics themselves
 # are lane F's docs/ops territory, not this file's job).
@@ -143,6 +145,28 @@ services:
       LOOMBRE_RESTRICTED_ENABLED: ${LOOMBRE_RESTRICTED_ENABLED:-}
       LOOMBRE_TMDB_API_KEY: ${LOOMBRE_TMDB_API_KEY:-}
       LOOMBRE_TVDB_API_KEY: ${LOOMBRE_TVDB_API_KEY:-}
+      # Mail (SMTP) env pins + the public URL (optional mail transport run,
+      # E6; settings registry keys network.publicUrl / mail.*). All
+      # OPTIONAL: mail is fully configurable through the admin UI with
+      # nothing set here — these exist for operators who want env-pinned
+      # (UI-locked) mail config. Compose `--env-file` values are
+      # interpolation-only (the ffmpeg audit finding below), so without
+      # these mappings setting the vars silently did NOTHING (2026-08-30
+      # SMTP verification finding). Empty = unset for settings pins
+      # (packages/shared/src/settings-resolve.ts requires a non-blank
+      # value to pin), so the plain `:-` pass-through is safe. Keep the
+      # LOOMBRE_SMTP_* block in sync with `worker` below — the worker is
+      # the process that actually sends (env pins overlay its per-job
+      # settings read too, and credentials are resolved env-first in BOTH
+      # processes).
+      LOOMBRE_PUBLIC_URL: ${LOOMBRE_PUBLIC_URL:-}
+      LOOMBRE_SMTP_HOST: ${LOOMBRE_SMTP_HOST:-}
+      LOOMBRE_SMTP_PORT: ${LOOMBRE_SMTP_PORT:-}
+      LOOMBRE_SMTP_SECURITY: ${LOOMBRE_SMTP_SECURITY:-}
+      LOOMBRE_SMTP_FROM_ADDRESS: ${LOOMBRE_SMTP_FROM_ADDRESS:-}
+      LOOMBRE_SMTP_FROM_NAME: ${LOOMBRE_SMTP_FROM_NAME:-}
+      LOOMBRE_SMTP_USERNAME: ${LOOMBRE_SMTP_USERNAME:-}
+      LOOMBRE_SMTP_PASSWORD: ${LOOMBRE_SMTP_PASSWORD:-}
       # ffmpeg/ffprobe override pass-through, image's vendored pair as the
       # default. loombre.env.example documented these as an escape hatch
       # (hw-accel builds bind-mounted in) but nothing ever passed them into
@@ -157,6 +181,16 @@ services:
       PORT: ${LOOMBRE_PORT:-3001}
     ports:
       - "${LOOMBRE_PORT:-3001}:${LOOMBRE_PORT:-3001}"
+      # Loombre Remote (embedded WireGuard, docs/ops/remote-access/
+      # loombre-remote.md): INERT until an admin enables the Remote path in
+      # Settings → Remote Access — nothing listens here before that, so
+      # publishing it by default costs nothing and makes the path work
+      # without editing this file. Must match the `remote.wireguardPort`
+      # setting (default 51820); change both together. UDP — the router
+      # port-forward the wizard instructs is UDP too (2026-08-30
+      # remote-access verification finding: without this mapping the
+      # WireGuard path could never work in the Docker distribution).
+      - "${LOOMBRE_WG_PORT:-51820}:${LOOMBRE_WG_PORT:-51820}/udp"
     volumes:
       - loombre_data:/data
       # Bind-mount example (documented, not enabled by default — uncomment
@@ -213,6 +247,20 @@ services:
       LOOMBRE_SCAN_POLL: ${LOOMBRE_SCAN_POLL:-}
       LOOMBRE_TMDB_API_KEY: ${LOOMBRE_TMDB_API_KEY:-}
       LOOMBRE_TVDB_API_KEY: ${LOOMBRE_TVDB_API_KEY:-}
+      # Same mail env-pin block — and the same previously-dead-override
+      # finding — as `server` above. The WORKER is the process that
+      # actually sends mail (the 'mail-send' job consumer overlays env
+      # pins on its per-job settings read and resolves SMTP credentials
+      # env-first, exactly like the server does for its config/status
+      # surfaces), so a pin reaching only one container would desync what
+      # the admin UI reports from what actually gets sent.
+      LOOMBRE_SMTP_HOST: ${LOOMBRE_SMTP_HOST:-}
+      LOOMBRE_SMTP_PORT: ${LOOMBRE_SMTP_PORT:-}
+      LOOMBRE_SMTP_SECURITY: ${LOOMBRE_SMTP_SECURITY:-}
+      LOOMBRE_SMTP_FROM_ADDRESS: ${LOOMBRE_SMTP_FROM_ADDRESS:-}
+      LOOMBRE_SMTP_FROM_NAME: ${LOOMBRE_SMTP_FROM_NAME:-}
+      LOOMBRE_SMTP_USERNAME: ${LOOMBRE_SMTP_USERNAME:-}
+      LOOMBRE_SMTP_PASSWORD: ${LOOMBRE_SMTP_PASSWORD:-}
       # Same ffmpeg/ffprobe pass-through — and the same previously-dead-
       # override audit finding — as `server` above. The WORKER is the
       # process that actually spawns these for probe/transcode jobs

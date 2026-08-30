@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Loombre :: installers/windows/msi/WgPort.wxi
+
+  Single source of truth for the Loombre Remote (embedded WireGuard) UDP
+  listen port's INSTALLER-side default, consumed by Firewall.wxs's UDP
+  FirewallException. Same .wxi-include-not-Package.wxs-define mechanics as
+  ServerPort.wxi (see that file's header for the WIX0150 story), same
+  `wix build -d WgPort=…` override hatch.
+
+  UNLIKE ServerPort/WebPort, this port is a RUNTIME setting
+  (`remote.wireguardPort`, default 51820, settings-registry.ts) an admin
+  can change after install — the firewall rule cannot track that. 51820
+  covers the default; an admin who changes the setting owns updating
+  their firewall rule, and docs/ops/remote-access/loombre-remote.md's
+  port-forward instructions are the surface that tells them so. The rule
+  itself is inert until the Remote path is enabled (nothing listens on
+  the port before that).
+-->
+<Include>
+  <?ifndef WgPort ?>
+    <?define WgPort = "51820" ?>
+  <?endif ?>
+</Include>

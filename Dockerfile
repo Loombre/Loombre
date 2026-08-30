@@ -187,6 +187,43 @@ RUN --mount=type=secret,id=github_token \
     node scripts/fetch-ffmpeg.mjs --platform "$ffmpeg_platform" --vendor-dir /vendor
 
 # ─────────────────────────────────────────────────────────────────────────
+# Stage: wg-native-build — the embedded WireGuard c-shared library
+# (packages/wg-native, STATE.md "Loombre Remote" R1/RG1/RG2). The node
+# `builder` stage compiles wg-native's TypeScript but its build.mjs
+# SILENTLY SKIPS the Go half when no Go toolchain is present (by design —
+# see that script's header), so without this stage the image ships a
+# loader with no library: every Loombre Remote enable 503s
+# ("embedded WireGuard component is not available on this build") —
+# the 2026-08-30 remote-access verification finding. Built here in a
+# dedicated Go stage instead of adding Go to `builder` so the node build
+# cache and the Go build cache never invalidate each other.
+#
+# Go version pin mirrors native/go.mod and ci.yml's setup-go — bump all
+# three together. Runs `go build` directly (not scripts/build.mjs) because
+# this stage has no node/pnpm; the artifact name must match what
+# src/platform.ts resolves at runtime: wg-native-linux-<NODE arch>.so,
+# hence the TARGETARCH (docker: amd64/arm64) -> node arch (x64/arm64) map
+# — same mapping the ffmpeg-fetch stage above does for the same reason.
+# Under buildx each per-platform build runs this stage natively (QEMU for
+# the foreign arch — installers/docker/BUILD-NOTES.md), so a plain native
+# `go build` always produces the right architecture; no cross-compilation.
+# ─────────────────────────────────────────────────────────────────────────
+FROM golang:1.26.5-bookworm AS wg-native-build
+WORKDIR /build
+COPY packages/wg-native/native/ .
+ARG TARGETARCH
+RUN --mount=type=cache,id=loombre-go-mod,target=/go/pkg/mod \
+    --mount=type=cache,id=loombre-go-build,target=/root/.cache/go-build \
+    set -eu; \
+    case "$TARGETARCH" in \
+      amd64) node_arch=x64 ;; \
+      arm64) node_arch=arm64 ;; \
+      *) echo "wg-native-build: unsupported TARGETARCH '$TARGETARCH' (need amd64 or arm64)" >&2; exit 1 ;; \
+    esac; \
+    mkdir -p /out; \
+    CGO_ENABLED=1 go build -buildmode=c-shared -o "/out/wg-native-linux-${node_arch}.so" .
+
+# ─────────────────────────────────────────────────────────────────────────
 # Stage: web-pruner — a SECOND `turbo prune`, scoped to @loombre/web only
 # (installer completeness audit). Deliberately NOT merged into the shared
 # `pruner` scope above: adding @loombre/web there would drag apps/web and
@@ -429,6 +466,17 @@ COPY --from=builder --chown=loombre:loombre /repo/packages/controller-ipc/dist .
 # COPY in 1.)
 COPY --from=builder --chown=loombre:loombre /repo/packages/plugin-host/dist ./packages/plugin-host/dist
 COPY --from=builder --chown=loombre:loombre /repo/packages/plugin-protocol/dist ./packages/plugin-protocol/dist
+# @loombre/wg-native (Loombre Remote, R1/RG2): SAME drift pattern as
+# secrets/controller-ipc/plugin-host above — the remote run landed after
+# this COPY list, apps/server/src/remote/wireguard/remote-wireguard.
+# service.ts imports it STATICALLY, and without this dist the server
+# crash-loops on ERR_MODULE_NOT_FOUND at boot (2026-08-30 remote-access
+# verification finding). Two pieces: the compiled TS loader from the node
+# builder, then the Go c-shared library from wg-native-build dropped into
+# the same dist/ (src/loader.ts resolves the .so as a sibling of its own
+# compiled self).
+COPY --from=builder --chown=loombre:loombre /repo/packages/wg-native/dist ./packages/wg-native/dist
+COPY --from=wg-native-build --chown=loombre:loombre /out/*.so ./packages/wg-native/dist/
 # 3) @loombre/db + @loombre/jobs: as of Phase 4 Wave 3 (lane STRUCT) both ship
 #    REAL dist builds (exports point at dist/, no runtime loader) — copied
 #    from the builder like every sibling above, NOT raw src. db additionally
