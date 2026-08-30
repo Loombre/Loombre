@@ -61,8 +61,19 @@ export interface RestrictedContinueWatchingEntry {
   progress: RestrictedContinueWatchingProgress;
 }
 
+/** RZI-D2a (DECISIONS.md §2026-08-29): the zone's own watchlist rail — the
+ *  ONLY place a watchlisted restricted title renders. The general
+ *  GET /watchlist list refuses restricted rows unconditionally under RZI
+ *  surface scoping (its contract description always claimed this; the
+ *  guard now delivers it), so the rows land here instead. */
+export interface RestrictedWatchlistEntry {
+  item: RestrictedBrowseItemRow;
+  addedAtMs: number;
+}
+
 export interface RestrictedZoneHome {
   continueWatchingInZone: RestrictedContinueWatchingEntry[];
+  watchlistInZone: RestrictedWatchlistEntry[];
   recentlyAddedInZone: RestrictedBrowseItemRow[];
   studios: RestrictedStudioRow[];
   performers: RestrictedPerformerRow[];
@@ -185,6 +196,106 @@ async function getContinueWatchingInZone(
         updatedAtMs: row.updatedAtMs,
       },
     };
+  });
+}
+
+/**
+ * Watchlist-in-zone (RZI-D2a): ctx.userId's watchlists rows whose item is a
+ * zone scene, newest-added first — the zone-scoped sibling of
+ * getContinueWatchingInZone directly above, and the render home for the
+ * restricted rows src/query/watchlist.ts's general-surface list refuses.
+ * Card assembly deliberately mirrors getContinueWatchingInZone's inline
+ * block rather than sharing one abstraction (same documented-local-copy
+ * posture as fetchStudioImagesBatch/fetchPerformerImagesBatch below); the
+ * one intentional difference: item.updatedAtMs is catalog_items.updated_at_ms
+ * (a watchlist row has no activity timestamp of its own worth projecting
+ * onto the card the way progress.updated_at_ms is).
+ */
+async function getWatchlistInZone(
+  db: Kysely<DB>,
+  ctx: ViewerContext,
+  restrictedLibraryIds: string[],
+  limit: number
+): Promise<RestrictedWatchlistEntry[]> {
+  const watchlistRows = await db
+    .selectFrom('watchlists')
+    .innerJoin('catalog_items', 'catalog_items.id', 'watchlists.item_id')
+    .leftJoin('movie_details', 'movie_details.item_id', 'catalog_items.id')
+    .where('watchlists.user_id', '=', ctx.userId)
+    .where('catalog_items.library_id', 'in', restrictedLibraryIds)
+    .where('catalog_items.item_type', '=', 'movie' satisfies ItemType)
+    .where(applyGuardToJoined(ctx, 'watchlists.item_id'))
+    .select([
+      'catalog_items.id as id',
+      'catalog_items.library_id as libraryId',
+      'catalog_items.title as title',
+      'catalog_items.sort_title as sortTitle',
+      'catalog_items.year as year',
+      'catalog_items.community_rating as communityRating',
+      'catalog_items.added_at_ms as addedAtMs',
+      'catalog_items.updated_at_ms as updatedAtMs',
+      'movie_details.premiere_at_ms as premiereAtMs',
+      'watchlists.added_at_ms as watchlistedAtMs',
+    ])
+    .orderBy('watchlists.added_at_ms', 'desc')
+    .orderBy('watchlists.item_id', 'desc')
+    .limit(limit)
+    .execute();
+
+  if (watchlistRows.length === 0) return [];
+  const ids = watchlistRows.map((r) => r.id);
+
+  const [primaryFiles, genresMap, studioMap, imagesMap] = await Promise.all([
+    db
+      .selectFrom('media_files')
+      .leftJoin('media_streams', (join) =>
+        join.onRef('media_streams.file_id', '=', 'media_files.id').on('media_streams.stream_type', '=', 'video')
+      )
+      .select([
+        'media_files.item_id as itemId',
+        'media_files.id as fileId',
+        'media_files.duration_ms as durationMs',
+        'media_streams.height as height',
+        'media_streams.hdr as hdr',
+      ])
+      .where('media_files.item_id', 'in', ids)
+      .where('media_files.missing_since_ms', 'is', null)
+      .orderBy(sql`(media_files.version_label IS NULL)`, 'desc')
+      .orderBy('media_files.id', 'asc')
+      .orderBy('media_streams.stream_index', 'asc')
+      .execute(),
+    fetchBrowseGenresBatch(db, ctx, ids),
+    fetchBrowseStudioBatch(db, ctx, ids),
+    fetchBrowseImagesBatch(db, ids),
+  ]);
+
+  const primaryByItem = new Map<string, { durationMs: number | null; height: number | null; hdr: RestrictedBrowseItemRow['hdr'] }>();
+  for (const f of primaryFiles) {
+    if (primaryByItem.has(f.itemId)) continue; // first non-missing file per item wins
+    primaryByItem.set(f.itemId, { durationMs: f.durationMs, height: f.height, hdr: f.hdr });
+  }
+
+  return watchlistRows.map((row) => {
+    const primary = primaryByItem.get(row.id);
+    const item: RestrictedBrowseItemRow = {
+      id: row.id,
+      libraryId: row.libraryId,
+      title: row.title,
+      sortTitle: row.sortTitle,
+      year: row.year,
+      communityRating: row.communityRating,
+      contentClass: 'restricted',
+      addedAtMs: row.addedAtMs,
+      updatedAtMs: row.updatedAtMs,
+      premiereAtMs: row.premiereAtMs,
+      durationMs: primary?.durationMs ?? null,
+      resolution: resolutionBandForHeight(primary?.height),
+      hdr: primary?.hdr ?? null,
+      genres: genresMap.get(row.id) ?? [],
+      studio: studioMap.get(row.id) ?? null,
+      images: imagesMap.get(row.id) ?? [],
+    };
+    return { item, addedAtMs: row.watchlistedAtMs };
   });
 }
 
@@ -339,8 +450,9 @@ export async function getRestrictedZoneHome(
   const railLimit = params.railLimit ?? DEFAULT_RAIL_LIMIT;
   const entityRailLimit = Math.min(railLimit, DEFAULT_ENTITY_RAIL_LIMIT);
 
-  const [continueWatchingInZone, recentlyAddedResult, studios, performers] = await Promise.all([
+  const [continueWatchingInZone, watchlistInZone, recentlyAddedResult, studios, performers] = await Promise.all([
     getContinueWatchingInZone(db, ctx, restrictedLibraryIds, railLimit),
+    getWatchlistInZone(db, ctx, restrictedLibraryIds, railLimit),
     listRestrictedBrowse(db, ctx, { sort: 'added', limit: railLimit }),
     getTopStudiosInZone(db, ctx, restrictedLibraryIds, entityRailLimit),
     getTopPerformersInZone(db, ctx, restrictedLibraryIds, entityRailLimit),
@@ -348,6 +460,7 @@ export async function getRestrictedZoneHome(
 
   return {
     continueWatchingInZone,
+    watchlistInZone,
     // listRestrictedBrowse re-derives the SAME entitlement check this
     // function just performed, so `undefined` here would mean the
     // entitlement state changed between calls (a race, not a real case) —

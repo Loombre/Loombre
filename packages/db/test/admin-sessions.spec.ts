@@ -93,8 +93,8 @@ beforeAll(async () => {
   ).rows.map((r) => r.id);
   const allLibraryIds = (await rawClient.query<{ id: string }>('SELECT id FROM libraries')).rows.map((r) => r.id);
 
-  adminClearedCtx = { userId: adminId, allowedLibraryIds: allLibraryIds, restrictedCleared: true };
-  adminUnclearedCtx = { userId: adminId, allowedLibraryIds: generalLibraryIds, restrictedCleared: false };
+  adminClearedCtx = { userId: adminId, allowedLibraryIds: allLibraryIds, restrictedCleared: true, surface: 'restricted' };
+  adminUnclearedCtx = { userId: adminId, allowedLibraryIds: generalLibraryIds, restrictedCleared: false, surface: 'restricted' };
 
   const device = await rawClient.query<{ id: string; name: string }>(
     'SELECT id, name FROM devices WHERE user_id = $1 LIMIT 1',

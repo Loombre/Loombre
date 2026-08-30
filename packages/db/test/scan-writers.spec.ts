@@ -450,7 +450,7 @@ describe('library readers', () => {
 });
 
 describe('query-guard: missing-file visibility (P1.2, docs/PLAN.md §8.2)', () => {
-  const ctx: ViewerContext = { userId: 'guard-test-user', allowedLibraryIds: [], restrictedCleared: true };
+  const ctx: ViewerContext = { userId: 'guard-test-user', allowedLibraryIds: [], restrictedCleared: true, surface: 'restricted' };
 
   it('an item with zero media_files rows (a container item) stays visible', async () => {
     const now = Date.now();

@@ -71,6 +71,7 @@ beforeAll(async () => {
       userId: casual.rows[0]!.id,
       allowedLibraryIds: generalLibs.rows.map((r) => r.id),
       restrictedCleared: false,
+      surface: 'restricted',
     };
 
     // seed/seed.mjs seeds no provider_ids at all — insert a couple so the

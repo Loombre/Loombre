@@ -13,7 +13,7 @@
 // impossibility for every other package, not a code-review hope
 // (docs/PLAN.md §6.4).
 
-export type { ViewerContext } from './context.js';
+export type { ViewerContext, ViewerSurface } from './context.js';
 export type {
   CatalogItemRow,
   GetRecentlyAddedParams,
@@ -253,6 +253,7 @@ export type {
   RestrictedZoneHome,
   RestrictedContinueWatchingEntry,
   RestrictedContinueWatchingProgress,
+  RestrictedWatchlistEntry,
   GetRestrictedZoneHomeParams,
 } from './query/restricted-home.js';
 export { getRestrictedZoneHome } from './query/restricted-home.js';

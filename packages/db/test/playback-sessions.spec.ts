@@ -117,8 +117,8 @@ beforeAll(async () => {
   ).rows.map((r) => r.id);
   const allLibraryIds = (await rawClient.query<{ id: string }>('SELECT id FROM libraries')).rows.map((r) => r.id);
 
-  adminCtx = { userId: adminId, allowedLibraryIds: allLibraryIds, restrictedCleared: true };
-  casualCtx = { userId: casualId, allowedLibraryIds: generalLibraryIds, restrictedCleared: false };
+  adminCtx = { userId: adminId, allowedLibraryIds: allLibraryIds, restrictedCleared: true, surface: 'restricted' };
+  casualCtx = { userId: casualId, allowedLibraryIds: generalLibraryIds, restrictedCleared: false, surface: 'restricted' };
 
   adminDeviceId = (
     await rawClient.query<{ id: string }>('SELECT id FROM devices WHERE user_id = $1 LIMIT 1', [adminId])

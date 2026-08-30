@@ -168,10 +168,18 @@ beforeAll(async () => {
     await rawClient.query<{ id: string }>("SELECT id FROM users WHERE username = 'admin'")
   ).rows[0]!.id;
 
+  // RZI surface note (run RZI-2026-08-30): the three base fixtures carry
+  // surface: 'restricted' — the permissive surface — so every pre-RZI
+  // exclusion assertion in this suite stays a pure CLEARANCE test (gate 5
+  // and friends still gate rows out even on the surface that CAN see
+  // restricted rows). The surface clause itself is proven by the dedicated
+  // 'RZI surface scoping' describe at the bottom, whose contexts differ
+  // from adminCleared in the surface field alone.
   casualUncleared = {
     userId: (await rawClient.query<{ id: string }>("SELECT id FROM users WHERE username = 'casual'")).rows[0]!.id,
     allowedLibraryIds: generalLibraryIds,
     restrictedCleared: false,
+    surface: 'restricted',
   };
 
   // Admin HAS library permission on the restricted library (gate 4), but
@@ -181,12 +189,14 @@ beforeAll(async () => {
     userId: adminId,
     allowedLibraryIds: allLibraryIds,
     restrictedCleared: false,
+    surface: 'restricted',
   };
 
   adminCleared = {
     userId: adminId,
     allowedLibraryIds: allLibraryIds,
     restrictedCleared: true,
+    surface: 'restricted',
   };
 
   const one = async (sqlText: string) => {
@@ -796,6 +806,7 @@ describe('restricted-content leak impossibility', () => {
           userId: adminCleared.userId,
           allowedLibraryIds: [],
           restrictedCleared: true,
+          surface: 'restricted',
         };
         const result = await listRestrictedBrowse(db, emptyLibsCleared, {});
         expect(result).toBeUndefined();
@@ -1014,6 +1025,7 @@ describe('restricted-content leak impossibility', () => {
         const locked = await getRestrictedZoneHome(db, adminClearedButNotUnlocked, {});
         expect(locked).toEqual({
           continueWatchingInZone: [],
+          watchlistInZone: [],
           recentlyAddedInZone: [],
           studios: [],
           performers: [],
@@ -1248,6 +1260,7 @@ describe('restricted-content leak impossibility', () => {
         expect(await getRestrictedZoneHome(db, casualUncleared, { railLimit: 1000 })).toBeUndefined();
         expect(await getRestrictedZoneHome(db, adminClearedButNotUnlocked, { railLimit: 1000 })).toEqual({
           continueWatchingInZone: [],
+          watchlistInZone: [],
           recentlyAddedInZone: [],
           studios: [],
           performers: [],
@@ -1347,7 +1360,7 @@ describe('restricted-content leak impossibility', () => {
       await removeFromWatchlistAndEmit(db, adminCleared, restrictedItemId, nowMs + 1);
     });
 
-    it("listWatchlist: THE REQUIRED CASE — a restricted (zone) item added while cleared is BYTE-ABSENT from the same user's list the instant they are no longer cleared (design/phosphor README.md's law: restricted titles never appear in the watchlist, locked or not)", async () => {
+    it("listWatchlist: THE REQUIRED CASE — a restricted (zone) item added while cleared is BYTE-ABSENT from the same user's list the instant they are no longer cleared (clearance re-derived on read; the full phosphor never-appear law is the general-surface case in the RZI describe below — this restricted-surface read is what feeds the zone's own watchlist rail)", async () => {
       const nowMs = Date.now();
 
       // Seed: admin (fully cleared) adds ONE general item and the seed's
@@ -1485,6 +1498,7 @@ describe('restricted-content leak impossibility', () => {
         userId: adminCleared.userId,
         allowedLibraryIds: [],
         restrictedCleared: true,
+        surface: 'restricted',
       };
 
       expect((await listItems(db, emptyLibsCleared, { limit: 50 })).rows).toHaveLength(0);
@@ -1521,6 +1535,113 @@ describe('restricted-content leak impossibility', () => {
         // nothing — proves the pattern wasn't widened into "match
         // everything".
         expect(peopleResult.rows).toHaveLength(0);
+      }
+    });
+  });
+
+  // ------------------------------------------------------------------
+  // RZI surface scoping (run RZI-2026-08-30, DECISIONS.md §2026-08-29,
+  // design/phosphor/README.md:714 — "restricted titles … never appear in
+  // Browse, Search, Home rails, the featured pool, or the watchlist,
+  // locked or not"). The law: full five-gate clearance is NECESSARY but
+  // no longer SUFFICIENT — restricted rows leave the guard only when the
+  // ViewerContext also carries surface: 'restricted' (the zone and the
+  // full-clearance item-addressed reads per RZI-D3/D6/D7). These cases
+  // construct general-surface twins of the fully-cleared fixture, so the
+  // ONLY variable is the surface — every failure isolates the guard's
+  // surface clause, not clearance resolution.
+  // ------------------------------------------------------------------
+  describe('RZI surface scoping — clearance without a restricted surface never leaks', () => {
+    // Deliberately un-annotated: pre-RZI this object carries an extra key
+    // the old ViewerContext lacked; post-RZI it IS a ViewerContext.
+    const generalSurface = (ctx: ViewerContext) => ({ ...ctx, surface: 'general' as const });
+
+    it('getItemById/listItems: a fully-cleared viewer on the general surface can never resolve a restricted item', async () => {
+      const ctx = generalSurface(adminCleared);
+      expect(await getItemById(db, ctx, restrictedItemId)).toBeUndefined();
+      const page = await listItems(db, ctx, { limit: 500 });
+      expect(page.rows.map((r) => r.id)).not.toContain(restrictedItemId);
+      // Byte-level, matching the watchlist REQUIRED CASE's standard.
+      expect(JSON.stringify(page)).not.toContain(restrictedItemId);
+    });
+
+    it('searchCatalog: general-surface search never matches restricted items, people, or tags — cleared or not', async () => {
+      const ctx = generalSurface(adminCleared);
+
+      // Restricted rows that a cleared RESTRICTED-surface read finds by
+      // 'Drama' (the mixed case pinned above) must be byte-absent here.
+      const drama = await searchCatalog(db, ctx, { q: 'Drama' });
+      expect(drama.rows.every((r) => r.contentClass === 'general')).toBe(true);
+      expect(JSON.stringify(drama)).not.toContain(restrictedItemId);
+
+      // THE FINDING's inversion: the restricted-cameo person match on a
+      // general item is now blocked on the general surface EVEN CLEARED —
+      // this simplification is one of the proposal's §2 rationale bullets.
+      const byPerson = await searchCatalog(db, ctx, { q: 'Restricted Cameo Performer' });
+      expect(byPerson.rows).toHaveLength(0);
+
+      // Tag-side twin ('Contraband' is a restricted-class tag on the same
+      // general item).
+      const byTag = await searchCatalog(db, ctx, { q: 'Contraband' });
+      expect(byTag.rows).toHaveLength(0);
+
+      // The general item itself stays findable by TITLE — the surface
+      // clause removes restricted matches, never general reachability.
+      const byTitle = await searchCatalog(db, ctx, { q: 'Last Ferry Out' });
+      expect(byTitle.rows.map((r) => r.id)).toContain(lastFerryOutItemId);
+    });
+
+    it('getRecentlyAdded: the general-surface home rail is all-general for a fully-cleared viewer', async () => {
+      const cleared = await getRecentlyAdded(db, generalSurface(adminCleared), { limit: 200 });
+      expect(cleared.rows.every((r) => r.content_class === 'general')).toBe(true);
+      expect(JSON.stringify(cleared)).not.toContain(restrictedItemId);
+    });
+
+    it('getContinueWatching: a restricted in-progress row never reaches the general-surface rail, cleared or not', async () => {
+      const { rows } = await getContinueWatching(db, generalSurface(adminCleared));
+      expect(rows.map((r) => r.itemId)).not.toContain(afterHoursRedlineItemId);
+    });
+
+    it('listWatchlist: a restricted item added from the zone is byte-absent from the general-surface list even while cleared (phosphor law, now enforced)', async () => {
+      const nowMs = Date.now();
+      const added = await addToWatchlistAndEmit(db, adminCleared, restrictedItemId, nowMs);
+      expect(added).toBeDefined();
+      try {
+        const general = await listWatchlist(db, generalSurface(adminCleared), { limit: 200 });
+        expect(general.rows.map((r) => r.itemId)).not.toContain(restrictedItemId);
+        expect(JSON.stringify(general)).not.toContain(restrictedItemId);
+      } finally {
+        await removeFromWatchlistAndEmit(db, adminCleared, restrictedItemId, nowMs + 1);
+      }
+    });
+
+    it('listPeople/listTags: restricted-class people and tags never list on the general surface, cleared or not', async () => {
+      const ctx = generalSurface(adminCleared);
+      const people = await listPeople(db, ctx, { limit: 500 });
+      expect(people.rows.map((r) => r.id)).not.toContain(restrictedPerformerOneId);
+      expect(people.rows.map((r) => r.id)).not.toContain(restrictedCameoPerformerId);
+      const tags = await listTags(db, ctx, { limit: 500 });
+      expect(tags.rows.map((r) => r.id)).not.toContain(restrictedDramaTagId);
+    });
+
+    it('clearanceDigest: the surface participates in the digest — general and restricted surfaces never share a cache row', async () => {
+      expect(clearanceDigest(generalSurface(adminCleared) as ViewerContext)).not.toBe(clearanceDigest(adminCleared));
+    });
+
+    it('getRestrictedZoneHome.watchlistInZone (RZI-D2a): the zone watchlist rail carries the restricted rows the general list refuses — cleared shows them, locked shows an empty rail', async () => {
+      const nowMs = Date.now();
+      const added = await addToWatchlistAndEmit(db, adminCleared, restrictedItemId, nowMs);
+      expect(added).toBeDefined();
+      try {
+        const cleared = await getRestrictedZoneHome(db, adminCleared);
+        expect(cleared).toBeDefined();
+        expect(cleared!.watchlistInZone.map((e) => e.item.id)).toContain(restrictedItemId);
+
+        const locked = await getRestrictedZoneHome(db, adminClearedButNotUnlocked);
+        expect(locked).toBeDefined();
+        expect(locked!.watchlistInZone).toHaveLength(0);
+      } finally {
+        await removeFromWatchlistAndEmit(db, adminCleared, restrictedItemId, nowMs + 1);
       }
     });
   });

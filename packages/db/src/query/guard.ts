@@ -77,13 +77,25 @@ function missingFileClauseSql() {
   )`;
 }
 
+/**
+ * The ONE place "may restricted rows reach this caller" is decided (RZI
+ * surface scoping, docs/PLAN.md §6.4 as amended 2026-08-30): full five-gate
+ * clearance AND a restricted surface, never clearance alone. Both the
+ * catalog_items class clause (guardPredicateSql below) and the people/tags
+ * class isolation (applyContentClassFilter below) key off this same
+ * function, so the two halves of content_class enforcement cannot drift.
+ */
+function restrictedRowsVisible(ctx: ViewerContext): boolean {
+  return ctx.restrictedCleared && ctx.surface === 'restricted';
+}
+
 function guardPredicateSql(ctx: ViewerContext) {
   const libraryClause =
     ctx.allowedLibraryIds.length === 0
       ? sql<boolean>`false`
       : sql<boolean>`${sql.ref('catalog_items.library_id')} = ANY(${ctx.allowedLibraryIds}::uuid[])`;
 
-  const contentClassClause = ctx.restrictedCleared
+  const contentClassClause = restrictedRowsVisible(ctx)
     ? sql<boolean>`true`
     : sql<boolean>`${sql.ref('catalog_items.content_class')} = 'general'`;
 
@@ -166,7 +178,8 @@ export function applyLibraryIdFilter<TB extends keyof DB & string, O>(
 /**
  * The content_class-isolation half of applyGuard's two clauses, generalized
  * to any query/column — `WHERE <column> = 'general'` unless
- * `ctx.restrictedCleared`. Used directly by callers that join in
+ * restrictedRowsVisible(ctx) (clearance AND a restricted surface — see that
+ * function's doc comment). Used directly by callers that join in
  * `people`/`tags` as a foreign table (search's match clauses), and via the
  * applyGuardToPeople/applyGuardToTags wrappers below when people/tags is
  * itself the query's base table.
@@ -176,7 +189,7 @@ export function applyContentClassFilter<TB extends keyof DB & string, O>(
   ctx: ViewerContext,
   column: ReferenceExpression<DB, TB>
 ): SelectQueryBuilder<DB, TB, O> {
-  return ctx.restrictedCleared ? qb : qb.where(column, '=', 'general');
+  return restrictedRowsVisible(ctx) ? qb : qb.where(column, '=', 'general');
 }
 
 /** applyContentClassFilter specialized to the `people` table as the query's

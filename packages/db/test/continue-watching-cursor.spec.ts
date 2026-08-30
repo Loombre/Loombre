@@ -103,7 +103,7 @@ beforeAll(async () => {
     .returningAll()
     .executeTakeFirstOrThrow();
 
-  ctx = { userId: user.id, allowedLibraryIds: [lib.id], restrictedCleared: false };
+  ctx = { userId: user.id, allowedLibraryIds: [lib.id], restrictedCleared: false, surface: 'restricted' };
 
   // Five in-progress rows. Two of them (Tie A/Tie B) share an
   // updated_at_ms so the secondary item_id key is load-bearing.

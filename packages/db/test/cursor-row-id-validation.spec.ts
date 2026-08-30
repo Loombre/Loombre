@@ -121,7 +121,7 @@ const SOME_USER_ID = '00000000-0000-7000-8000-000000000001';
 const SOME_LIBRARY_ID = '00000000-0000-7000-8000-000000000002';
 const SOME_PERSON_ID = '00000000-0000-7000-8000-000000000003';
 
-const ctx: ViewerContext = { userId: SOME_USER_ID, allowedLibraryIds: [SOME_LIBRARY_ID], restrictedCleared: true };
+const ctx: ViewerContext = { userId: SOME_USER_ID, allowedLibraryIds: [SOME_LIBRARY_ID], restrictedCleared: true, surface: 'restricted' };
 
 // Not valid `uuid` input format (packages/db/src/query/cursor.ts's own
 // UUID_PATTERN) — every value below must be REJECTED by isCursorRowId.

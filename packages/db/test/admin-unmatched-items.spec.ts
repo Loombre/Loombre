@@ -98,8 +98,8 @@ beforeAll(async () => {
   ).rows.map((r) => r.id);
   const allLibraryIds = (await rawClient.query<{ id: string }>('SELECT id FROM libraries')).rows.map((r) => r.id);
 
-  clearedCtx = { userId: adminId, allowedLibraryIds: allLibraryIds, restrictedCleared: true };
-  unclearedCtx = { userId: adminId, allowedLibraryIds: generalLibraryIds, restrictedCleared: false };
+  clearedCtx = { userId: adminId, allowedLibraryIds: allLibraryIds, restrictedCleared: true, surface: 'restricted' };
+  unclearedCtx = { userId: adminId, allowedLibraryIds: generalLibraryIds, restrictedCleared: false, surface: 'restricted' };
 });
 
 afterAll(async () => {

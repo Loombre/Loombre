@@ -185,7 +185,7 @@ describe('users.email optional / users.display_name (M1/M2)', () => {
     });
 
     const admin = await getUserByUsername(db, 'admin');
-    const ctx: ViewerContext = { userId: admin!.id, allowedLibraryIds: [], restrictedCleared: false };
+    const ctx: ViewerContext = { userId: admin!.id, allowedLibraryIds: [], restrictedCleared: false, surface: 'restricted' };
 
     const chunks = [];
     for await (const chunk of exportData(db, ctx)) chunks.push(chunk);

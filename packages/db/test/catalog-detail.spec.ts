@@ -128,13 +128,13 @@ afterAll(async () => {
   await db.destroy();
 });
 
-function ctxFor(userId: string, opts: { allowedLibraryIds: string[]; restrictedCleared: boolean }): ViewerContext {
-  return { userId, allowedLibraryIds: opts.allowedLibraryIds, restrictedCleared: opts.restrictedCleared };
+function ctxFor(userId: string, opts: { allowedLibraryIds: string[]; restrictedCleared: boolean, surface: 'restricted' }): ViewerContext {
+  return { userId, allowedLibraryIds: opts.allowedLibraryIds, restrictedCleared: opts.restrictedCleared, surface: 'restricted' };
 }
 
 describe('getCatalogDetail', () => {
   it('attaches satellite fields, genres, and images for a movie', async () => {
-    const ctx = ctxFor(adminId, { allowedLibraryIds: [libMoviesId], restrictedCleared: false });
+    const ctx = ctxFor(adminId, { allowedLibraryIds: [libMoviesId], restrictedCleared: false, surface: 'restricted' });
     const detail = await getCatalogDetail(db, ctx, movieHarborLightsId);
     expect(detail).toBeDefined();
     expect(detail!.title).toBe('Harbor Lights');
@@ -146,7 +146,7 @@ describe('getCatalogDetail', () => {
 
   it('attaches season/episode number satellite fields and grandparent id for an episode', async () => {
     const libTv = await db.selectFrom('catalog_items').select('library_id').where('id', '=', episodeId).executeTakeFirstOrThrow();
-    const ctx = ctxFor(adminId, { allowedLibraryIds: [libTv.library_id], restrictedCleared: false });
+    const ctx = ctxFor(adminId, { allowedLibraryIds: [libTv.library_id], restrictedCleared: false, surface: 'restricted' });
     const detail = await getCatalogDetail(db, ctx, episodeId);
     expect(detail).toBeDefined();
     expect(detail!.episodeNumber).toBe(1);
@@ -155,13 +155,13 @@ describe('getCatalogDetail', () => {
   });
 
   it('returns undefined for a restricted item when the viewer is not cleared (indistinguishable from nonexistent)', async () => {
-    const ctx = ctxFor(casualId, { allowedLibraryIds: [], restrictedCleared: false });
+    const ctx = ctxFor(casualId, { allowedLibraryIds: [], restrictedCleared: false, surface: 'restricted' });
     const detail = await getCatalogDetail(db, ctx, restrictedMovieId);
     expect(detail).toBeUndefined();
   });
 
   it('returns full detail for a restricted item when the viewer IS cleared', async () => {
-    const ctx = ctxFor(adminId, { allowedLibraryIds: [libRestrictedId], restrictedCleared: true });
+    const ctx = ctxFor(adminId, { allowedLibraryIds: [libRestrictedId], restrictedCleared: true, surface: 'restricted' });
     const detail = await getCatalogDetail(db, ctx, restrictedMovieId);
     expect(detail).toBeDefined();
     expect(detail!.title).toBe('After Hours Redline');
@@ -170,7 +170,7 @@ describe('getCatalogDetail', () => {
   // Gap-closure lane (deliverable D): people[] + mediaFiles[] on the
   // single-item detail read only.
   it('attaches people[] (ordered) and mediaFiles[] for a movie', async () => {
-    const ctx = ctxFor(adminId, { allowedLibraryIds: [libMoviesId], restrictedCleared: false });
+    const ctx = ctxFor(adminId, { allowedLibraryIds: [libMoviesId], restrictedCleared: false, surface: 'restricted' });
     const detail = await getCatalogDetail(db, ctx, movieHarborLightsId, { includeDetail: true });
     expect(detail).toBeDefined();
 
@@ -228,7 +228,7 @@ describe('getCatalogDetail', () => {
       .returning('id')
       .executeTakeFirstOrThrow();
 
-    const ctx = ctxFor(adminId, { allowedLibraryIds: [libMoviesId], restrictedCleared: false });
+    const ctx = ctxFor(adminId, { allowedLibraryIds: [libMoviesId], restrictedCleared: false, surface: 'restricted' });
     const detail = await getCatalogDetail(db, ctx, movieHarborLightsId, { includeDetail: true });
     const files = detail!.mediaFiles!;
     expect(files).toHaveLength(2);
@@ -241,7 +241,7 @@ describe('getCatalogDetail', () => {
   });
 
   it('omits people/mediaFiles by default (includeDetail unset) — the cross-type search/home/export call sites never opt in', async () => {
-    const ctx = ctxFor(adminId, { allowedLibraryIds: [libMoviesId], restrictedCleared: false });
+    const ctx = ctxFor(adminId, { allowedLibraryIds: [libMoviesId], restrictedCleared: false, surface: 'restricted' });
     const detail = await getCatalogDetail(db, ctx, movieHarborLightsId);
     expect(detail).toBeDefined();
     expect(detail!.people).toBeUndefined();
@@ -255,12 +255,12 @@ describe('getCatalogDetail', () => {
       .where('title', '=', 'Last Ferry Out')
       .executeTakeFirstOrThrow();
 
-    const uncleared = ctxFor(casualId, { allowedLibraryIds: [lastFerryOut.library_id], restrictedCleared: false });
+    const uncleared = ctxFor(casualId, { allowedLibraryIds: [lastFerryOut.library_id], restrictedCleared: false, surface: 'restricted' });
     const detailUncleared = await getCatalogDetail(db, uncleared, lastFerryOut.id, { includeDetail: true });
     expect(detailUncleared).toBeDefined();
     expect(detailUncleared!.people).toEqual([]); // the item is general/visible, but its ONLY credit is restricted-class
 
-    const cleared = ctxFor(adminId, { allowedLibraryIds: [lastFerryOut.library_id], restrictedCleared: true });
+    const cleared = ctxFor(adminId, { allowedLibraryIds: [lastFerryOut.library_id], restrictedCleared: true, surface: 'restricted' });
     const detailCleared = await getCatalogDetail(db, cleared, lastFerryOut.id, { includeDetail: true });
     expect(detailCleared!.people).toEqual([
       expect.objectContaining({ name: 'Restricted Cameo Performer', role: 'guest', credit: 'Cameo', order: 1 }),
@@ -270,7 +270,7 @@ describe('getCatalogDetail', () => {
 
 describe('listCatalogItems', () => {
   it('filters by itemType and libraryId, and returns exactly the seeded movie count (5 of 6 — "Paper Kingdoms" is all-missing-files-hidden per guard.ts)', async () => {
-    const ctx = ctxFor(adminId, { allowedLibraryIds: [libMoviesId], restrictedCleared: false });
+    const ctx = ctxFor(adminId, { allowedLibraryIds: [libMoviesId], restrictedCleared: false, surface: 'restricted' });
     const page = await listCatalogItems(db, ctx, { itemType: 'movie', libraryId: libMoviesId, limit: 200 });
     expect(page.rows.length).toBe(5);
     expect(page.rows.every((r) => r.library_id === libMoviesId)).toBe(true);
@@ -278,14 +278,14 @@ describe('listCatalogItems', () => {
 
   it('filters by parentId for hierarchy listing (seasons of a series)', async () => {
     const libTv = await db.selectFrom('catalog_items').select('library_id').where('id', '=', seriesCoastlineId).executeTakeFirstOrThrow();
-    const ctx = ctxFor(adminId, { allowedLibraryIds: [libTv.library_id], restrictedCleared: false });
+    const ctx = ctxFor(adminId, { allowedLibraryIds: [libTv.library_id], restrictedCleared: false, surface: 'restricted' });
     const page = await listCatalogItems(db, ctx, { itemType: 'season', parentId: seriesCoastlineId, limit: 50 });
     expect(page.rows.length).toBe(1);
     expect(page.rows[0]!.seasonNumber).toBe(1);
   });
 
   it('excludes restricted movies from an uncleared viewer', async () => {
-    const ctx = ctxFor(casualId, { allowedLibraryIds: [], restrictedCleared: false });
+    const ctx = ctxFor(casualId, { allowedLibraryIds: [], restrictedCleared: false, surface: 'restricted' });
     const page = await listCatalogItems(db, ctx, { itemType: 'movie', limit: 200 });
     expect(page.rows.some((r) => r.title === 'After Hours Redline')).toBe(false);
   });
@@ -293,7 +293,7 @@ describe('listCatalogItems', () => {
   // Gap-closure lane: people/mediaFiles are a single-item-GET-only cost
   // (Tier-0) — list rows must never carry them, even as an empty array.
   it('never attaches people/mediaFiles to list rows (single-item-detail-only fields)', async () => {
-    const ctx = ctxFor(adminId, { allowedLibraryIds: [libMoviesId], restrictedCleared: false });
+    const ctx = ctxFor(adminId, { allowedLibraryIds: [libMoviesId], restrictedCleared: false, surface: 'restricted' });
     const page = await listCatalogItems(db, ctx, { itemType: 'movie', libraryId: libMoviesId, limit: 200 });
     expect(page.rows.length).toBeGreaterThan(0);
     expect(page.rows.every((r) => r.people === undefined)).toBe(true);
@@ -308,21 +308,21 @@ describe('listCatalogItems', () => {
 // "invisible == nonexistent".
 describe('listCatalogItems malformed-id filters', () => {
   it('returns an empty page for a syntactically invalid libraryId instead of throwing', async () => {
-    const ctx = ctxFor(adminId, { allowedLibraryIds: [libMoviesId], restrictedCleared: false });
+    const ctx = ctxFor(adminId, { allowedLibraryIds: [libMoviesId], restrictedCleared: false, surface: 'restricted' });
     const page = await listCatalogItems(db, ctx, { itemType: 'movie', libraryId: 'not-a-uuid', limit: 200 });
     expect(page.rows).toEqual([]);
     expect(page.nextCursor).toBeNull();
   });
 
   it('returns an empty page for a syntactically invalid parentId instead of throwing', async () => {
-    const ctx = ctxFor(adminId, { allowedLibraryIds: [libMoviesId], restrictedCleared: false });
+    const ctx = ctxFor(adminId, { allowedLibraryIds: [libMoviesId], restrictedCleared: false, surface: 'restricted' });
     const page = await listCatalogItems(db, ctx, { itemType: 'season', parentId: '../../etc/passwd', limit: 50 });
     expect(page.rows).toEqual([]);
     expect(page.nextCursor).toBeNull();
   });
 
   it('rejects a forged cursor whose id is not a UUID as a malformed cursor, not a driver error', async () => {
-    const ctx = ctxFor(adminId, { allowedLibraryIds: [libMoviesId], restrictedCleared: false });
+    const ctx = ctxFor(adminId, { allowedLibraryIds: [libMoviesId], restrictedCleared: false, surface: 'restricted' });
     const forged = Buffer.from(
       JSON.stringify({ sort: 'added', order: 'desc', sortKey: 1, id: 'not-a-uuid' }),
       'utf8'
@@ -343,7 +343,7 @@ describe('listCatalogItems sort', () => {
   async function movieTitlesInOrder(
     params: Omit<import('../src/query/catalog-detail.js').ListCatalogItemsParams, 'itemType' | 'libraryId'>
   ): Promise<string[]> {
-    const ctx = ctxFor(adminId, { allowedLibraryIds: [libMoviesId], restrictedCleared: false });
+    const ctx = ctxFor(adminId, { allowedLibraryIds: [libMoviesId], restrictedCleared: false, surface: 'restricted' });
     const page = await listCatalogItems(db, ctx, { itemType: 'movie', libraryId: libMoviesId, ...params, limit: 200 });
     return page.rows.map((r) => r.title);
   }
@@ -442,7 +442,7 @@ describe('listCatalogItems sort', () => {
     { sort: 'title' as const, order: 'desc' as const },
     { sort: 'rating' as const, order: 'asc' as const },
   ])('cursor pagination (limit 2) reproduces the full order for sort=$sort order=$order', async ({ sort, order }) => {
-    const ctx = ctxFor(adminId, { allowedLibraryIds: [libMoviesId], restrictedCleared: false });
+    const ctx = ctxFor(adminId, { allowedLibraryIds: [libMoviesId], restrictedCleared: false, surface: 'restricted' });
     const fullPage = await listCatalogItems(db, ctx, {
       itemType: 'movie',
       libraryId: libMoviesId,
@@ -473,7 +473,7 @@ describe('listCatalogItems sort', () => {
   });
 
   it('rejects a cursor issued under a different sort/order (stale Sort-control switch)', async () => {
-    const ctx = ctxFor(adminId, { allowedLibraryIds: [libMoviesId], restrictedCleared: false });
+    const ctx = ctxFor(adminId, { allowedLibraryIds: [libMoviesId], restrictedCleared: false, surface: 'restricted' });
     const titlePage = await listCatalogItems(db, ctx, { itemType: 'movie', libraryId: libMoviesId, sort: 'title', limit: 2 });
     expect(titlePage.nextCursor).toBeTruthy();
 
@@ -497,7 +497,7 @@ describe('listCatalogItems sort', () => {
     // albumId/artistId captured in the outer beforeAll point at "Low Water"
     // (2019) under "The Salt Layer"; fetch siblings via the artist parent.
     const libMusic = await db.selectFrom('catalog_items').select('library_id').where('id', '=', artistId).executeTakeFirstOrThrow();
-    const musicCtx = ctxFor(adminId, { allowedLibraryIds: [libMusic.library_id], restrictedCleared: false });
+    const musicCtx = ctxFor(adminId, { allowedLibraryIds: [libMusic.library_id], restrictedCleared: false, surface: 'restricted' });
 
     const byRating = await listCatalogItems(db, musicCtx, { itemType: 'album', parentId: artistId, sort: 'rating', limit: 200 });
     expect(byRating.rows.map((r) => r.title).sort()).toEqual(['Departures', 'Low Water']);
@@ -590,7 +590,7 @@ describe('createLibrary', () => {
 
     // And the creator can actually see it through the viewer-guarded read
     // path immediately, with no further setup.
-    const ctx = ctxFor(adminId, { allowedLibraryIds: [lib.id], restrictedCleared: false });
+    const ctx = ctxFor(adminId, { allowedLibraryIds: [lib.id], restrictedCleared: false, surface: 'restricted' });
     const visible = await getLibraryForViewer(db, ctx, lib.id);
     expect(visible?.id).toBe(lib.id);
   });
@@ -617,7 +617,7 @@ describe('createLibrary', () => {
     // Default-deny holds even for the creating admin, including all 5
     // gates: no grant means it never resolves into allowedLibraryIds, so
     // the guarded read stays invisible until PUT /permissions runs.
-    const ctx = ctxFor(adminId, { allowedLibraryIds: [], restrictedCleared: true });
+    const ctx = ctxFor(adminId, { allowedLibraryIds: [], restrictedCleared: true, surface: 'restricted' });
     const invisible = await getLibraryForViewer(db, ctx, lib.id);
     expect(invisible).toBeUndefined();
   });

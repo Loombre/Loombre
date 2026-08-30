@@ -153,7 +153,7 @@ beforeAll(async () => {
     [fileId],
   );
 
-  ctx = { userId, allowedLibraryIds: [libraryId], restrictedCleared: false };
+  ctx = { userId, allowedLibraryIds: [libraryId], restrictedCleared: false, surface: 'restricted' };
 });
 
 afterAll(async () => {

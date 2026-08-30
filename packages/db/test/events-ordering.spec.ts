@@ -66,6 +66,7 @@ const ctx: ViewerContext = {
   userId: '00000000-0000-7000-8000-0000000000c1',
   allowedLibraryIds: [],
   restrictedCleared: false,
+  surface: 'restricted',
 };
 
 // Same-millisecond pair, id order DELIBERATELY REVERSED relative to

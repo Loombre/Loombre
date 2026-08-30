@@ -25,6 +25,10 @@ export function clearanceDigest(ctx: ViewerContext): string {
   const material = JSON.stringify({
     userId: ctx.userId,
     restrictedCleared: ctx.restrictedCleared,
+    // RZI surface scoping: general- and restricted-surface reads of the
+    // same cleared viewer return different rows, so they may never share
+    // a cache entry.
+    surface: ctx.surface,
     allowedLibraryIds: [...ctx.allowedLibraryIds].sort(),
   });
   return createHash('sha256').update(material).digest('hex').slice(0, DIGEST_HEX_LENGTH);

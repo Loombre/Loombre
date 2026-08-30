@@ -396,6 +396,53 @@ const BRAND_HYGIENE_ALLOWLIST = new Map([
    "Canonical Blaze mark geometry — exact path-data prefixes live here only"],
 ]);
 
+// ---------------------------------------------------------------------------
+// (f) RZI SURFACE-SCOPING gate (run RZI-2026-08-30, DECISIONS.md
+// §2026-08-29 rulings RZI-D1..D7, docs/PLAN.md §6.4 as amended): restricted
+// rows leave the server only for a restricted-zone surface or a
+// full-clearance item-addressed read. Option B's promise is "misuse fails a
+// gate, not a review" — three checks deliver it:
+//
+//   f1 rzi:route-blind-resolve — the pre-RZI `viewerContextProvider
+//      .resolve(` (no surface dimension) may not be called anywhere in
+//      apps/server or apps/worker: every resolution must choose
+//      resolveGeneralSurface / resolveRestrictedSurface / resolveSurfaces
+//      explicitly. (The method is also deleted; this catches a
+//      reintroduction.)
+//   f2 rzi:restricted-surface-resolver — the restricted-capable resolvers
+//      are callable ONLY from the RZI-D3/D5/D6/D7 allowlist below (zone
+//      controllers, playback, images/chapters, item-addressed progress/
+//      watchlist ops, admin tools, data-freedom, the WS broadcaster, and
+//      the provider itself). A new caller is a §6.4 surface-assignment
+//      decision, not a convenience — add it here WITH its ruling.
+//   f3 rzi:restricted-surface-literal — a hand-built `surface: 'restricted'`
+//      ViewerContext literal is constructible only inside the provider.
+//
+// Spec/test files are exempt (they construct contexts freely; nothing in
+// them reaches a viewer), same posture as API_ERROR_COPY_TEST_FILE.
+const RZI_SCOPE_PREFIXES = ["apps/server/src/", "apps/worker/src/"];
+const RZI_TEST_FILE = /\.(test|spec)\.[jt]sx?$/;
+const RZI_ROUTE_BLIND_RESOLVE = /[A-Za-z_$]*[Pp]rovider\s*\.\s*resolve\s*\(/;
+const RZI_RESTRICTED_RESOLVERS = /\b(?:resolveRestrictedSurface|resolveViewerRestrictedSurface|resolveSurfaces)\s*\(/;
+const RZI_RESTRICTED_SURFACE_LITERAL = /surface:\s*["']restricted["']/;
+const RZI_RESOLVER_ALLOWLIST = new Map([
+  ["apps/server/src/common/viewer-context.provider.ts", "defines the surface-scoped resolvers"],
+  ["apps/server/src/session/restricted-zone.controller.ts", "the zone surface itself"],
+  ["apps/server/src/session/restricted.controller.ts", "unlock/lock/count (count is gate-5-independent by design)"],
+  ["apps/server/src/catalog/viewer.ts", "defines resolveViewerRestrictedSurface for the catalog D3 list"],
+  ["apps/server/src/catalog/images.controller.ts", "RZI-D3: item-addressed, serves zone artwork"],
+  ["apps/server/src/catalog/chapters.controller.ts", "RZI-D3: item-addressed, serves the zone player"],
+  ["apps/server/src/catalog/progress.controller.ts", "RZI-D3: GET/PUT /progress/{itemId} only (list stays general)"],
+  ["apps/server/src/catalog/watchlist.controller.ts", "RZI-D2a/D3: PUT/DELETE /watchlist/{itemId} only (list stays general)"],
+  ["apps/server/src/catalog/admin.controller.ts", "RZI-D6: admin tooling keeps full clearance"],
+  ["apps/server/src/catalog/data-freedom.controller.ts", "RZI-D7: the user's own export keeps full clearance"],
+  ["apps/server/src/playback/viewer.ts", "RZI-D3: every playback read serves the player"],
+  ["apps/server/src/gateway/ws-broadcaster.service.ts", "RZI-D5c: per-socket pair; delivery surface follows the zone subscription"],
+]);
+const RZI_SURFACE_LITERAL_ALLOWLIST = new Set([
+  "apps/server/src/common/viewer-context.provider.ts",
+]);
+
 function escapeRegExp(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -588,6 +635,32 @@ for (const { full, rel } of files) {
       !(idx > 0 && lines[idx - 1].includes(CURSOR_ROW_ID_ALLOW_MARKER))
     ) {
       violations.push({ rel, lineNo: idx + 1, code: "cursor-validator:bare-string-row-id", line: line.trim() });
+    }
+    if (RZI_SCOPE_PREFIXES.some((p) => rel.startsWith(p)) && !RZI_TEST_FILE.test(rel)) {
+      if (RZI_ROUTE_BLIND_RESOLVE.test(line)) {
+        violations.push({
+          rel,
+          lineNo: idx + 1,
+          code: "rzi:route-blind-resolve",
+          line: `${line.trim().slice(0, 160)}  — choose resolveGeneralSurface/resolveRestrictedSurface (docs/PLAN.md §6.4 surface scoping)`,
+        });
+      }
+      if (!RZI_RESOLVER_ALLOWLIST.has(rel) && RZI_RESTRICTED_RESOLVERS.test(line)) {
+        violations.push({
+          rel,
+          lineNo: idx + 1,
+          code: "rzi:restricted-surface-resolver",
+          line: `${line.trim().slice(0, 160)}  — restricted-capable resolution outside the RZI allowlist; a new caller needs a §6.4 surface ruling`,
+        });
+      }
+      if (!RZI_SURFACE_LITERAL_ALLOWLIST.has(rel) && RZI_RESTRICTED_SURFACE_LITERAL.test(line)) {
+        violations.push({
+          rel,
+          lineNo: idx + 1,
+          code: "rzi:restricted-surface-literal",
+          line: `${line.trim().slice(0, 160)}  — hand-built restricted-surface ViewerContext outside the provider`,
+        });
+      }
     }
   });
 }

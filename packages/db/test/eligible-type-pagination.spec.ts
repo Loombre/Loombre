@@ -148,7 +148,7 @@ beforeAll(async () => {
     .returningAll()
     .executeTakeFirstOrThrow();
 
-  ctx = { userId: user.id, allowedLibraryIds: [lib.id], restrictedCleared: false };
+  ctx = { userId: user.id, allowedLibraryIds: [lib.id], restrictedCleared: false, surface: 'restricted' };
 
   const inserted: Array<{ id: string; itemType: ItemType; addedAtMs: number }> = [];
   for (const [i, fixture] of FIXTURES.entries()) {

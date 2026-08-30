@@ -103,6 +103,7 @@ beforeAll(async () => {
     userId: admin.id,
     allowedLibraryIds: libraries.map((l) => l.id),
     restrictedCleared: true,
+    surface: 'restricted',
   };
 
   const tracks = await db

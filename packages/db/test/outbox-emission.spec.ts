@@ -211,8 +211,8 @@ describe('progress.updated (packages/contract/event-schemas/progress.updated.sch
     ).rows.map((r) => r.id);
     const allLibraryIds = (await rawClient.query<{ id: string }>('SELECT id FROM libraries')).rows.map((r) => r.id);
 
-    adminCtx = { userId: adminId, allowedLibraryIds: allLibraryIds, restrictedCleared: true };
-    casualCtx = { userId: casualId, allowedLibraryIds: generalLibraryIds, restrictedCleared: false };
+    adminCtx = { userId: adminId, allowedLibraryIds: allLibraryIds, restrictedCleared: true, surface: 'restricted' };
+    casualCtx = { userId: casualId, allowedLibraryIds: generalLibraryIds, restrictedCleared: false, surface: 'restricted' };
   });
 
   it('emits progress.updated on EVERY upsert (including the heartbeat-driven update of an existing row)', async () => {
