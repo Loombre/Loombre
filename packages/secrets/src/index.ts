@@ -10,3 +10,4 @@ export * from "./detect.js";
 export * from "./store.js";
 export * from "./migrate.js";
 export * from "./jwt-secret.js";
+export * from "./link-sealing.js";

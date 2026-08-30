@@ -252,11 +252,27 @@ export interface StashSyncJobPayload {
  * as one of `params`). Every field in `params` is HTML-escaped by the
  * renderer before it ever reaches an outgoing message (someone WILL put
  * `<script>` in a display name).
+ *
+ * `params` NEVER carries a live claim/reset token or a tokened actionUrl
+ * (MRV-R1) — pg-boss persists this whole payload in pgboss.job/archive,
+ * harvestable by anyone with DB read access. Tokened links ride `link` instead: a SEALED reference
+ * (@loombre/secrets link-sealing.ts, AES-256-GCM under the shared
+ * keyring key) the worker unseals AT SEND TIME, building
+ * `params.actionUrl` from the then-effective network.publicUrl (which
+ * also means a publicUrl fix applies to still-queued mail). The `invite`
+ * and `password-reset` templates REQUIRE `link`; the other templates
+ * never carry one.
  */
 export interface MailSendJobPayload {
   templateId: 'invite' | 'password-reset' | 'security-notice' | 'email-in-use-notice' | 'test';
   to: string;
   params: Record<string, string>;
+  link?: {
+    /** Which public web path the worker builds: /claim/<token> vs /reset/<token>. */
+    kind: 'claim' | 'reset';
+    /** sealLinkToken() output — opaque to a DB reader. */
+    sealedToken: string;
+  };
 }
 
 export interface JobPayloads {

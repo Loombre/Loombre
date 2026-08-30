@@ -36,6 +36,7 @@ import { notFound, unprocessableEntity } from "../gateway/problem.exception.js";
 import { requireUuidParam } from "../gateway/require-uuid-param.js";
 import type { AuthenticatedRequest } from "../gateway/auth.guard.js";
 import { DbProvider } from "../common/db.provider.js";
+import { SettingsService } from "../settings/settings.service.js";
 import { requireAdmin } from "./require-admin.js";
 import { diagnoseReachability } from "./diagnose-reachability.js";
 import { ConnectorHealthReaderService } from "./connector-health.service.js";
@@ -51,7 +52,32 @@ export class RemoteProbesController {
     private readonly dbProvider: DbProvider,
     private readonly connectorHealthReader: ConnectorHealthReaderService,
     private readonly dnsResolver: RemoteDnsResolverService,
+    private readonly settingsService: SettingsService,
   ) {}
+
+  /** The probe URL's scheme comes from the source of truth the system
+   *  already has — network.publicUrl's own scheme — with https ONLY as
+   *  the fallback when nothing is configured (MRV-R2). A hardcoded https
+   *  makes the minted URL unreachable by scheme for a Direct install with
+   *  tls.mode=off behind no proxy. Only the SCHEME is taken; the host
+   *  stays the admin-supplied expectedEndpoint (the proof targets a
+   *  specific endpoint, which legitimately differs from publicUrl's host
+   *  mid-wizard). */
+  private probeScheme(): "http" | "https" {
+    const raw = String(this.settingsService.getEffective("network.publicUrl")?.value ?? "").trim();
+    if (raw.length > 0) {
+      try {
+        const parsed = new URL(raw);
+        if (parsed.protocol === "http:") return "http";
+        if (parsed.protocol === "https:") return "https";
+      } catch {
+        // Unparseable publicUrl — fall through to the https fallback
+        // rather than failing the mint over a setting the schema already
+        // polices.
+      }
+    }
+    return "https";
+  }
 
   @Post("admin/remote/probes")
   @HttpCode(HttpStatus.CREATED)
@@ -87,7 +113,7 @@ export class RemoteProbesController {
       expiresAtMs,
     });
 
-    const probeUrl = `https://${body["expectedEndpoint"]}/probe/${token}`;
+    const probeUrl = `${this.probeScheme()}://${body["expectedEndpoint"]}/probe/${token}`;
     return {
       id: row.id,
       probeUrl,

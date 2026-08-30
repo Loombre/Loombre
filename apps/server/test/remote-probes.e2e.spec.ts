@@ -40,6 +40,8 @@ import {
 import { applySecurityHeaders, disableXPoweredBy } from "../src/main.js";
 import { ConnectorHealthReaderService } from "../src/remote/connector-health.service.js";
 import { RemoteDnsResolverService } from "../src/remote/remote-dns-resolver.service.js";
+import { SettingsService } from "../src/settings/settings.service.js";
+import { DbProvider } from "../src/common/db.provider.js";
 import { PROBE_SUCCESS_HTML } from "../src/remote/probe-page.controller.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -173,6 +175,33 @@ describe("POST /admin/remote/probes (createRemoteProbe) — auth wall + validati
     // 15-minute expiry (R6), generous bounds for test-run jitter.
     expect(res.body.expiresAtMs).toBeGreaterThan(Date.now() + 14 * 60 * 1000);
     expect(res.body.expiresAtMs).toBeLessThan(Date.now() + 16 * 60 * 1000);
+  });
+
+  it("derives the probe URL's scheme from network.publicUrl when configured; https only as the unconfigured fallback (MRV-R2)", async () => {
+    const settingsService = app.get(SettingsService);
+    const adminUserId = (await getUserByUsername(app.get(DbProvider).db, "admin"))!.id;
+    try {
+      await settingsService.updateSetting({ key: "network.publicUrl", value: "http://loombre.lan:3001", actorUserId: adminUserId, nowMs: Date.now() });
+      const http = await request(app.getHttpServer())
+        .post("/admin/remote/probes")
+        .set("Authorization", `Bearer ${adminAccessToken}`)
+        .send({ expectedEndpoint: "loombre.example.com", path: "direct" });
+      expect(http.status, JSON.stringify(http.body)).toBe(201);
+      // Scheme from the source of truth the system already has; the HOST
+      // stays expectedEndpoint (the proof targets a specific endpoint,
+      // which may differ from publicUrl's host).
+      expect(http.body.probeUrl).toMatch(/^http:\/\/loombre\.example\.com\/probe\/[A-Za-z0-9_-]+$/);
+
+      await settingsService.updateSetting({ key: "network.publicUrl", value: "https://media.example.com", actorUserId: adminUserId, nowMs: Date.now() });
+      const https = await request(app.getHttpServer())
+        .post("/admin/remote/probes")
+        .set("Authorization", `Bearer ${adminAccessToken}`)
+        .send({ expectedEndpoint: "loombre.example.com", path: "direct" });
+      expect(https.body.probeUrl).toMatch(/^https:\/\//);
+    } finally {
+      // The rest of this file pins the unconfigured https fallback.
+      await settingsService.updateSetting({ key: "network.publicUrl", value: "", actorUserId: adminUserId, nowMs: Date.now() });
+    }
   });
 });
 

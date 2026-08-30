@@ -20,6 +20,8 @@
 import "reflect-metadata";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
@@ -34,6 +36,7 @@ import {
 } from "./support/not-found-envelope.js";
 import { MailDispatchService } from "../src/mail/mail-dispatch.service.js";
 import { MailConfigService } from "../src/mail/mail-config.service.js";
+import { JobQueueProvider } from "../src/common/job-queue.provider.js";
 import { MUST_CHANGE_PASSWORD_PROBLEM_TYPE } from "../src/gateway/must-change-password.exception.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -77,6 +80,9 @@ function hashResetTokenForTest(token: string): string {
 let app: INestApplication;
 let databaseUrl: string;
 let adminAccessToken: string;
+let sealingDataDir: string;
+const ORIGINAL_SECRET_BACKEND = process.env["LOOMBRE_SECRET_BACKEND"];
+const ORIGINAL_DATA_DIR = process.env["LOOMBRE_DATA_DIR"];
 
 async function loginAs(username: string, password: string): Promise<{ accessToken: string; refreshToken: string; deviceId: string; body: any }> {
   const res = await request(app.getHttpServer())
@@ -112,6 +118,13 @@ beforeAll(async () => {
   process.env["LOOMBRE_RATE_LOGIN"] = "1000";
   process.env["LOOMBRE_RATE_REFRESH"] = "1000";
   process.env["LOOMBRE_RATE_PASSWORD_RESET"] = "1000";
+  // The reset flow seals its mail-link token (MRV-R1), which resolves the
+  // sealing key from the keyring — pin the throwaway file0600 backend so
+  // this suite never touches the real OS keychain (admin-mail.e2e's own
+  // posture).
+  process.env["LOOMBRE_SECRET_BACKEND"] = "file0600";
+  sealingDataDir = mkdtempSync(path.join(tmpdir(), "loombre-password-recovery-test-"));
+  process.env["LOOMBRE_DATA_DIR"] = sealingDataDir;
 
   app = await NestFactory.create(AppModule, { logger: false });
   await app.init();
@@ -122,6 +135,11 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app.close();
+  rmSync(sealingDataDir, { recursive: true, force: true });
+  if (ORIGINAL_SECRET_BACKEND === undefined) delete process.env["LOOMBRE_SECRET_BACKEND"];
+  else process.env["LOOMBRE_SECRET_BACKEND"] = ORIGINAL_SECRET_BACKEND;
+  if (ORIGINAL_DATA_DIR === undefined) delete process.env["LOOMBRE_DATA_DIR"];
+  else process.env["LOOMBRE_DATA_DIR"] = ORIGINAL_DATA_DIR;
 });
 
 describe("GET /system/capabilities: passwordResetAvailable (M8)", () => {
@@ -177,8 +195,13 @@ describe("POST /auth/forgot-password (E3b, PUBLIC, M12)", () => {
       const call = trySendSpy.mock.calls[0]![0];
       expect(call.templateId).toBe("password-reset");
       expect(call.to).toBe("forgot-real-user@example.invalid");
-      expect(typeof call.params["actionUrl"]).toBe("string");
-      expect(call.params["actionUrl"]).toContain("/reset/");
+      // MRV-R1: the live token rides `link` (sealed before enqueue by
+      // trySend itself) — params carry NO actionUrl; the worker builds
+      // the URL at send time from network.publicUrl.
+      expect(call.params["actionUrl"]).toBeUndefined();
+      expect(call.link?.kind).toBe("reset");
+      expect(typeof call.link?.token).toBe("string");
+      expect(call.link!.token.length).toBeGreaterThan(0);
       expect(call.params["displayName"]).toBe("forgot-real-user");
     } finally {
       trySendSpy.mockRestore();
@@ -206,6 +229,37 @@ describe("POST /auth/forgot-password (E3b, PUBLIC, M12)", () => {
   // worktree). There is therefore no way to construct a user with no email
   // on file here at all. A follow-up test belongs at integration, once
   // 0023 has landed on the assembled tree.
+
+  it("the PERSISTED job payload carries no plaintext token and no actionUrl — only the sealed reference (MRV-R1, the persistence boundary itself)", async () => {
+    await createOrdinaryUser("forgot-sealed-payload", "correct-horse-battery-fr9");
+    const mailDispatchService = app.get(MailDispatchService);
+    const trySendSpy = vi.spyOn(mailDispatchService, "trySend");
+    const mailConfigService = app.get(MailConfigService);
+    const isConfiguredSpy = vi.spyOn(mailConfigService, "isConfigured").mockReturnValue(true);
+    // The enqueue input IS what pg-boss writes verbatim to pgboss.job —
+    // spying here pins the exact persisted bytes without needing raw
+    // access to pg-boss's own schema.
+    const queue = app.get(JobQueueProvider).queue;
+    const enqueueSpy = vi.spyOn(queue, "enqueue").mockResolvedValue("job-sealed-e2e");
+    try {
+      const res = await request(app.getHttpServer()).post("/auth/forgot-password").send({ identifier: "forgot-sealed-payload" });
+      expect(res.status).toBe(202);
+
+      const plaintext = trySendSpy.mock.calls[0]![0].link!.token;
+      expect(enqueueSpy).toHaveBeenCalledTimes(1);
+      const [jobType, persisted] = enqueueSpy.mock.calls[0]! as unknown as [string, { params: Record<string, string>; link?: { kind: string; sealedToken: string } }];
+      expect(jobType).toBe("mail-send");
+      expect(persisted.link?.kind).toBe("reset");
+      expect(typeof persisted.link?.sealedToken).toBe("string");
+      const serialized = JSON.stringify(persisted);
+      expect(serialized).not.toContain(plaintext);
+      expect(persisted.params["actionUrl"]).toBeUndefined();
+    } finally {
+      enqueueSpy.mockRestore();
+      trySendSpy.mockRestore();
+      isConfiguredSpy.mockRestore();
+    }
+  });
 
   it("mail unconfigured (F2(2): no token minted, trySend never called) never changes the 202 response (E6)", async () => {
     await createOrdinaryUser("forgot-dispatch-false", "correct-horse-battery-fr4");
@@ -237,8 +291,9 @@ describe("POST /auth/reset-password (E3b, PUBLIC, M12/E8)", () => {
     try {
       const forgot = await request(app.getHttpServer()).post("/auth/forgot-password").send({ identifier: "reset-happy-path" });
       expect(forgot.status).toBe(202);
-      const resetLink = trySendSpy.mock.calls[0]![0].params["actionUrl"]!;
-      plaintextToken = resetLink.split("/reset/")[1]!;
+      // MRV-R1: the plaintext now rides the trySend input's `link`, never
+      // params.actionUrl — captured at the same seam as before.
+      plaintextToken = trySendSpy.mock.calls[0]![0].link!.token;
       expect(plaintextToken.length).toBeGreaterThan(0);
     } finally {
       trySendSpy.mockRestore();

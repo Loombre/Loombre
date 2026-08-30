@@ -17,6 +17,8 @@
 import "reflect-metadata";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import request from "supertest";
@@ -77,6 +79,9 @@ let adminToken: string;
 let casualToken: string;
 let generalLibraryId: string;
 let restrictedLibraryId: string;
+let sealingDataDir: string;
+const ORIGINAL_SECRET_BACKEND = process.env["LOOMBRE_SECRET_BACKEND"];
+const ORIGINAL_DATA_DIR = process.env["LOOMBRE_DATA_DIR"];
 
 async function loginAs(username: string, password: string) {
   const res = await request(app.getHttpServer())
@@ -115,6 +120,13 @@ beforeAll(async () => {
   // — that limiter's own trip behavior is out of this file's scope.
   process.env["LOOMBRE_RATE_CLAIM"] = "10000";
   process.env["LOOMBRE_RATE_LOGIN"] = "10000";
+  // Invite mail seals its claim-link token (MRV-R1), which resolves the
+  // sealing key from the keyring — pin the throwaway file0600 backend so
+  // this suite never touches the real OS keychain (admin-mail.e2e's own
+  // posture).
+  process.env["LOOMBRE_SECRET_BACKEND"] = "file0600";
+  sealingDataDir = mkdtempSync(path.join(tmpdir(), "loombre-invites-test-"));
+  process.env["LOOMBRE_DATA_DIR"] = sealingDataDir;
 
   app = await NestFactory.create(AppModule, { logger: false });
   await app.init();
@@ -131,6 +143,11 @@ beforeAll(async () => {
 afterAll(async () => {
   await app.close();
   await rawDb?.destroy();
+  rmSync(sealingDataDir, { recursive: true, force: true });
+  if (ORIGINAL_SECRET_BACKEND === undefined) delete process.env["LOOMBRE_SECRET_BACKEND"];
+  else process.env["LOOMBRE_SECRET_BACKEND"] = ORIGINAL_SECRET_BACKEND;
+  if (ORIGINAL_DATA_DIR === undefined) delete process.env["LOOMBRE_DATA_DIR"];
+  else process.env["LOOMBRE_DATA_DIR"] = ORIGINAL_DATA_DIR;
   delete process.env["LOOMBRE_RATE_CLAIM"];
   delete process.env["LOOMBRE_RATE_LOGIN"];
 });
@@ -251,17 +268,19 @@ describe("POST /invites (admin, E2)", () => {
 
     expect(trySendSpy).toHaveBeenCalledTimes(1);
     // Param names are Lane C's template contract (apps/worker/src/mail/
-    // templates/types.ts): actionUrl (the full publicUrl-derived claim
-    // link), displayName (greeting, empty when no preset), expiresLabel
-    // (human prose for the default 72h window).
+    // templates/types.ts): displayName (greeting, empty when no preset),
+    // expiresLabel (human prose for the default 72h window). The claim
+    // link rides `link` as the SAME plaintext claimToken this response
+    // returns (E2 — one artifact); trySend seals it before enqueue
+    // (MRV-R1) and the worker builds the actionUrl at send time.
     expect(trySendSpy).toHaveBeenCalledWith({
       templateId: "invite",
       to: "mail-seam@example.invalid",
       params: {
-        actionUrl: `https://loombre.example/claim/${res.body.claimToken}`,
         displayName: "",
         expiresLabel: "3 days",
       },
+      link: { kind: "claim", token: res.body.claimToken },
     });
     // The claimUrl composition end to end (M9's non-null branch), not just
     // the pure-function unit test in invites.controller.spec.ts.

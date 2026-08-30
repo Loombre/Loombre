@@ -15,10 +15,14 @@
 // `db`, never through the admin HTTP surface.
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { SMTPServer } from "smtp-server";
 import nodemailer from "nodemailer";
 import type SMTPTransport from "nodemailer/lib/smtp-transport/index.js";
 import { upsertServerSettingAndEmit } from "@loombre/db";
+import { resolveLinkSealingSecret, sealLinkToken } from "@loombre/secrets";
 import { mailSendConsumerHandler, type MailTransporter } from "../../src/mail/consumer.js";
 import { makeDb, makeRawClient, resetSchema } from "../scan/helpers.js";
 
@@ -103,13 +107,26 @@ describe("mail-send consumer (E5/E6/M7) — real nodemailer against an in-proces
       await new Promise<void>((resolve) => server.close(() => resolve()));
     });
 
-    it("delivers the invite template: correct envelope/headers, both HTML+text bodies present, zero external resources", async () => {
-      const handler = mailSendConsumerHandler({ db: dbHandle, env: { ...process.env, LOOMBRE_SMTP_USERNAME: "", LOOMBRE_SMTP_PASSWORD: "" } });
+    it("delivers the invite template from a SEALED link (MRV-R1): unsealed at send time, actionUrl built from the CURRENT network.publicUrl (trailing slash stripped); correct envelope/headers, both HTML+text bodies present, zero external resources", async () => {
+      const dataDir = mkdtempSync(join(tmpdir(), "loombre-mail-link-test-"));
+      const env = { ...process.env, LOOMBRE_SMTP_USERNAME: "", LOOMBRE_SMTP_PASSWORD: "", LOOMBRE_SECRET_BACKEND: "file0600", LOOMBRE_DATA_DIR: dataDir };
+      // The server half, exactly as mail-dispatch.service.ts performs it:
+      // read-or-create the shared sealing key, seal the live token — the
+      // payload below carries ONLY the sealed form.
+      const sealingSecret = await resolveLinkSealingSecret({ key: join(dataDir, "secrets", "mail-link-sealing-key"), env });
+      const sealed = sealLinkToken(sealingSecret, "tok123");
+      expect(sealed).not.toContain("tok123");
+      await setMailSettings(dbHandle, { "network.publicUrl": "https://loombre.example.com/" });
+      const handler = mailSendConsumerHandler({ db: dbHandle, env });
 
-      await handler(
-        { templateId: "invite", to: "recipient@loombre.test", params: { actionUrl: "https://loombre.example.com/claim/tok123", displayName: "Ozzy" } },
-        { jobId: "job-success-1" },
-      );
+      try {
+        await handler(
+          { templateId: "invite", to: "recipient@loombre.test", params: { displayName: "Ozzy" }, link: { kind: "claim", sealedToken: sealed } },
+          { jobId: "job-success-1" },
+        );
+      } finally {
+        rmSync(dataDir, { recursive: true, force: true });
+      }
 
       expect(received).not.toBeNull();
       expect(received!.envelope.from).toBe("server@loombre.test");
@@ -136,6 +153,14 @@ describe("mail-send consumer (E5/E6/M7) — real nodemailer against an in-proces
       await handler({ templateId: "test", to: "recipient2@loombre.test", params: {} }, { jobId: "job-success-2" });
       expect(received).not.toBeNull();
       expect(received!.message).toMatch(/Subject: Loombre test email/i);
+    });
+
+    it("fails a linked template that arrives WITHOUT a sealed link — params can never smuggle an actionUrl back in", async () => {
+      const handler = mailSendConsumerHandler({ db: dbHandle, env: { ...process.env, LOOMBRE_SMTP_USERNAME: "", LOOMBRE_SMTP_PASSWORD: "" } });
+      await expect(
+        handler({ templateId: "password-reset", to: "recipient@loombre.test", params: { actionUrl: "https://smuggled.example.com/reset/x" } }, { jobId: "job-no-link" }),
+      ).rejects.toThrow(/requires a sealed link/);
+      expect(received).toBeNull();
     });
   });
 
@@ -177,11 +202,21 @@ describe("mail-send consumer (E5/E6/M7) — real nodemailer against an in-proces
       await new Promise<void>((resolve) => server.close(() => resolve()));
     });
 
-    it("upgrades to TLS via STARTTLS and delivers the message", async () => {
-      const handler = mailSendConsumerHandler({ db: dbHandle, createTransport: createTestTransport });
-      await handler({ templateId: "password-reset", to: "recipient@loombre.test", params: { actionUrl: "https://loombre.example.com/reset/abc" } }, { jobId: "job-starttls-1" });
+    it("upgrades to TLS via STARTTLS and delivers the message (sealed reset link)", async () => {
+      const dataDir = mkdtempSync(join(tmpdir(), "loombre-mail-link-starttls-"));
+      const env = { ...process.env, LOOMBRE_SMTP_USERNAME: "", LOOMBRE_SMTP_PASSWORD: "", LOOMBRE_SECRET_BACKEND: "file0600", LOOMBRE_DATA_DIR: dataDir };
+      const sealingSecret = await resolveLinkSealingSecret({ key: join(dataDir, "secrets", "mail-link-sealing-key"), env });
+      const sealed = sealLinkToken(sealingSecret, "abc");
+      await setMailSettings(dbHandle, { "network.publicUrl": "https://loombre.example.com" });
+      const handler = mailSendConsumerHandler({ db: dbHandle, env, createTransport: createTestTransport });
+      try {
+        await handler({ templateId: "password-reset", to: "recipient@loombre.test", params: {}, link: { kind: "reset", sealedToken: sealed } }, { jobId: "job-starttls-1" });
+      } finally {
+        rmSync(dataDir, { recursive: true, force: true });
+      }
       expect(received).not.toBeNull();
       expect(received).toMatch(/Subject: Reset your Loombre password/i);
+      expect(received!.replace(/=\r?\n/g, "")).toContain("https://loombre.example.com/reset/abc");
     });
   });
 
@@ -228,7 +263,7 @@ describe("mail-send consumer (E5/E6/M7) — real nodemailer against an in-proces
       });
 
       await expect(
-        handler({ templateId: "invite", to: "recipient@loombre.test", params: {} }, { jobId: "job-auth-fail" }),
+        handler({ templateId: "test", to: "recipient@loombre.test", params: {} }, { jobId: "job-auth-fail" }),
       ).rejects.toThrow(/Authentication failed/);
     });
   });
@@ -286,11 +321,11 @@ describe("mail-send consumer (E5/E6/M7) — real nodemailer against an in-proces
       const handler = mailSendConsumerHandler({ db: dbHandle });
 
       await expect(
-        handler({ templateId: "invite", to: "recipient@loombre.test", params: {} }, { jobId: "job-retry" }),
+        handler({ templateId: "test", to: "recipient@loombre.test", params: {} }, { jobId: "job-retry" }),
       ).rejects.toThrow(/Mailbox temporarily unavailable/);
       expect(received).toBeNull();
 
-      await handler({ templateId: "invite", to: "recipient@loombre.test", params: {} }, { jobId: "job-retry" });
+      await handler({ templateId: "test", to: "recipient@loombre.test", params: {} }, { jobId: "job-retry" });
       expect(received).not.toBeNull();
     });
   });

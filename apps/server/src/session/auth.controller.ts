@@ -454,17 +454,19 @@ export class AuthController {
           expiresAtMs: nowMs + PASSWORD_RESET_TOKEN_TTL_MS,
         });
 
-        // Param names are Lane C's template contract (apps/worker/src/mail/
-        // templates/types.ts): `actionUrl` is the full publicUrl-derived
-        // reset link (E7 — never Host-header-derived), `displayName` greets.
-        const publicUrl = this.mailConfigService.publicUrl() ?? "";
+        // `displayName` is Lane C's template contract (apps/worker/src/
+        // mail/templates/types.ts); the reset link rides `link` as a
+        // SEALED reference (MRV-R1) — the worker builds the actionUrl at
+        // send time from the then-effective network.publicUrl (E7 — never
+        // Host-header-derived), so the plaintext token never lands in
+        // pg-boss's tables.
         await this.mailDispatchService.trySend({
           templateId: "password-reset",
           to: user.email,
           params: {
-            actionUrl: `${publicUrl}/reset/${plaintext}`,
             displayName: user.display_name ?? user.username,
           },
+          link: { kind: "reset", token: plaintext },
         });
       } else {
         // Unknown identifier, OR a real account with no email on file —

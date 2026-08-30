@@ -32,10 +32,35 @@ import nodemailer from 'nodemailer';
 import type SMTPTransport from 'nodemailer/lib/smtp-transport/index.js';
 import type { JobHandler } from '@loombre/jobs';
 import type { DbOrTx } from '@loombre/db/internal';
+import { detectSecretBackend, tryResolveSecret, unsealLinkToken } from '@loombre/secrets';
 import { getWorkerSettingValue, loadWorkerEffectiveSettings } from '../settings/effective-settings.js';
+import { mirrorServerDataDir } from '../metadata/keys.js';
 import { resolveMailCredentials, type MailCredentialsResolution } from './credentials.js';
 import { buildTransportOptions, type MailSmtpSecurity } from './transport.js';
 import { renderTemplate } from './templates/index.js';
+
+/** Templates whose message carries a live claim/reset link. Their payloads
+ *  must arrive with `link` (a sealed reference, MRV-R1) — `params` never
+ *  carries a token or a pre-built actionUrl, because pg-boss persists the
+ *  payload where anyone with DB read access can see it. */
+const LINKED_TEMPLATE_IDS = new Set(['invite', 'password-reset']);
+
+/** The sealing secret is minted by the SERVER (mail-dispatch.service.ts)
+ *  before any sealed payload is ever enqueued, through the same shared
+ *  keyring both processes already use for the SMTP credentials — absence
+ *  here is a real deployment fault (split dataDir/keyring), so it fails
+ *  the job loudly rather than degrading. */
+async function resolveSealingSecret(env: NodeJS.ProcessEnv): Promise<string> {
+  const detected = await detectSecretBackend(env);
+  const key = `${mirrorServerDataDir(env)}/secrets/mail-link-sealing-key`;
+  const secret = await tryResolveSecret({ backend: detected.backend, key });
+  if (secret === null) {
+    throw new Error(
+      'mail-send: the mail-link sealing key is missing from the keyring — the server creates it when it enqueues linked mail, so the worker is likely reading a different data dir / secret backend than the server.',
+    );
+  }
+  return secret;
+}
 
 export interface MailTransporter {
   sendMail(options: { from: string; to: string; subject: string; html: string; text: string }): Promise<unknown>;
@@ -80,7 +105,26 @@ export function mailSendConsumerHandler(deps: MailConsumerDeps): JobHandler<'mai
     const credentialsResolution = await resolveCredentials(env);
     const credentials = credentialsResolution.enabled ? { username: credentialsResolution.username, password: credentialsResolution.password } : null;
 
-    const rendered = renderTemplate(payload.templateId, payload.params);
+    // MRV-R1: the actionUrl is built HERE, at send time, never at enqueue
+    // time — the sealed token is unsealed in memory and the base comes
+    // from the CURRENT effective network.publicUrl (same trailing-slash
+    // strip mail-config.service.ts's publicUrl() applies), so a publicUrl
+    // fix applies to still-queued mail and the plaintext never touched
+    // the queue's tables.
+    let params = payload.params;
+    if (payload.link !== undefined) {
+      const publicUrl = getWorkerSettingValue(settingsResult, 'network.publicUrl', '').trim().replace(/\/+$/, '');
+      if (publicUrl.length === 0) {
+        throw new Error('mail-send: network.publicUrl is not configured — cannot build the message link (it was configured at enqueue time; an admin cleared it since).');
+      }
+      const sealingSecret = await resolveSealingSecret(env);
+      const token = unsealLinkToken(sealingSecret, payload.link.sealedToken);
+      params = { ...payload.params, actionUrl: `${publicUrl}/${payload.link.kind === 'claim' ? 'claim' : 'reset'}/${token}` };
+    } else if (LINKED_TEMPLATE_IDS.has(payload.templateId)) {
+      throw new Error(`mail-send: template "${payload.templateId}" requires a sealed link and the payload carries none.`);
+    }
+
+    const rendered = renderTemplate(payload.templateId, params);
 
     const transportOptions = buildTransportOptions({
       config: { host: smtpHost, port: smtpPort, security: smtpSecurity },

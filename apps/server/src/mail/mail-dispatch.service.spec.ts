@@ -63,4 +63,42 @@ describe("MailDispatchService.trySend (E6: mail can never block a flow)", () => 
     const result = await service.trySend({ templateId: "test", to: "d@example.com", params: {} });
     expect(result).toEqual({ dispatched: true, jobId: "job-test" });
   });
+
+  it("a tokened link is SEALED into the payload — the enqueued job carries no plaintext token and no actionUrl (MRV-R1)", async () => {
+    const enqueue = vi.fn(async () => "job-sealed");
+    const service = new MailDispatchService(fakeMailConfigService(true), fakeJobQueueProvider(enqueue));
+    const plaintextToken = "live-reset-token-cafebabe0042";
+
+    const result = await service.trySend({
+      templateId: "password-reset",
+      to: "e@example.com",
+      params: { displayName: "Sam" },
+      link: { kind: "reset", token: plaintextToken },
+    });
+    expect(result).toEqual({ dispatched: true, jobId: "job-sealed" });
+
+    expect(enqueue).toHaveBeenCalledTimes(1);
+    const [type, payload] = enqueue.mock.calls[0]! as unknown as [string, { templateId: string; to: string; params: Record<string, string>; link?: { kind: string; sealedToken: string } }];
+    expect(type).toBe("mail-send");
+    expect(payload.link?.kind).toBe("reset");
+    expect(typeof payload.link?.sealedToken).toBe("string");
+    // The whole persisted payload must be free of the live token and of
+    // any pre-built URL — pg-boss writes this verbatim to pgboss.job.
+    const serialized = JSON.stringify(payload);
+    expect(serialized).not.toContain(plaintextToken);
+    expect(payload.params["actionUrl"]).toBeUndefined();
+  });
+
+  it("a sealing failure degrades to {dispatched:false} — the same never-throws posture as an enqueue failure", async () => {
+    const enqueue = vi.fn(async () => "job-x");
+    const service = new MailDispatchService(fakeMailConfigService(true), fakeJobQueueProvider(enqueue));
+    (service as unknown as { resolveSealingSecret: () => Promise<string> }).resolveSealingSecret = async () => {
+      throw new Error("keyring unavailable");
+    };
+
+    await expect(
+      service.trySend({ templateId: "invite", to: "f@example.com", params: {}, link: { kind: "claim", token: "tok" } }),
+    ).resolves.toEqual({ dispatched: false, jobId: null });
+    expect(enqueue).not.toHaveBeenCalled();
+  });
 });

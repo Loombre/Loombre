@@ -293,18 +293,21 @@ export class InvitesController {
     // creation — trySend never throws and its result is not awaited-for-
     // correctness here beyond the call itself completing.
     if (email !== null && this.mailConfig.isConfigured()) {
-      // Param names are Lane C's template contract (templates/types.ts):
-      // `actionUrl` is the FULL claim link built from network.publicUrl
-      // (E7 — never from a Host header), `displayName` greets, and
-      // `expiresLabel` is human-readable prose, not a timestamp.
+      // `displayName`/`expiresLabel` are Lane C's template contract
+      // (templates/types.ts). The claim link rides `link` as a SEALED
+      // reference (MRV-R1): the worker unseals the SAME claimToken this
+      // response returns as claimUrl (E2 — the emailed link is the same
+      // artifact) and builds the actionUrl at send time from the
+      // then-effective network.publicUrl (E7 — never from a Host header),
+      // so the plaintext token never lands in pg-boss's tables.
       await this.mailDispatch.trySend({
         templateId: "invite",
         to: email,
         params: {
-          actionUrl: claimUrl ?? "",
           displayName: displayName ?? "",
           expiresLabel: formatExpiresLabel(expiresInMs),
         },
+        link: { kind: "claim", token: claimToken },
       });
     }
 
