@@ -1,13 +1,13 @@
 {
-  "recordedAtMs": 1788021024243,
+  "recordedAtMs": 1788077067379,
   "route": "/browse",
   "method": "gzip(level 9) of every external .js file the served /browse HTML references (script src + preload hints, noModule polyfills excluded), summed",
-  "totalGzipBytes": 179823,
-  "totalRawBytes": 581013,
+  "totalGzipBytes": 180172,
+  "totalRawBytes": 582230,
   "budgetGzipBytes": 204800,
   "breachedBudget": false,
   "attemptsGzipBytes": [
-    179823
+    180172
   ],
   "chunks": [
     {
@@ -31,9 +31,9 @@
       "gzipBytes": 8892
     },
     {
-      "file": "static/chunks/5971-dccaaf2636df31b3.js",
-      "rawBytes": 53448,
-      "gzipBytes": 16167
+      "file": "static/chunks/5971-4d1afd5e82b7a102.js",
+      "rawBytes": 53669,
+      "gzipBytes": 16235
     },
     {
       "file": "static/chunks/7798-04aa40f162057b16.js",
@@ -41,9 +41,9 @@
       "gzipBytes": 3088
     },
     {
-      "file": "static/chunks/9368-68c53b0c8759be6e.js",
-      "rawBytes": 11788,
-      "gzipBytes": 4290
+      "file": "static/chunks/9368-61984a6fd51505ea.js",
+      "rawBytes": 12136,
+      "gzipBytes": 4387
     },
     {
       "file": "static/chunks/970-a1354757a7e4e739.js",
@@ -61,9 +61,9 @@
       "gzipBytes": 4950
     },
     {
-      "file": "static/chunks/app/layout-62100d2ddcd84208.js",
-      "rawBytes": 17948,
-      "gzipBytes": 6828
+      "file": "static/chunks/app/layout-18b41b724b46099a.js",
+      "rawBytes": 18585,
+      "gzipBytes": 7003
     },
     {
       "file": "static/chunks/app/not-found-2ac93b0d70447bf4.js",
@@ -76,9 +76,9 @@
       "gzipBytes": 233
     },
     {
-      "file": "static/chunks/webpack-9caeec1b76fd93e8.js",
-      "rawBytes": 5206,
-      "gzipBytes": 2561
+      "file": "static/chunks/webpack-9f472f578d67449c.js",
+      "rawBytes": 5217,
+      "gzipBytes": 2570
     }
   ]
 }

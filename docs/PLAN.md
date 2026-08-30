@@ -287,7 +287,9 @@ Requirement: adult content is natively supported, age-restricted, opt-in, and
 invisible unless every gate passes. Design principle: **gating is a server-side
 data-layer guarantee; clients never receive rows they must hide.**
 
-**The five gates (all must pass for a restricted row to leave the server):**
+**The five gates (all must pass for a restricted row to leave the server —
+necessary, and since the 2026-08-30 surface-scoping amendment no longer
+sufficient: the request must also be a restricted-zone surface, below):**
 1. **Server capability** — instance admin enables the `restricted-content`
    capability; off by default. When off, restricted libraries cannot be created
    and the code paths are inert.
@@ -308,19 +310,42 @@ data-layer guarantee; clients never receive rows they must hide.**
 **Enforcement mechanism:** a single mandatory query-guard. All catalog reads go
 through `packages/db`'s query layer, whose entry points require a
 `ViewerContext` (user id, resolved content-class clearance, allowed library
-ids). The guard appends `content_class = 'general'` unless all five gates pass
-— there is no raw-query path exported from the package, and dependency-cruiser
-forbids `pg`/`kysely` imports outside `packages/db`. Result: an unfiltered
-query is a compile-time impossibility, not a code-review hope. Search (`tsv`),
+ids, **and the requesting surface**). The guard appends
+`content_class = 'general'` unless all five gates pass **and the context is a
+restricted-zone surface** — there is no raw-query path exported from the
+package, and dependency-cruiser forbids `pg`/`kysely` imports outside
+`packages/db`. Result: an unfiltered query is a compile-time impossibility,
+not a code-review hope — and so is an inline-mixed one. Search (`tsv`),
 people, tags, images, continue-watching, and event payloads all flow through
 the same guard — the leak surfaces PS/LS missed.
 
+**Surface scoping (amendment 2026-08-30, RZI-D1..D7 — spatial separation
+replaces temporal):** general surfaces — browse, search, home rails,
+watchlist and progress lists, people, tags, the library list — compile the
+general-only filter unconditionally; a live gate-5 unlock never changes what
+they return (design/phosphor README.md's "never appear in Browse, Search,
+Home rails, the featured pool, or the watchlist, locked or not", now
+guard-compiled rather than aspirational). Restricted rows are reachable only
+through the dedicated zone (`/restricted/*` reads and the zone's web
+surfaces, including the zone's own continue-watching and watchlist rails)
+and through item-addressed reads that serve zone playback (streams, images,
+chapters, item-addressed progress/watchlist writes), each still requiring
+the full five-gate clearance for the owning item. Admin item tooling and the
+user's own data-freedom export deliberately keep full clearance (RZI-D6/D7
+— tooling and takeout, not ambient browsing). The surface is carried in the
+`ViewerContext` and enforced inside the guard; a grep-gate pins which server
+modules may resolve a restricted-surface context, so a new caller is a
+recorded §6.4 decision, not a convenience.
+
 **Metadata isolation:** restricted items' people, tags, and images carry the
 class (above); the image endpoint checks the owning entity's class; websocket
-events about restricted items are delivered only to sessions currently passing
-gate 5. Home-screen rows ("recently added") are computed per-viewer-context,
-never cached across users with different clearances (cache keys include a
-clearance digest).
+events about restricted items are delivered only to sessions currently
+passing gate 5 **that have also opened the zone subscription** (RZI-D5c —
+the client opens it only while inside `/restricted`, so a restricted
+`item.added` envelope never reaches a viewer on a general page, unlock
+window or not). Zone-surface rows are computed per-viewer-context, never
+cached across users — or surfaces — with different clearances (cache keys
+include a clearance digest that carries the surface).
 
 **Adult metadata providers:** the provider interface (§4.4) treats adult
 sources (e.g., a StashDB-compatible adapter) as ordinary providers scoped to

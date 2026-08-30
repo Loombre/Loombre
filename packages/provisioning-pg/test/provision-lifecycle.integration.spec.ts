@@ -122,6 +122,10 @@ describeReal("EmbeddedPostgres — real first-boot lifecycle (TCP loopback strat
             userId: admin.id,
             allowedLibraryIds: [...permissions.generalLibraryIds, ...permissions.restrictedLibraryIds],
             restrictedCleared: true,
+            // RZI surface scoping: 'restricted' keeps this a pure
+            // clearance comparison (the cleared-vs-uncleared assertion
+            // below isolates gate 5, not the surface clause).
+            surface: "restricted" as const,
           };
 
           const result = await listItems(db, ctx, { limit: 5 });
