@@ -168,7 +168,7 @@ export class RestrictedController {
     // pattern) — session/ must never import catalog/ (D2, dependency-
     // cruiser-enforced), so this three-line call is inlined here exactly
     // like apps/server/src/playback/viewer.ts's own local copy.
-    const ctx = await this.viewerContextProvider.resolve(req.user!.userId, clockNowMs());
+    const ctx = await this.viewerContextProvider.resolveRestrictedSurface(req.user!.userId, clockNowMs());
     const result = await getRestrictedZoneCountForViewer(this.dbProvider.db, ctx);
     if (!result) {
       // Not entitled (docs/PLAN.md §6.4 gates 1-4 never all passed) — the

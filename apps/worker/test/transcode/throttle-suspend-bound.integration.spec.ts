@@ -206,7 +206,7 @@ describe("d3-f3: a throttle SIGSTOP is bounded — a paused viewer never leaves 
       [fileId],
     );
 
-    ctx = { userId, allowedLibraryIds: [libraryId], restrictedCleared: false };
+    ctx = { userId, allowedLibraryIds: [libraryId], restrictedCleared: false, surface: "restricted" };
 
     const media: MediaInfo = {
       fileId,

@@ -77,7 +77,7 @@ import {
 import { tailLogFile } from "./admin-logs-tail.js";
 import { requireResolvableApplyMatchProvider } from "./apply-match-provider.js";
 import { computeStoragePool } from "./admin-storage-pool.js";
-import { parseListQuery, resolveViewer } from "./viewer.js";
+import { parseListQuery, resolveViewerRestrictedSurface } from "./viewer.js";
 
 function mapJob(row: JobRow) {
   return {
@@ -204,7 +204,7 @@ export class AdminController {
   @Get("admin/sessions")
   async listSessions(@Query() query: Record<string, unknown>, @Req() req: AuthenticatedRequest) {
     await requireAdmin(this.dbProvider.db, req);
-    const ctx = await resolveViewer(this.viewerContextProvider, req);
+    const ctx = await resolveViewerRestrictedSurface(this.viewerContextProvider, req);
     const { cursor, limit } = parseListQuery(query);
     const page = await listActiveSessionsAdmin(this.dbProvider.db, ctx, {
       ...(cursor !== undefined ? { cursor } : {}),
@@ -491,7 +491,7 @@ export class AdminController {
     if (!library) {
       throw notFound("Library not found.", req.originalUrl);
     }
-    const ctx = await resolveViewer(this.viewerContextProvider, req);
+    const ctx = await resolveViewerRestrictedSurface(this.viewerContextProvider, req);
     const { cursor, limit } = parseListQuery(query);
     const page = await listUnmatchedLibraryItemsForViewer(this.dbProvider.db, ctx, id, {
       ...(cursor !== undefined ? { cursor } : {}),
@@ -517,7 +517,7 @@ export class AdminController {
     // THIS ADMIN'S OWN ViewerContext — plan §6.4 default-denies uncleared
     // admins too, so an unclearable item 404s byte-identically to a
     // nonexistent one (getEnrichableCatalogItemForAdmin's doc comment).
-    const ctx = await resolveViewer(this.viewerContextProvider, req);
+    const ctx = await resolveViewerRestrictedSurface(this.viewerContextProvider, req);
     const item = await getEnrichableCatalogItemForAdmin(this.dbProvider.db, ctx, id);
     if (!item) {
       throw notFound("Item not found (or not an enrichable type — movie/series/artist/album only).", req.originalUrl);
@@ -538,7 +538,7 @@ export class AdminController {
     const instance = req.originalUrl;
     // Same guarded lookup / same 404 posture as searchItemMatchCandidates
     // above — the admin's own ViewerContext, never a synthetic one.
-    const ctx = await resolveViewer(this.viewerContextProvider, req);
+    const ctx = await resolveViewerRestrictedSurface(this.viewerContextProvider, req);
     const item = await getEnrichableCatalogItemForAdmin(this.dbProvider.db, ctx, id);
     if (!item) {
       throw notFound("Item not found (or not an enrichable type — movie/series/artist/album only).", instance);

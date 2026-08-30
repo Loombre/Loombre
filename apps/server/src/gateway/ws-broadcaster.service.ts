@@ -97,11 +97,11 @@ import { HttpAdapterHost } from "@nestjs/core";
 import type { IncomingMessage, Server } from "node:http";
 import type { Socket } from "node:net";
 import { WebSocket, WebSocketServer } from "ws";
-import { filterEventsForViewer, getUserById, markEventsProcessed, readUnprocessedEvents, type ViewerContext } from "@loombre/db";
+import { filterEventsForViewer, getUserById, markEventsProcessed, readUnprocessedEvents } from "@loombre/db";
 import { uuidv7 } from "@loombre/shared";
 import { TokenService, type AccessTokenClaims } from "../session/token.service.js";
 import { DbProvider } from "../common/db.provider.js";
-import { ViewerContextProvider } from "../common/viewer-context.provider.js";
+import { ViewerContextProvider, type ViewerSurfacePair } from "../common/viewer-context.provider.js";
 import { ADMIN_ONLY_EVENT_TYPES } from "../plugins/event-taxonomy.js";
 
 const EVENTS_PATH = "/v1/events";
@@ -129,11 +129,28 @@ const CONTEXT_CACHE_TTL_MS = 5000;
  *  drift apart. */
 const ADMIN_ONLY_TYPES: readonly string[] = ADMIN_ONLY_EVENT_TYPES;
 
+/** Client -> server control frames (RZI-D5c). The ONLY messages a client
+ *  may send; anything else — unknown type, malformed JSON, binary — is
+ *  silently ignored (the client contract mirrors this tolerance for
+ *  unknown server frames). `restricted.subscribe` opens the zone
+ *  subscription for this socket: restricted-item events are delivered
+ *  ONLY while it is open AND the viewer's five-gate clearance holds —
+ *  the web client sends it on entering /restricted and
+ *  `restricted.unsubscribe` on leaving, re-sending after reconnects. */
+const ZONE_SUBSCRIBE_TYPE = "restricted.subscribe";
+const ZONE_UNSUBSCRIBE_TYPE = "restricted.unsubscribe";
+
 interface SocketState {
   userId: string;
   isAdmin: boolean;
-  ctx: ViewerContext;
+  /** Both surfaces from ONE resolution pass (ViewerSurfacePair): delivery
+   *  filters through `restricted` while zoneSubscribed, `general`
+   *  otherwise (RZI-D5c — an unlocked viewer browsing general surfaces no
+   *  longer receives restricted-item events); relock detection always
+   *  reads the `restricted` half, which is where clearance lives. */
+  pair: ViewerSurfacePair;
   ctxResolvedAtMs: number;
+  zoneSubscribed: boolean;
 }
 
 function extractToken(req: IncomingMessage, url: URL): string | undefined {
@@ -210,8 +227,16 @@ export class WsBroadcasterService implements OnApplicationBootstrap, OnModuleDes
       void (async () => {
         const nowMs = Date.now();
         try {
-          const ctx = await this.viewerContextProvider.resolve(claims.sub, nowMs);
-          this.sockets.set(ws, { userId: claims.sub, isAdmin: claims.isAdmin, ctx, ctxResolvedAtMs: nowMs });
+          const pair = await this.viewerContextProvider.resolveSurfaces(claims.sub, nowMs);
+          this.sockets.set(ws, {
+            userId: claims.sub,
+            isAdmin: claims.isAdmin,
+            pair,
+            ctxResolvedAtMs: nowMs,
+            // A fresh socket is general-surface until the client opens the
+            // zone subscription (RZI-D5c) — fail-closed by construction.
+            zoneSubscribed: false,
+          });
         } catch {
           // Fail-closed: if the initial context can't be resolved, the
           // socket is never added to the delivery map (it receives
@@ -220,6 +245,29 @@ export class WsBroadcasterService implements OnApplicationBootstrap, OnModuleDes
           ws.close();
         }
       })();
+
+      ws.on("message", (data) => {
+        // RZI-D5c zone-subscription control frames — see the constants'
+        // doc comment. Tolerant parse: a malformed or unknown frame is
+        // ignored, never an error or a close (same posture the web client
+        // takes for unknown server frames).
+        let type: unknown;
+        try {
+          type = (JSON.parse(String(data)) as { type?: unknown }).type;
+        } catch {
+          return;
+        }
+        const state = this.sockets.get(ws);
+        if (!state) return;
+        if (type === ZONE_SUBSCRIBE_TYPE) {
+          state.zoneSubscribed = true;
+          // Force a context refresh on the next tick so delivery reflects
+          // the new surface within one poll interval, not one TTL.
+          state.ctxResolvedAtMs = 0;
+        } else if (type === ZONE_UNSUBSCRIBE_TYPE) {
+          state.zoneSubscribed = false;
+        }
+      });
 
       ws.on("close", () => this.sockets.delete(ws));
       ws.on("error", () => this.sockets.delete(ws));
@@ -246,11 +294,12 @@ export class WsBroadcasterService implements OnApplicationBootstrap, OnModuleDes
     for (const [ws, state] of this.sockets) {
       if (ws.readyState !== WebSocket.OPEN) continue;
 
-      let ctx = state.ctx;
       if (nowMs - state.ctxResolvedAtMs > CONTEXT_CACHE_TTL_MS) {
-        const wasCleared = state.ctx.restrictedCleared;
-        ctx = await this.viewerContextProvider.resolve(state.userId, nowMs);
-        state.ctx = ctx;
+        // Clearance lives on the restricted half of the pair — the general
+        // half is hard-false by construction (provider doc), so relock
+        // detection must read `pair.restricted` on both sides.
+        const wasCleared = state.pair.restricted.restrictedCleared;
+        state.pair = await this.viewerContextProvider.resolveSurfaces(state.userId, nowMs);
         state.ctxResolvedAtMs = nowMs;
 
         // L2 (pre-public hardening): admin-only delivery must not ride the
@@ -262,7 +311,7 @@ export class WsBroadcasterService implements OnApplicationBootstrap, OnModuleDes
         const user = await getUserById(db, state.userId);
         state.isAdmin = user?.is_admin === true;
 
-        if (wasCleared && !ctx.restrictedCleared) {
+        if (wasCleared && !state.pair.restricted.restrictedCleared) {
           // Restricted auto-relock synthesis — see this file's header for
           // why this is never written to the outbox and why an occasional
           // duplicate alongside an explicit lock's real outbox event is an
@@ -270,6 +319,12 @@ export class WsBroadcasterService implements OnApplicationBootstrap, OnModuleDes
           this.sendRestrictedLocked(ws, state.userId, nowMs);
         }
       }
+
+      // RZI-D5c: the delivery surface follows the zone subscription — a
+      // socket that has not opened it filters through the GENERAL context,
+      // so restricted-item events never reach a viewer who is not inside
+      // the zone, unlock window or not.
+      const ctx = state.zoneSubscribed ? state.pair.restricted : state.pair.general;
 
       if (ids.length > 0) {
         const visible = await filterEventsForViewer(db, ctx, ids);

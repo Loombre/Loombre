@@ -150,7 +150,7 @@ describe.skipIf(!ffmpegAvailable)("subtitle-extract runtime integration (real ff
     // index/codec below come straight from ffprobe's own output.
     await runProbe({ db }, { mediaFileId: fileId });
 
-    ctx = { userId, allowedLibraryIds: [libraryId], restrictedCleared: false };
+    ctx = { userId, allowedLibraryIds: [libraryId], restrictedCleared: false, surface: "restricted" };
     stagingRoot = mkdtempSync(join(tmpdir(), "loombre-subtitle-extract-integration-"));
   }, 60_000);
 

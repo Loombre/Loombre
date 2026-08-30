@@ -36,6 +36,13 @@ import { isRestrictedContentEnabled, resolveRestrictedMajorityAgeYears } from ".
 import { resolveClearance } from "./resolve-clearance.js";
 import { SettingsService } from "../settings/settings.service.js";
 
+/** Both surfaces of one user's clearance, resolved in a single DB pass —
+ *  see resolveSurfaces below. */
+export interface ViewerSurfacePair {
+  general: ViewerContext;
+  restricted: ViewerContext;
+}
+
 @Injectable()
 export class ViewerContextProvider {
   constructor(
@@ -43,7 +50,22 @@ export class ViewerContextProvider {
     private readonly settingsService: SettingsService,
   ) {}
 
-  async resolve(userId: string, nowMs: number): Promise<ViewerContext> {
+  /**
+   * RZI surface scoping (docs/PLAN.md §6.4 as amended 2026-08-30,
+   * DECISIONS.md §2026-08-29): the route-blind `resolve()` is GONE — every
+   * caller chooses a surface explicitly, and grep-gates pass (f) pins who
+   * may choose 'restricted'. Both contexts come from ONE resolution pass
+   * (one set of DB reads), so a caller that needs both — the WS
+   * broadcaster's per-socket delivery + relock detection — pays no double
+   * read and can never see two halves resolved against different states.
+   *
+   * general: restrictedCleared is HARD false and restricted library ids
+   * are excluded from allowedLibraryIds — defense in depth on top of the
+   * guard's own surface clause (packages/db/src/query/guard.ts's
+   * restrictedRowsVisible), so a general surface stays general even if
+   * either layer regresses alone.
+   */
+  async resolveSurfaces(userId: string, nowMs: number): Promise<ViewerSurfacePair> {
     const db = this.dbProvider.db;
 
     const [user, settings, permissions] = await Promise.all([
@@ -66,14 +88,38 @@ export class ViewerContextProvider {
     const gates1through4 =
       clearance.gates.g1 && clearance.gates.g2 && clearance.gates.g3 && clearance.gates.g4;
 
-    const allowedLibraryIds = gates1through4
+    const restrictedAllowedLibraryIds = gates1through4
       ? [...permissions.generalLibraryIds, ...permissions.restrictedLibraryIds]
       : permissions.generalLibraryIds;
 
     return {
-      userId,
-      allowedLibraryIds,
-      restrictedCleared: clearance.restrictedCleared,
+      general: {
+        userId,
+        allowedLibraryIds: permissions.generalLibraryIds,
+        restrictedCleared: false,
+        surface: "general",
+      },
+      restricted: {
+        userId,
+        allowedLibraryIds: restrictedAllowedLibraryIds,
+        restrictedCleared: clearance.restrictedCleared,
+        surface: "restricted",
+      },
     };
+  }
+
+  /** The general-surface context — browse, search, home rails, watchlist/
+   *  progress lists, people, tags. Restricted rows are unreachable through
+   *  this context regardless of the viewer's live unlock state. */
+  async resolveGeneralSurface(userId: string, nowMs: number): Promise<ViewerContext> {
+    return (await this.resolveSurfaces(userId, nowMs)).general;
+  }
+
+  /** The restricted-capable context — the zone surfaces and the RZI-D3/D6/
+   *  D7 full-clearance item-addressed reads ONLY (grep-gates pass (f) is
+   *  the allowlist). Restricted rows still require the full five-gate
+   *  clearance; this surface merely permits them when clearance holds. */
+  async resolveRestrictedSurface(userId: string, nowMs: number): Promise<ViewerContext> {
+    return (await this.resolveSurfaces(userId, nowMs)).restricted;
   }
 }

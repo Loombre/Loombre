@@ -201,7 +201,7 @@ describe("d3-f1: retention pruning never outruns the viewer", () => {
       [fileId],
     );
 
-    ctx = { userId, allowedLibraryIds: [libraryId], restrictedCleared: false };
+    ctx = { userId, allowedLibraryIds: [libraryId], restrictedCleared: false, surface: "restricted" };
 
     const media: MediaInfo = {
       fileId,

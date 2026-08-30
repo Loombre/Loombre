@@ -217,11 +217,30 @@ describe("POST /libraries creator visibility (gap-closure regression)", () => {
       .send({ permissions: [{ userId: adminUserId, granted: true }] });
     expect(grant.status, JSON.stringify(grant.body)).toBe(200);
 
+    // RZI surface scoping (2026-08-30): a restricted library is never a
+    // general-surface object — GET /libraries/{id} answers 404 even AFTER
+    // the grant, cleared or not (pre-RZI this was the 200 that proved the
+    // grant landed). The grant's effect is proven by the roster flipping
+    // from [] to granted:true (below) and by the management view, which is
+    // scope-based, not gate-4-based.
     const getOneAfter = await request(app.getHttpServer())
       .get(`/libraries/${libraryId}`)
       .set("Authorization", `Bearer ${adminToken}`);
-    expect(getOneAfter.status).toBe(200);
-    expect(getOneAfter.body.id).toBe(libraryId);
+    expect(getOneAfter.status).toBe(404);
+
+    const permissionsAfter = await request(app.getHttpServer())
+      .get(`/libraries/${libraryId}/permissions`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(permissionsAfter.status).toBe(200);
+    expect(permissionsAfter.body.permissions).toEqual(
+      expect.arrayContaining([expect.objectContaining({ userId: adminUserId, granted: true })]),
+    );
+
+    const adminScopeList = await request(app.getHttpServer())
+      .get("/libraries?limit=200&scope=admin")
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(adminScopeList.status).toBe(200);
+    expect(adminScopeList.body.items.some((l: { id: string }) => l.id === libraryId)).toBe(true);
   });
 });
 
@@ -445,7 +464,7 @@ describe("Restricted Content surface (STATE.md Stash run, S9)", () => {
 
     const lockedHome = await request(app.getHttpServer()).get("/restricted/home").set("Authorization", `Bearer ${adminToken}`);
     expect(lockedHome.status, JSON.stringify(lockedHome.body)).toBe(200);
-    expect(lockedHome.body).toEqual({ continueWatchingInZone: [], recentlyAddedInZone: [], studios: [], performers: [] });
+    expect(lockedHome.body).toEqual({ continueWatchingInZone: [], watchlistInZone: [], recentlyAddedInZone: [], studios: [], performers: [] });
     const lockedBrowse = await request(app.getHttpServer())
       .get("/restricted/browse")
       .set("Authorization", `Bearer ${adminToken}`);

@@ -65,7 +65,7 @@ import { DbProvider } from "../common/db.provider.js";
 import { ViewerContextProvider } from "../common/viewer-context.provider.js";
 import { RateLimit, SurfaceRateLimitGuard } from "../common/rate-limit.guard.js";
 import { RateLimitExceptionFilter } from "../common/rate-limit-exception.filter.js";
-import { resolveViewer } from "./viewer.js";
+import { resolveViewerRestrictedSurface } from "./viewer.js";
 
 const CONTENT_TYPE_BY_EXT: Record<string, string> = {
   ".webp": "image/webp",
@@ -122,7 +122,7 @@ export class ImagesController {
     @Res() res: Response,
   ): Promise<void> {
     requireUuidParam(id, "Image not found.", sanitizeInstancePath(req));
-    const ctx = await resolveViewer(this.viewerContextProvider, req);
+    const ctx = await resolveViewerRestrictedSurface(this.viewerContextProvider, req);
 
     // Every documented ImageEntityType value maps to the DB's
     // 'catalog_item' EXCEPT 'person' and 'tag' — see module header (STATE.md

@@ -265,7 +265,7 @@ describe.skipIf(!ffmpegAvailable)("transcode session runtime integration (real f
     );
     badFileId = badFileRow.rows[0]!.id;
 
-    ctx = { userId, allowedLibraryIds: [libraryId], restrictedCleared: false };
+    ctx = { userId, allowedLibraryIds: [libraryId], restrictedCleared: false, surface: "restricted" };
 
     const media: MediaInfo = {
       fileId,

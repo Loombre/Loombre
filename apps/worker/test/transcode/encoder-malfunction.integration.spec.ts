@@ -238,7 +238,7 @@ describe("hardware encode-session death recovery (browser-player-F2)", () => {
       [fileId],
     );
 
-    ctx = { userId, allowedLibraryIds: [libraryId], restrictedCleared: false };
+    ctx = { userId, allowedLibraryIds: [libraryId], restrictedCleared: false, surface: "restricted" };
     stagingRoot = mkdtempSync(join(tmpdir(), "loombre-encoder-malfunction-"));
   }, 60_000 * TIME_SCALE);
 

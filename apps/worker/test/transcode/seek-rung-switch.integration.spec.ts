@@ -251,7 +251,7 @@ describe.skipIf(!ffmpegAvailable || process.platform === "win32")(
         [fileId],
       );
 
-      ctx = { userId, allowedLibraryIds: [libraryId], restrictedCleared: false };
+      ctx = { userId, allowedLibraryIds: [libraryId], restrictedCleared: false, surface: "restricted" };
 
       const media: MediaInfo = {
         fileId,

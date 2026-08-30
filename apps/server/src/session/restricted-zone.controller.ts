@@ -233,7 +233,9 @@ export class RestrictedZoneController {
   ) {}
 
   private async resolveCtx(req: AuthenticatedRequest) {
-    return this.viewerContextProvider.resolve(req.user!.userId, clockNowMs());
+    // RZI: THE zone surface — the restricted-capable resolution this whole
+    // amendment exists to scope (grep-gates pass (f) allowlists this file).
+    return this.viewerContextProvider.resolveRestrictedSurface(req.user!.userId, clockNowMs());
   }
 
   // GET /restricted/items — DEPRECATED (contract: `deprecated: true`,
@@ -271,6 +273,10 @@ export class RestrictedZoneController {
       continueWatchingInZone: home.continueWatchingInZone.map((entry) => ({
         item: toBrowseItemDto(entry.item),
         progress: entry.progress,
+      })),
+      watchlistInZone: home.watchlistInZone.map((entry) => ({
+        item: toBrowseItemDto(entry.item),
+        addedAtMs: entry.addedAtMs,
       })),
       recentlyAddedInZone: home.recentlyAddedInZone.map(toBrowseItemDto),
       studios: home.studios.map(toStudioDto),

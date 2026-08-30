@@ -608,7 +608,7 @@ describe("stash-sync — staleness (S8)", () => {
     // A fully cleared viewer entitled to this library: gates 1-4 via
     // allowedLibraryIds, gate 5 via restrictedCleared (ViewerContext is a
     // plain value object — no users row is needed to exercise the guard).
-    const ctx = { userId: randomUUID(), allowedLibraryIds: [libraryId], restrictedCleared: true };
+    const ctx = { userId: randomUUID(), allowedLibraryIds: [libraryId], restrictedCleared: true, surface: "restricted" };
 
     const beforeStale = await listRestrictedBrowse(db, ctx, {});
     expect(beforeStale?.rows.map((r) => r.id)).toContain(itemId);

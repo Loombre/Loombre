@@ -89,5 +89,10 @@ export async function buildGeneralSubscriberViewerContext(db: DeliveryDb): Promi
     userId: GENERAL_SUBSCRIBER_SENTINEL_USER_ID,
     allowedLibraryIds,
     restrictedCleared: false,
+    // RZI surface scoping: a general-scoped subscriber IS a general
+    // surface — the field makes explicit what this synthetic context
+    // always meant. (Restricted-scoped subscribers bypass this filter
+    // entirely via pluginMayReceiveRestricted above, unchanged.)
+    surface: "general",
   };
 }

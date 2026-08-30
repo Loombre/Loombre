@@ -112,6 +112,7 @@ const clearedAdminCtx = (userId: string, allowedLibraryIds: string[]): ViewerCon
   userId,
   allowedLibraryIds,
   restrictedCleared: true,
+  surface: "restricted",
 });
 
 /**

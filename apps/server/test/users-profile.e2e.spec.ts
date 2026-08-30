@@ -273,7 +273,7 @@ describe("F5 (opus adversarial review, fix wave): PATCH /users/me {password} rev
     // was preserved). No content/library association gates this type
     // (events.ts's GATED_TYPES), so it passes through readEventsForViewer
     // unfiltered regardless of the ViewerContext used to read it.
-    const ctx: ViewerContext = { userId: created.body.id, allowedLibraryIds: [], restrictedCleared: false };
+    const ctx: ViewerContext = { userId: created.body.id, allowedLibraryIds: [], restrictedCleared: false, surface: "restricted" };
     const events = await readEventsForViewer(rawDb, ctx, {});
     const revocationEvent = events.find(
       (e) => e.type === "session.revoked-by-password-change" && (e.payload as { userId?: string }).userId === created.body.id,

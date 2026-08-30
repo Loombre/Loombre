@@ -249,6 +249,13 @@ const validateProblem: ValidateFunction = ajv.compile(PROBLEM_SCHEMA);
 let app: INestApplication;
 let adminToken: string;
 let casualToken: string;
+// RZI surface scoping (2026-08-30): restricted fixture ids can no longer be
+// looked up through general endpoints (GET /movies, GET /people are
+// general-surface and never return them, cleared or not) — captured here
+// from the DB while beforeAll still holds a connection.
+let velvetStaticId: string;
+let restrictedCameoPersonId: string;
+let marginalActorPersonId: string;
 
 beforeAll(async () => {
   process.env["LOOMBRE_RESTRICTED_ENABLED"] = "true";
@@ -297,6 +304,15 @@ beforeAll(async () => {
   // assertion truly needs it (document)" instruction).
   const db = createDb(databaseUrl);
   try {
+    velvetStaticId = (
+      await db.selectFrom("catalog_items").select("id").where("title", "=", "Velvet Static").executeTakeFirstOrThrow()
+    ).id;
+    restrictedCameoPersonId = (
+      await db.selectFrom("people").select("id").where("name", "=", "Restricted Cameo Performer").executeTakeFirstOrThrow()
+    ).id;
+    marginalActorPersonId = (
+      await db.selectFrom("people").select("id").where("name", "=", "Marginal General Actor").executeTakeFirstOrThrow()
+    ).id;
     const harborLightsItem = await db
       .selectFrom("catalog_items")
       .select("id")
@@ -357,12 +373,23 @@ describe("seeded conformance: catalog-video", () => {
     }
   });
 
-  it("GET /movies (admin, cleared): general movies PLUS exactly the 4 restricted movies", async () => {
+  it("GET /movies (admin, cleared): STILL general-only — the unlock never widens the general surface; the 4 restricted movies live in /restricted/browse (RZI surface scoping, 2026-08-30)", async () => {
     const res = await admin().get("/movies?limit=200");
     expect(res.status).toBe(200);
     expect(validateMoviePage(res.body), ajv.errorsText(validateMoviePage.errors)).toBe(true);
     const titles = res.body.items.map((m: any) => m.title).sort();
-    expect(titles).toEqual([...GENERAL_MOVIE_TITLES, ...RESTRICTED_MOVIE_TITLES].sort());
+    expect(titles).toEqual([...GENERAL_MOVIE_TITLES].sort());
+    for (const restricted of RESTRICTED_MOVIE_TITLES) {
+      expect(titles).not.toContain(restricted);
+    }
+
+    // The scenes are not gone — they are exactly where the zone puts them.
+    const zone = await admin().get("/restricted/browse?limit=200");
+    expect(zone.status).toBe(200);
+    const zoneTitles = zone.body.items.map((m: any) => m.title);
+    for (const restricted of RESTRICTED_MOVIE_TITLES) {
+      expect(zoneTitles).toContain(restricted);
+    }
   });
 
   it("GET /movies/{id} maps satellite fields exactly (Harbor Lights)", async () => {
@@ -425,7 +452,7 @@ describe("seeded conformance: catalog-video", () => {
   // A restricted-class person credited on this otherwise-general movie
   // (seed.mjs's P1.21 hardening fixture) must not leak into an uncleared
   // viewer's people[], even though the item itself is fully visible.
-  it("GET /movies/{id} excludes a restricted-class credit from an uncleared viewer, includes it once cleared", async () => {
+  it("GET /movies/{id} excludes a restricted-class credit from EVERY viewer — general surface, cleared or not (RZI)", async () => {
     const list = await casual().get("/movies?limit=200");
     const lastFerryOut = list.body.items.find((m: any) => m.title === "Last Ferry Out");
     expect(lastFerryOut).toBeTruthy();
@@ -434,11 +461,12 @@ describe("seeded conformance: catalog-video", () => {
     expect(uncleared.status).toBe(200);
     expect(uncleared.body.people).toEqual([]);
 
+    // RZI surface scoping: /movies/{id} is a GENERAL surface, so the
+    // restricted-class credit stays excluded even for a fully-cleared
+    // viewer — the cameo is simply not part of this surface's world.
     const cleared = await admin().get(`/movies/${lastFerryOut.id}`);
     expect(cleared.status).toBe(200);
-    expect(cleared.body.people).toEqual([
-      expect.objectContaining({ name: "Restricted Cameo Performer", role: "guest", credit: "Cameo", order: 1 }),
-    ]);
+    expect(cleared.body.people).toEqual([]);
   });
 
   // Gap-closure lane: browse Sort control (`sort`/`order` additive params).
@@ -534,12 +562,17 @@ describe("seeded conformance: cross-type", () => {
     expect(res.body.items.some((r: any) => r.item.title === "Harbor Lights")).toBe(true);
   });
 
-  it("GET /search for a restricted-only title: invisible to casual, visible to cleared admin", async () => {
+  it("GET /search for a restricted-only title: invisible to EVERYONE, cleared or not — zone search is where it resolves (RZI surface scoping)", async () => {
     const casualRes = await casual().get("/search?q=Velvet");
     expect(casualRes.body.items.some((r: any) => r.item.title === "Velvet Static")).toBe(false);
 
     const adminRes = await admin().get("/search?q=Velvet");
-    expect(adminRes.body.items.some((r: any) => r.item.title === "Velvet Static")).toBe(true);
+    expect(adminRes.body.items.some((r: any) => r.item.title === "Velvet Static")).toBe(false);
+    expect(JSON.stringify(adminRes.body)).not.toContain(velvetStaticId);
+
+    const zoneRes = await admin().get("/restricted/search?q=Velvet");
+    expect(zoneRes.status).toBe(200);
+    expect(zoneRes.body.items.some((r: any) => r.title === "Velvet Static")).toBe(true);
   });
 
   it("GET /home/continue-watching returns the caller's own in-progress items only", async () => {
@@ -628,11 +661,7 @@ describe("seeded conformance: progress", () => {
   });
 
   it("PUT /progress/{itemId} against a restricted item invisible to the caller is 404", async () => {
-    const adminMovies = await admin().get("/movies?limit=200");
-    const velvetStatic = adminMovies.body.items.find((m: any) => m.title === "Velvet Static");
-    expect(velvetStatic).toBeTruthy();
-
-    const res = await casual().put(`/progress/${velvetStatic.id}`).send({ positionMs: 1000, state: "in-progress" });
+    const res = await casual().put(`/progress/${velvetStaticId}`).send({ positionMs: 1000, state: "in-progress" });
     expect(res.status).toBe(404);
   });
 
@@ -662,11 +691,7 @@ describe("seeded conformance: progress", () => {
   });
 
   it("GET /progress/{itemId} against a restricted item invisible to the caller is 404, byte-identical to a nonexistent id", async () => {
-    const adminMovies = await admin().get("/movies?limit=200");
-    const velvetStatic = adminMovies.body.items.find((m: any) => m.title === "Velvet Static");
-    expect(velvetStatic).toBeTruthy();
-
-    const invisible = await casual().get(`/progress/${velvetStatic.id}`);
+    const invisible = await casual().get(`/progress/${velvetStaticId}`);
     const nonexistent = await casual().get("/progress/018f6f1e-0000-7000-8000-00000000dead");
     expect(invisible.status).toBe(404);
     expect(nonexistent.status).toBe(404);
@@ -730,11 +755,7 @@ describe("seeded conformance: watchlist (Phosphor Wave 2 lane L3)", () => {
   });
 
   it("PUT/DELETE /watchlist/{itemId} against a restricted item invisible to the caller are BOTH 404, byte-identical to a nonexistent id — this is what makes ADD of a zone title unreachable", async () => {
-    const adminMovies = await admin().get("/movies?limit=200");
-    const velvetStatic = adminMovies.body.items.find((m: any) => m.title === "Velvet Static");
-    expect(velvetStatic).toBeTruthy();
-
-    const putInvisible = await casual().put(`/watchlist/${velvetStatic.id}`);
+    const putInvisible = await casual().put(`/watchlist/${velvetStaticId}`);
     const putNonexistent = await casual().put("/watchlist/018f6f1e-0000-7000-8000-00000000dead");
     expect(putInvisible.status).toBe(404);
     expect(putNonexistent.status).toBe(404);
@@ -742,32 +763,42 @@ describe("seeded conformance: watchlist (Phosphor Wave 2 lane L3)", () => {
     const { instance: _pi2, ...putNonexistentRest } = putNonexistent.body;
     expect(putInvisibleRest).toEqual(putNonexistentRest);
 
-    const deleteInvisible = await casual().delete(`/watchlist/${velvetStatic.id}`);
+    const deleteInvisible = await casual().delete(`/watchlist/${velvetStaticId}`);
     expect(deleteInvisible.status).toBe(404);
 
-    // And it never actually got written — cleared admin's own watchlist
-    // must not show a phantom row from casual's rejected attempt (there is
-    // no cross-user bleed possible here, but confirms zero rows resulted).
-    const adminList = await admin().get("/watchlist?limit=200");
-    expect(adminList.body.items.some((e: any) => e.item.id === velvetStatic.id)).toBe(false);
+    // And it never actually got written — the zone watchlist rail (the one
+    // surface a watchlisted restricted title renders on, RZI-D2a) must not
+    // show a phantom row from casual's rejected attempt.
+    const zoneHome = await admin().get("/restricted/home");
+    expect(zoneHome.status).toBe(200);
+    expect(zoneHome.body.watchlistInZone.some((e: any) => e.item.id === velvetStaticId)).toBe(false);
   });
 
-  it("a restricted item CAN be added by a fully-cleared viewer, but disappears from THAT SAME viewer's list the moment they are no longer cleared — locked or not", async () => {
-    const adminMovies = await admin().get("/movies?limit=200");
-    const velvetStatic = adminMovies.body.items.find((m: any) => m.title === "Velvet Static");
-    expect(velvetStatic).toBeTruthy();
-
-    const put = await admin().put(`/watchlist/${velvetStatic.id}`);
+  it("a restricted item CAN be added by a fully-cleared viewer, NEVER appears in GET /watchlist (general surface, cleared or not), and renders in the zone's watchlistInZone rail exactly while cleared (RZI-D2a)", async () => {
+    const put = await admin().put(`/watchlist/${velvetStaticId}`);
     expect(put.status).toBe(204);
 
     try {
+      // Cleared, general surface: byte-absent — the phosphor "never
+      // appear in the watchlist, locked or not" law, now guard-compiled.
+      const clearedList = await admin().get("/watchlist?limit=200");
+      expect(clearedList.status).toBe(200);
+      expect(JSON.stringify(clearedList.body)).not.toContain(velvetStaticId);
+
+      // Cleared, zone surface: the row renders in the zone rail.
+      const clearedHome = await admin().get("/restricted/home");
+      expect(clearedHome.status).toBe(200);
+      expect(clearedHome.body.watchlistInZone.some((e: any) => e.item.id === velvetStaticId)).toBe(true);
+
       const lock = await admin().post("/restricted/lock");
       expect(lock.status).toBe(204);
 
+      // Locked: gone from the zone rail too (gate 5 re-derived on read).
+      const lockedHome = await admin().get("/restricted/home");
+      expect(lockedHome.status).toBe(200);
+      expect(lockedHome.body.watchlistInZone).toEqual([]);
       const lockedList = await admin().get("/watchlist?limit=200");
-      expect(lockedList.status).toBe(200);
-      expect(lockedList.body.items.some((e: any) => e.item.id === velvetStatic.id)).toBe(false);
-      expect(JSON.stringify(lockedList.body)).not.toContain(velvetStatic.id);
+      expect(JSON.stringify(lockedList.body)).not.toContain(velvetStaticId);
     } finally {
       // Restore admin's cleared state for every later test in this file
       // (this suite's beforeAll unlocks admin exactly once).
@@ -776,7 +807,7 @@ describe("seeded conformance: watchlist (Phosphor Wave 2 lane L3)", () => {
         .set("Authorization", `Bearer ${adminToken}`)
         .send({ pin: "0000" });
       expect(reunlock.status).toBe(200);
-      await admin().delete(`/watchlist/${velvetStatic.id}`);
+      await admin().delete(`/watchlist/${velvetStaticId}`);
     }
   });
 });
@@ -793,13 +824,17 @@ describe("seeded conformance: people / tags", () => {
     expect(names).not.toContain("Restricted Performer One");
   });
 
-  it("GET /people (admin, cleared): additionally includes the restricted-only and cameo people", async () => {
+  it("GET /people (admin, cleared): STILL excludes restricted-class and restricted-credited-only people — general surface (RZI); zone performers carry the restricted side", async () => {
     const res = await admin().get("/people?limit=200");
     expect(res.status).toBe(200);
     const names = res.body.items.map((p: any) => p.name);
-    expect(names).toEqual(
-      expect.arrayContaining(["Restricted Cameo Performer", "Marginal General Actor", "Restricted Performer One"]),
-    );
+    expect(names).not.toContain("Restricted Cameo Performer");
+    expect(names).not.toContain("Marginal General Actor");
+    expect(names).not.toContain("Restricted Performer One");
+
+    const zone = await admin().get("/restricted/performers?limit=200");
+    expect(zone.status).toBe(200);
+    expect(zone.body.items.some((p: any) => p.name === "Restricted Performer One")).toBe(true);
   });
 
   it("GET /tags (casual, uncleared): general tags only, orphaned general tag 'Rare' hidden", async () => {
@@ -813,13 +848,13 @@ describe("seeded conformance: people / tags", () => {
     expect(res.body.items.some((t: any) => t.name === "Restricted Genre A")).toBe(false);
   });
 
-  it("GET /tags (admin, cleared): additionally includes the restricted-class Drama row, Rare, and Restricted Genre A/B", async () => {
+  it("GET /tags (admin, cleared): STILL general-only — the restricted Drama row, Rare, and Restricted Genre A/B never list on the general surface (RZI)", async () => {
     const res = await admin().get("/tags?limit=200");
     expect(res.status).toBe(200);
     const dramaRows = res.body.items.filter((t: any) => t.name === "Drama");
-    expect(dramaRows.map((t: any) => t.contentClass).sort()).toEqual(["general", "restricted"]);
-    expect(res.body.items.some((t: any) => t.name === "Rare")).toBe(true);
-    expect(res.body.items.some((t: any) => t.name === "Restricted Genre A")).toBe(true);
+    expect(dramaRows.map((t: any) => t.contentClass)).toEqual(["general"]);
+    expect(res.body.items.some((t: any) => t.name === "Rare")).toBe(false);
+    expect(res.body.items.some((t: any) => t.name === "Restricted Genre A")).toBe(false);
   });
 
   // ------------------------------------------------------------------
@@ -842,39 +877,24 @@ describe("seeded conformance: people / tags", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("GET /people/{id}/items for a RESTRICTED-class person: 404 for uncleared (person itself invisible), real credits for cleared", async () => {
-    const adminPeople = await admin().get("/people?limit=200");
-    const restrictedCameo = adminPeople.body.items.find((p: any) => p.name === "Restricted Cameo Performer");
-    expect(restrictedCameo).toBeTruthy();
-
-    const uncleared = await casual().get(`/people/${restrictedCameo.id}/items`);
+  it("GET /people/{id}/items for a RESTRICTED-class person: 404 for EVERY viewer — the person does not exist on the general surface, cleared or not (RZI)", async () => {
+    const uncleared = await casual().get(`/people/${restrictedCameoPersonId}/items`);
     expect(uncleared.status).toBe(404);
 
-    const cleared = await admin().get(`/people/${restrictedCameo.id}/items`);
-    expect(cleared.status).toBe(200);
-    expect(cleared.body.items.some((e: any) => e.item.title === "Last Ferry Out")).toBe(true);
+    const cleared = await admin().get(`/people/${restrictedCameoPersonId}/items`);
+    expect(cleared.status).toBe(404);
   });
 
-  it("GET /people/{id}/items for a GENERAL person credited ONLY on a restricted item: 404 for uncleared (join requires a visible credit), real credit for cleared", async () => {
-    const adminPeople = await admin().get("/people?limit=200");
-    const marginalActor = adminPeople.body.items.find((p: any) => p.name === "Marginal General Actor");
-    expect(marginalActor).toBeTruthy();
-    expect(marginalActor.contentClass).toBe("general");
-
-    const uncleared = await casual().get(`/people/${marginalActor.id}/items`);
+  it("GET /people/{id}/items for a GENERAL person credited ONLY on a restricted item: 404 for EVERY viewer — no visible credit exists on the general surface (RZI)", async () => {
+    const uncleared = await casual().get(`/people/${marginalActorPersonId}/items`);
     expect(uncleared.status).toBe(404);
 
-    const cleared = await admin().get(`/people/${marginalActor.id}/items`);
-    expect(cleared.status).toBe(200);
-    expect(cleared.body.items.some((e: any) => e.item.title === "Velvet Static")).toBe(true);
+    const cleared = await admin().get(`/people/${marginalActorPersonId}/items`);
+    expect(cleared.status).toBe(404);
   });
 
   it("GET /people/{id}/items: invisible-person 404 is byte-identical to a nonexistent-person 404", async () => {
-    const adminPeople = await admin().get("/people?limit=200");
-    const restrictedCameo = adminPeople.body.items.find((p: any) => p.name === "Restricted Cameo Performer");
-    expect(restrictedCameo).toBeTruthy();
-
-    const invisible = await casual().get(`/people/${restrictedCameo.id}/items`);
+    const invisible = await casual().get(`/people/${restrictedCameoPersonId}/items`);
     const nonexistent = await casual().get("/people/018f6f1e-0000-7000-8000-00000000dead/items");
     expect(invisible.status).toBe(404);
     expect(nonexistent.status).toBe(404);
@@ -892,11 +912,15 @@ describe("seeded conformance: libraries", () => {
     expect(names).toEqual(["Movies", "Music", "TV"]);
   });
 
-  it("GET /libraries (admin, cleared): additionally the Restricted library", async () => {
+  it("GET /libraries (admin, cleared): STILL the 3 general libraries — the Restricted library never lists on the general surface (RZI); ?scope=admin remains the management view that shows it", async () => {
     const res = await admin().get("/libraries?limit=200");
     expect(res.status).toBe(200);
     const names = res.body.items.map((l: any) => l.name).sort();
-    expect(names).toEqual(["Movies", "Music", "Restricted", "TV"]);
+    expect(names).toEqual(["Movies", "Music", "TV"]);
+
+    const adminScope = await admin().get("/libraries?limit=200&scope=admin");
+    expect(adminScope.status).toBe(200);
+    expect(adminScope.body.items.map((l: any) => l.name)).toContain("Restricted");
   });
 });
 
@@ -948,13 +972,10 @@ describe("seeded conformance: images", () => {
   });
 
   it("GET /images for a restricted item's image: 404 to casual, 200 to cleared admin", async () => {
-    const adminMovies = await admin().get("/movies?limit=200");
-    const velvetStatic = adminMovies.body.items.find((m: any) => m.title === "Velvet Static");
-
-    const casualRes = await casual().get(`/images/movie/${velvetStatic.id}/poster`);
+    const casualRes = await casual().get(`/images/movie/${velvetStaticId}/poster`);
     expect(casualRes.status).toBe(404);
 
-    const adminRes = await admin().get(`/images/movie/${velvetStatic.id}/poster`);
+    const adminRes = await admin().get(`/images/movie/${velvetStaticId}/poster`);
     // "After Hours Redline" is the one seeded with a poster row among
     // restricted movies; Velvet Static may or may not have one seeded —
     // either 200 (has a poster) or 404 (no poster row at all) is a
@@ -969,11 +990,7 @@ describe("seeded conformance: images", () => {
 
 describe("seeded conformance: HTTP-level restricted invisibility (byte-identical 404)", () => {
   it("casual GET /movies/{restricted-id} is byte-identical (minus instance) to a random-UUID 404", async () => {
-    const adminMovies = await admin().get("/movies?limit=200");
-    const restrictedMovie = adminMovies.body.items.find((m: any) => m.title === "Velvet Static");
-    expect(restrictedMovie).toBeTruthy();
-
-    const restrictedRes = await casual().get(`/movies/${restrictedMovie.id}`);
+    const restrictedRes = await casual().get(`/movies/${velvetStaticId}`);
     const randomUuid = "99999999-9999-4999-8999-999999999999";
     const randomRes = await casual().get(`/movies/${randomUuid}`);
 

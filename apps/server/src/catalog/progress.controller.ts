@@ -68,7 +68,7 @@ import { requireUuidParam } from "../gateway/require-uuid-param.js";
 import type { AuthenticatedRequest } from "../gateway/auth.guard.js";
 import { DbProvider } from "../common/db.provider.js";
 import { ViewerContextProvider } from "../common/viewer-context.provider.js";
-import { resolveViewer, parseListQuery } from "./viewer.js";
+import { resolveViewer, parseListQuery, resolveViewerRestrictedSurface } from "./viewer.js";
 import { canCarryProgress, PROGRESS_BEARING_ITEM_TYPES } from "./progress-item-types.js";
 
 interface ProgressUpdateBody {
@@ -90,7 +90,7 @@ export class ProgressController {
   @Get("progress/:itemId")
   async getProgress(@Param("itemId") itemId: string, @Req() req: AuthenticatedRequest) {
     requireUuidParam(itemId, "Progress not found.", req.originalUrl);
-    const ctx = await resolveViewer(this.viewerContextProvider, req);
+    const ctx = await resolveViewerRestrictedSurface(this.viewerContextProvider, req);
     const result = await getProgressForItem(this.dbProvider.db, ctx, itemId);
     if (!result) {
       throw notFound("Progress not found.", req.originalUrl);
@@ -133,7 +133,7 @@ export class ProgressController {
       throw unprocessableEntity("sessionId must be a string.", req.originalUrl);
     }
 
-    const ctx = await resolveViewer(this.viewerContextProvider, req);
+    const ctx = await resolveViewerRestrictedSurface(this.viewerContextProvider, req);
     const nowMs = clockNowMs();
 
     // Remediation d3-b9: only PLAYABLE LEAF types carry progress. This

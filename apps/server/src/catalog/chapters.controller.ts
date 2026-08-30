@@ -18,7 +18,7 @@ import { requireUuidParam } from "../gateway/require-uuid-param.js";
 import type { AuthenticatedRequest } from "../gateway/auth.guard.js";
 import { DbProvider } from "../common/db.provider.js";
 import { ViewerContextProvider } from "../common/viewer-context.provider.js";
-import { resolveViewer } from "./viewer.js";
+import { resolveViewerRestrictedSurface } from "./viewer.js";
 
 @Controller()
 export class ChaptersController {
@@ -30,7 +30,7 @@ export class ChaptersController {
   @Get("items/:id/chapters")
   async getChapters(@Param("id") id: string, @Req() req: AuthenticatedRequest) {
     requireUuidParam(id, "Item not found.", req.originalUrl);
-    const ctx = await resolveViewer(this.viewerContextProvider, req);
+    const ctx = await resolveViewerRestrictedSurface(this.viewerContextProvider, req);
     const chapters = await getChaptersForItem(this.dbProvider.db, ctx, id);
     if (!chapters) {
       throw notFound("Item not found.", req.originalUrl);

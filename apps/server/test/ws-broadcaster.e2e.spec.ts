@@ -119,7 +119,7 @@ afterAll(async () => {
 });
 
 describe("websocket broadcaster (mission-mandated two-live-sockets test)", () => {
-  it("delivers a general event to both sockets and a restricted event only to the cleared socket", async () => {
+  it("delivers a general event to both sockets; a restricted event reaches ONLY a cleared socket with the zone subscription open (RZI-D5c)", async () => {
     const httpServer = app.getHttpServer();
 
     // --- admin: log in, then live-unlock restricted content (gates 1-5) ---
@@ -218,14 +218,13 @@ describe("websocket broadcaster (mission-mandated two-live-sockets test)", () =>
         })
         .execute();
 
-      // Broadcaster polls every 500ms; poll until all three positive
-      // deliveries have landed (up to 10s) rather than a fixed margin, so a
-      // slow poll/delivery under CI load can't flake the assertions below.
+      // Broadcaster polls every 500ms; poll until both general deliveries
+      // have landed (up to 10s) rather than a fixed margin, so a slow
+      // poll/delivery under CI load can't flake the assertions below.
       await waitUntil(
         () =>
           adminMessages.some((m: any) => m.payload?.itemId === generalMovie.id) &&
-          casualMessages.some((m: any) => m.payload?.itemId === generalMovie.id) &&
-          adminMessages.some((m: any) => m.payload?.itemId === restrictedMovie.id),
+          casualMessages.some((m: any) => m.payload?.itemId === generalMovie.id),
       );
 
       expect(
@@ -237,9 +236,44 @@ describe("websocket broadcaster (mission-mandated two-live-sockets test)", () =>
         `casual socket should receive the general event; got ${JSON.stringify(casualMessages)}`,
       ).toBe(true);
 
+      // RZI-D5c: the admin is fully CLEARED but has NOT opened the zone
+      // subscription — the socket is a general surface, so the restricted
+      // event must not have been delivered alongside the general one.
+      await sleep(750);
       expect(
         adminMessages.some((m: any) => m.payload?.itemId === restrictedMovie.id),
-        `admin (cleared) socket should receive the restricted event; got ${JSON.stringify(adminMessages)}`,
+        `cleared-but-unsubscribed admin socket must NOT receive the restricted event; got ${JSON.stringify(adminMessages)}`,
+      ).toBe(false);
+      expect(
+        casualMessages.some((m: any) => m.payload?.itemId === restrictedMovie.id),
+        `casual (uncleared) socket must NEVER receive the restricted event; got ${JSON.stringify(casualMessages)}`,
+      ).toBe(false);
+
+      // Open the zone subscription (what the web client sends on entering
+      // /restricted), then emit a SECOND restricted event — the first was
+      // already drained/marked-processed during the unsubscribed window.
+      adminWs.send(JSON.stringify({ type: "restricted.subscribe" }));
+      await db
+        .insertInto("events")
+        .values({
+          type: "item.added",
+          ts_ms: nowMs + 1,
+          actor_user_id: null,
+          payload: {
+            itemId: restrictedMovie.id,
+            libraryId: libRestricted.id,
+            itemType: "movie",
+            contentClass: "restricted",
+            parentId: null,
+            addedAtMs: nowMs + 1,
+          },
+        })
+        .execute();
+
+      await waitUntil(() => adminMessages.some((m: any) => m.payload?.itemId === restrictedMovie.id));
+      expect(
+        adminMessages.some((m: any) => m.payload?.itemId === restrictedMovie.id),
+        `cleared + zone-subscribed admin socket should receive the restricted event; got ${JSON.stringify(adminMessages)}`,
       ).toBe(true);
       expect(
         casualMessages.some((m: any) => m.payload?.itemId === restrictedMovie.id),

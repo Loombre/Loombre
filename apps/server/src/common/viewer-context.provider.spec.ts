@@ -92,11 +92,11 @@ afterAll(async () => {
   await dbProvider.onModuleDestroy();
 });
 
-describe("ViewerContextProvider.resolve", () => {
+describe("ViewerContextProvider.resolveRestrictedSurface (the clearance-bearing half)", () => {
   it("casual user: general libraries only, never restrictedCleared, regardless of capability flag", async () => {
     process.env["LOOMBRE_RESTRICTED_ENABLED"] = "true";
     await settingsService.reload();
-    const ctx = await provider.resolve(casualId, Date.now());
+    const ctx = await provider.resolveRestrictedSurface(casualId, Date.now());
     expect(ctx.userId).toBe(casualId);
     expect(ctx.allowedLibraryIds).toHaveLength(3); // 3 general libraries granted in seed
     expect(ctx.restrictedCleared).toBe(false);
@@ -105,7 +105,7 @@ describe("ViewerContextProvider.resolve", () => {
   it("admin user with capability OFF: restricted library excluded from allowedLibraryIds even though gate 4 (permission) is granted", async () => {
     delete process.env["LOOMBRE_RESTRICTED_ENABLED"];
     await settingsService.reload();
-    const ctx = await provider.resolve(adminId, Date.now());
+    const ctx = await provider.resolveRestrictedSurface(adminId, Date.now());
     expect(ctx.allowedLibraryIds).toHaveLength(3); // general only — gate 1 fails
     expect(ctx.restrictedCleared).toBe(false);
   });
@@ -115,7 +115,7 @@ describe("ViewerContextProvider.resolve", () => {
     await settingsService.reload();
     await setRestrictedUnlockUntil(db, adminId, null, Date.now());
 
-    const ctx = await provider.resolve(adminId, Date.now());
+    const ctx = await provider.resolveRestrictedSurface(adminId, Date.now());
     expect(ctx.allowedLibraryIds).toHaveLength(4); // 3 general + 1 restricted
     expect(ctx.restrictedCleared).toBe(false);
   });
@@ -126,7 +126,7 @@ describe("ViewerContextProvider.resolve", () => {
     const nowMs = Date.now();
     await setRestrictedUnlockUntil(db, adminId, nowMs + 60_000, nowMs);
 
-    const ctx = await provider.resolve(adminId, nowMs);
+    const ctx = await provider.resolveRestrictedSurface(adminId, nowMs);
     expect(ctx.allowedLibraryIds).toHaveLength(4);
     expect(ctx.restrictedCleared).toBe(true);
   });
@@ -137,8 +137,26 @@ describe("ViewerContextProvider.resolve", () => {
     const nowMs = Date.now();
     await setRestrictedUnlockUntil(db, adminId, nowMs - 1, nowMs - 100);
 
-    const ctx = await provider.resolve(adminId, nowMs);
+    const ctx = await provider.resolveRestrictedSurface(adminId, nowMs);
     expect(ctx.restrictedCleared).toBe(false);
+  });
+
+  it("RZI surface scoping: the general half of the pair is hard-general — restrictedCleared false and restricted library ids excluded — even for a fully-cleared viewer", async () => {
+    process.env["LOOMBRE_RESTRICTED_ENABLED"] = "true";
+    await settingsService.reload();
+    const nowMs = Date.now();
+    await setRestrictedUnlockUntil(db, adminId, nowMs + 60_000, nowMs);
+
+    const pair = await provider.resolveSurfaces(adminId, nowMs);
+    expect(pair.restricted.restrictedCleared).toBe(true);
+    expect(pair.restricted.surface).toBe("restricted");
+    expect(pair.restricted.allowedLibraryIds).toHaveLength(4);
+    // The general half never widens with the unlock — defense in depth on
+    // top of the guard's own surface clause.
+    expect(pair.general.restrictedCleared).toBe(false);
+    expect(pair.general.surface).toBe("general");
+    expect(pair.general.allowedLibraryIds).toHaveLength(3);
+    expect(pair.general.userId).toBe(pair.restricted.userId);
   });
 
   it("Addendum A: restricted.majorityAgeYears raised via settings is honored (belt-and-braces Math.max(18,...) never clamps a legitimate value above 18)", async () => {
@@ -156,7 +174,7 @@ describe("ViewerContextProvider.resolve", () => {
       // seeded admin's birth_date makes them >=18 but the test doesn't
       // assert an exact age — this only proves the raised floor is READ at
       // all (no throw, no silent ignore) and gate 2 still evaluates.
-      const ctx = await provider.resolve(adminId, nowMs);
+      const ctx = await provider.resolveRestrictedSurface(adminId, nowMs);
       expect(typeof ctx.restrictedCleared).toBe("boolean");
     } finally {
       await settingsService.updateSetting({

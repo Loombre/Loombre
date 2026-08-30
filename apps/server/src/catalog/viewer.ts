@@ -1,9 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Loombre :: apps/server/src/catalog/viewer.ts
 //
-// Shared "resolve a ViewerContext for this request" helper — every catalog
-// controller needs exactly this, always the same way (AuthGuard guarantees
-// req.user on any non-public route, so `req.user!` is safe here).
+// Shared "resolve a ViewerContext for this request" helpers (AuthGuard
+// guarantees req.user on any non-public route, so `req.user!` is safe
+// here). RZI surface scoping (§6.4 as amended 2026-08-30): there are TWO,
+// and the choice is a per-endpoint §6.4 decision, not a convenience —
+//   resolveViewer                → the GENERAL surface. The default for
+//     every catalog list/search/browse read; restricted rows are
+//     unreachable through it regardless of the viewer's unlock state.
+//   resolveViewerRestrictedSurface → the RESTRICTED surface, for the
+//     RZI-D3/D6/D7 item-addressed endpoints only (images, chapters,
+//     GET/PUT /progress/{itemId}, PUT/DELETE /watchlist/{itemId}, admin
+//     tooling, data-freedom). grep-gates pass (f) pins its callers.
 
 import { nowMs as clockNowMs } from "@loombre/shared";
 import type { ViewerContext } from "@loombre/db";
@@ -15,7 +23,14 @@ export function resolveViewer(
   provider: ViewerContextProvider,
   req: AuthenticatedRequest,
 ): Promise<ViewerContext> {
-  return provider.resolve(req.user!.userId, clockNowMs());
+  return provider.resolveGeneralSurface(req.user!.userId, clockNowMs());
+}
+
+export function resolveViewerRestrictedSurface(
+  provider: ViewerContextProvider,
+  req: AuthenticatedRequest,
+): Promise<ViewerContext> {
+  return provider.resolveRestrictedSurface(req.user!.userId, clockNowMs());
 }
 
 const VALID_SORTS = new Set(["title", "added", "rating", "year"]);

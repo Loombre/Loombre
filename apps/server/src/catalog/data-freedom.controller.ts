@@ -52,7 +52,7 @@ import { ViewerContextProvider } from "../common/viewer-context.provider.js";
 import { JobQueueProvider } from "../common/job-queue.provider.js";
 import { RateLimit, SurfaceRateLimitGuard } from "../common/rate-limit.guard.js";
 import { RateLimitExceptionFilter } from "../common/rate-limit-exception.filter.js";
-import { resolveViewer } from "./viewer.js";
+import { resolveViewerRestrictedSurface } from "./viewer.js";
 import { mapByType } from "./mappers.js";
 
 // L2 (pre-public hardening): claim fast-fail, then a FRESH DB re-read via
@@ -103,7 +103,7 @@ export class DataFreedomController {
   @RateLimit("export", "user")
   @Get("export")
   async exportArchive(@Req() req: AuthenticatedRequest, @Res() res: Response): Promise<void> {
-    const ctx = await resolveViewer(this.viewerContextProvider, req);
+    const ctx = await resolveViewerRestrictedSurface(this.viewerContextProvider, req);
 
     // V1-013: the very first res.write() below commits the response
     // headers, so ANY failure from this point on (exportData's generator

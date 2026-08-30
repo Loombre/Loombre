@@ -82,7 +82,7 @@ describe("scanner: mount-drop (exit gate)", () => {
     expect(itemBefore.rows).toHaveLength(1);
     const itemId = itemBefore.rows[0]!.id;
 
-    const ctx: ViewerContext = { userId: "mount-drop-test-user", allowedLibraryIds: [libraryId], restrictedCleared: true };
+    const ctx: ViewerContext = { userId: "mount-drop-test-user", allowedLibraryIds: [libraryId], restrictedCleared: true, surface: "restricted" };
     const publicDb = createDb(DATABASE_URL);
     try {
       const visibleBefore = await listItems(publicDb, ctx, { itemType: "movie" });

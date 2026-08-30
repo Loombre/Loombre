@@ -245,16 +245,18 @@ describe("import round-trip: export -> wipe -> import -> diff", () => {
     const restrictedLibraryIds = libRows.filter((r) => r.content_class === "restricted").map((r) => r.id);
     expect(restrictedLibraryIds.length).toBeGreaterThan(0);
 
-    const uncleared: ViewerContext = { userId: adminId, allowedLibraryIds: generalLibraryIds, restrictedCleared: false };
+    const uncleared: ViewerContext = { userId: adminId, allowedLibraryIds: generalLibraryIds, restrictedCleared: false, surface: "restricted" };
     const clearedButNotGranted: ViewerContext = {
       userId: adminId,
       allowedLibraryIds: [...generalLibraryIds, ...restrictedLibraryIds],
       restrictedCleared: false,
+      surface: "restricted",
     };
     const fullyCleared: ViewerContext = {
       userId: adminId,
       allowedLibraryIds: [...generalLibraryIds, ...restrictedLibraryIds],
       restrictedCleared: true,
+      surface: "restricted",
     };
 
     const restrictedItems = archive.items.filter((i) => i["contentClass"] === "restricted");

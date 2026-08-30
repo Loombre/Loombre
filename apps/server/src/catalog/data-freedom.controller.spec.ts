@@ -56,10 +56,11 @@ function makeReq(): AuthenticatedRequest {
 
 function makeViewerContextProvider(): ViewerContextProvider {
   return {
-    resolve: vi.fn().mockResolvedValue({
+    resolveRestrictedSurface: vi.fn().mockResolvedValue({
       userId: "0191c1c0-0000-7000-8000-000000000001",
       allowedLibraryIds: [],
       restrictedCleared: false,
+      surface: "restricted",
     }),
   } as unknown as ViewerContextProvider;
 }
@@ -150,7 +151,7 @@ describe("GET /export mid-stream failure (V1-013)", () => {
     dbMocks.exportData.mockReset();
 
     const viewerContextProvider = {
-      resolve: vi.fn().mockRejectedValue(new Error("resolveViewer failed before any write")),
+      resolveRestrictedSurface: vi.fn().mockRejectedValue(new Error("resolveViewer failed before any write")),
     } as unknown as ViewerContextProvider;
     const controller = new DataFreedomController(
       { db: {} } as unknown as DbProvider,

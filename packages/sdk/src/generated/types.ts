@@ -964,7 +964,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Full-text search across catalog item types */
+        /**
+         * Full-text search across catalog item types
+         * @description A GENERAL surface (docs/PLAN.md §6.4 surface scoping, 2026-08-30): restricted items, people, and tags never match here, with or without a live restricted unlock — the zone has its own search (GET /restricted/search). This is the design/phosphor "never appear in Search, locked or not" law, guard-compiled.
+         */
         get: operations["search"];
         put?: never;
         post?: never;
@@ -983,7 +986,7 @@ export interface paths {
         };
         /**
          * In-progress items for the current user (computed per-viewer-context; never cached across users with different restricted-content clearance)
-         * @description Pages over the types `ContinueWatchingEntry.item` admits (movie/episode/track) — the eligibility filter is applied BEFORE the page is cut, so `limit` means "up to N entries you can render" and an empty page never ships with a non-null `nextCursor` (d3-b9; same rule as `getRecentlyAdded`/`search` after adi-F2). A progress row against any other item type — a container written before `putProgress` began refusing them — is skipped by the query, never by the response.
+         * @description Pages over the types `ContinueWatchingEntry.item` admits (movie/episode/track) — the eligibility filter is applied BEFORE the page is cut, so `limit` means "up to N entries you can render" and an empty page never ships with a non-null `nextCursor` (d3-b9; same rule as `getRecentlyAdded`/`search` after adi-F2). A progress row against any other item type — a container written before `putProgress` began refusing them — is skipped by the query, never by the response. A GENERAL surface (§6.4 surface scoping): a restricted in-progress row never appears here, cleared or not — the zone home's continueWatchingInZone rail is where restricted resume lives.
          */
         get: operations["getContinueWatching"];
         put?: never;
@@ -1001,7 +1004,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Recently added items visible to the current user */
+        /**
+         * Recently added items visible to the current user
+         * @description A GENERAL surface (§6.4 surface scoping): restricted items never appear in this rail, cleared or not — the zone home's recentlyAddedInZone rail is the restricted counterpart.
+         */
         get: operations["getRecentlyAdded"];
         put?: never;
         post?: never;
@@ -1275,7 +1281,7 @@ export interface paths {
         };
         /**
          * List the current user's watchlist, newest-added first
-         * @description Guarded like every other per-user, item-referencing list (docs/ PLAN.md §6.4): a row whose item is not visible to the caller right now is excluded, even if it was added while the caller was fully cleared — restricted titles never appear in the watchlist, locked or not (design/phosphor README.md "Restricted content").
+         * @description Guarded like every other per-user, item-referencing list (docs/ PLAN.md §6.4): a row whose item is not visible to the caller right now is excluded, even if it was added while the caller was fully cleared — restricted titles never appear in the watchlist, locked or not (design/phosphor README.md "Restricted content"). Since the 2026-08-30 surface-scoping amendment this is guard-compiled, not just documented: this endpoint resolves the GENERAL surface, and a watchlisted zone scene renders only in the zone home's watchlistInZone rail.
          */
         get: operations["listWatchlist"];
         put?: never;
@@ -1395,8 +1401,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Restricted zone home rails (continue watching, recently added, studios, performers)
-         * @description 404 for a viewer with NO restricted-library entitlement at all — same posture as every other zone read (GET /restricted/count). For an entitled-but-LOCKED viewer (gate 5 not currently passed) ALL FOUR rails come back empty — continueWatchingInZone, recentlyAddedInZone, studios and performers alike — guard-consistent with GET /restricted/browse. The zone's U10 aggregate disclosure (that a zone exists, and how many items are in it) is made by GET /restricted/count and by that endpoint ALONE; a locked viewer never learns a studio or performer NAME from this endpoint, because a studio/performer roster is zone content, not an aggregate. (R1 review lane: this paragraph previously said studios/performers "still resolve" while locked — the implementation has always returned them empty, and empty is the correct, safer reading of docs/PLAN.md §6.4. Corrected here so nobody "conforms" the code to the description and opens the leak. Pinned by packages/db/test/leak.spec.ts 12f/12h and the HTTP twin in apps/server/test/libraries.e2e.spec.ts.)
+         * Restricted zone home rails (continue watching, watchlist, recently added, studios, performers)
+         * @description 404 for a viewer with NO restricted-library entitlement at all — same posture as every other zone read (GET /restricted/count). For an entitled-but-LOCKED viewer (gate 5 not currently passed) ALL FIVE rails come back empty — continueWatchingInZone, watchlistInZone (RZI-D2a: the only surface a watchlisted restricted title ever renders on), recentlyAddedInZone, studios and performers alike — guard-consistent with GET /restricted/browse. The zone's U10 aggregate disclosure (that a zone exists, and how many items are in it) is made by GET /restricted/count and by that endpoint ALONE; a locked viewer never learns a studio or performer NAME from this endpoint, because a studio/performer roster is zone content, not an aggregate. (R1 review lane: this paragraph previously said studios/performers "still resolve" while locked — the implementation has always returned them empty, and empty is the correct, safer reading of docs/PLAN.md §6.4. Corrected here so nobody "conforms" the code to the description and opens the leak. Pinned by packages/db/test/leak.spec.ts 12f/12h and the HTTP twin in apps/server/test/libraries.e2e.spec.ts.)
          */
         get: operations["getRestrictedHome"];
         put?: never;
@@ -4066,9 +4072,20 @@ export interface components {
             item: components["schemas"]["RestrictedBrowseItem"];
             progress: components["schemas"]["Progress"];
         };
-        /** @description GET /restricted/home — zone home rails (S9). Rail UI itself is Lane E's scope; this endpoint + shape land here (K4/S9). */
+        /** @description One watchlisted zone scene (RZI-D2a). The zone's watchlist rail is the ONLY surface a watchlisted restricted title ever renders on — GET /watchlist excludes restricted rows unconditionally (its own description's law, guard-enforced since the 2026-08-30 §6.4 surface-scoping amendment). */
+        RestrictedHomeWatchlistEntry: {
+            item: components["schemas"]["RestrictedBrowseItem"];
+            /**
+             * Format: int64
+             * @description When the viewer watchlisted the scene (ms epoch).
+             */
+            addedAtMs: number;
+        };
+        /** @description GET /restricted/home — zone home rails (S9; watchlistInZone added by the RZI surface-scoping amendment, RZI-D2a). */
         RestrictedHome: {
             continueWatchingInZone: components["schemas"]["RestrictedHomeContinueWatchingEntry"][];
+            /** @description The viewer's watchlisted zone scenes, newest-added first. */
+            watchlistInZone: components["schemas"]["RestrictedHomeWatchlistEntry"][];
             recentlyAddedInZone: components["schemas"]["RestrictedBrowseItem"][];
             /** @description Top-N studios by scene count. */
             studios: components["schemas"]["RestrictedStudio"][];

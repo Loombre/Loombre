@@ -236,7 +236,7 @@ describe("seek-restart de-duplication (continuation item 1: livelock)", () => {
       [fileId],
     );
 
-    ctx = { userId, allowedLibraryIds: [libraryId], restrictedCleared: false };
+    ctx = { userId, allowedLibraryIds: [libraryId], restrictedCleared: false, surface: "restricted" };
 
     const media: MediaInfo = {
       fileId,

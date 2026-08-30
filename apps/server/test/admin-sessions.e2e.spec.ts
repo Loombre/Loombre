@@ -131,7 +131,7 @@ describe("GET /admin/sessions (STATE.md P2.8/deliverable E)", () => {
         .executeTakeFirstOrThrow();
       const allLibraryIds = (await db.selectFrom("libraries").select("id").execute()).map((r) => r.id);
 
-      const seedingCtx: ViewerContext = { userId: adminUserId, allowedLibraryIds: allLibraryIds, restrictedCleared: true };
+      const seedingCtx: ViewerContext = { userId: adminUserId, allowedLibraryIds: allLibraryIds, restrictedCleared: true, surface: "restricted" };
       const session = await createPlaybackSession(db, seedingCtx, {
         itemId: restrictedItem.id,
         fileId: restrictedFile.id,
@@ -227,7 +227,7 @@ describe("GET /admin/sessions (STATE.md P2.8/deliverable E)", () => {
         .executeTakeFirstOrThrow();
       const file = await db.selectFrom("media_files").select("id").where("item_id", "=", item.id).executeTakeFirstOrThrow();
       const allLibraryIds = (await db.selectFrom("libraries").select("id").execute()).map((r) => r.id);
-      const seedingCtx: ViewerContext = { userId: adminUserId, allowedLibraryIds: allLibraryIds, restrictedCleared: true };
+      const seedingCtx: ViewerContext = { userId: adminUserId, allowedLibraryIds: allLibraryIds, restrictedCleared: true, surface: "restricted" };
 
       const session = await createPlaybackSession(db, seedingCtx, {
         itemId: item.id,
@@ -291,7 +291,7 @@ describe("GET /admin/sessions (STATE.md P2.8/deliverable E)", () => {
         .executeTakeFirstOrThrow();
       const file = await db.selectFrom("media_files").select("id").where("item_id", "=", item.id).executeTakeFirstOrThrow();
       const allLibraryIds = (await db.selectFrom("libraries").select("id").execute()).map((r) => r.id);
-      const seedingCtx: ViewerContext = { userId: adminUserId, allowedLibraryIds: allLibraryIds, restrictedCleared: true };
+      const seedingCtx: ViewerContext = { userId: adminUserId, allowedLibraryIds: allLibraryIds, restrictedCleared: true, surface: "restricted" };
       const nowMs = Date.now();
 
       const watched = await createPlaybackSession(db, seedingCtx, {
