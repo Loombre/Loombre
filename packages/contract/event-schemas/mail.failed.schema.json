@@ -9,7 +9,7 @@
   "properties": {
     "templateId": {
       "type": "string",
-      "enum": ["invite", "password-reset", "security-notice", "test"],
+      "enum": ["invite", "password-reset", "security-notice", "email-in-use-notice", "test"],
       "description": "The mail-send job's template id (packages/jobs's MailSendJobPayload.templateId, verbatim)."
     },
     "to": {

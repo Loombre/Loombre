@@ -43,6 +43,25 @@ describe("createMailTerminalFailureHook (E6/M6)", () => {
     expect(payload.jobId).toBe(jobId);
   });
 
+  it("passes EVERY templateId in the MailSendJobPayload union through verbatim (the contract schema's enum mirrors this union — packages/contract/test/event-schemas.spec.ts pins the schema side; this pins the hook side, after the 'email-in-use-notice' addition missed the schema)", async () => {
+    const hook = createMailTerminalFailureHook(dbHandle);
+    // Literal union mirror — same values as packages/jobs/src/types.ts
+    // MailSendJobPayload.templateId and templates.spec.ts TEMPLATE_IDS.
+    const templateIds = ["invite", "password-reset", "security-notice", "email-in-use-notice", "test"] as const;
+
+    for (const [index, templateId] of templateIds.entries()) {
+      const jobId = `018f0007-0000-7000-8000-0000000002${index.toString(16).padStart(2, "0")}`;
+      await hook({ templateId, to: "someone@example.com", params: {} }, new Error("450 try again later"), jobId);
+
+      const result = await raw.query<{ payload: { templateId: string } }>(
+        "SELECT payload FROM events WHERE type = 'mail.failed' AND payload->>'jobId' = $1",
+        [jobId],
+      );
+      expect(result.rows).toHaveLength(1);
+      expect(result.rows[0]!.payload.templateId).toBe(templateId);
+    }
+  });
+
   it("maps a non-Error thrown value to its String() form (defensive default)", async () => {
     const hook = createMailTerminalFailureHook(dbHandle);
     const jobId = "018f0007-0000-7000-8000-000000000102";

@@ -582,4 +582,58 @@ describe("event-schemas (docs/PLAN.md §4.3)", () => {
       expect(adminOnly).toContain("playback.session-status-changed");
     });
   });
+
+  // The mail.failed payload's templateId is packages/jobs's
+  // MailSendJobPayload.templateId VERBATIM (the schema's own description
+  // says so), and the worker's terminal-failure hook passes it through
+  // untouched — so this enum must cover the full union or a terminal
+  // failure of the missing template emits an event that violates its own
+  // schema. G7's "7-touch" checklist for adding a template (STATE.md,
+  // current-password re-auth run) omitted this file — the
+  // 'email-in-use-notice' template landed everywhere else but here. This
+  // literal list is the 8th touch: it is the same values as
+  // packages/jobs/src/types.ts MailSendJobPayload.templateId and
+  // apps/worker/test/mail/templates.spec.ts TEMPLATE_IDS, pinned here
+  // because @loombre/contract deliberately depends on neither package.
+  describe("mail.failed templateId enum (E6/M6 — the G7 8th touch)", () => {
+    const MAIL_TEMPLATE_IDS = ["invite", "password-reset", "security-notice", "email-in-use-notice", "test"];
+
+    function compileMailFailed(): ReturnType<Ajv2020["compile"]> {
+      const freshAjv = new Ajv2020({ allErrors: true, strict: true });
+      registerAdminOnlyKeyword(freshAjv);
+      addFormats(freshAjv);
+      return freshAjv.compile(loadSchema("mail.failed.schema.json"));
+    }
+
+    it("enumerates every MailSendJobPayload templateId — no more, no fewer", () => {
+      const schema = loadSchema("mail.failed.schema.json");
+      const properties = schema.properties as Record<string, { enum: string[] }>;
+      expect(properties.templateId.enum.slice().sort()).toEqual(MAIL_TEMPLATE_IDS.slice().sort());
+    });
+
+    it("accepts a terminal-failure payload for every templateId", () => {
+      const validate = compileMailFailed();
+      for (const templateId of MAIL_TEMPLATE_IDS) {
+        const payload = {
+          templateId,
+          to: "someone@example.com",
+          smtpError: "535 5.7.8 Authentication failed",
+          jobId: "018f6f1e-0000-7000-8000-00000000000a",
+        };
+        expect(validate(payload), `${templateId}: ${ajv.errorsText(validate.errors)}`).toBe(true);
+      }
+    });
+
+    it("rejects a templateId outside the closed union", () => {
+      const validate = compileMailFailed();
+      expect(
+        validate({
+          templateId: "marketing-blast",
+          to: "someone@example.com",
+          smtpError: "550 relay denied",
+          jobId: "018f6f1e-0000-7000-8000-00000000000a",
+        }),
+      ).toBe(false);
+    });
+  });
 });
