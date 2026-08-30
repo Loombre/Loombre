@@ -82,6 +82,18 @@ noted inline:
    perfectly good links as unusable. Its path can't collide with the
    `/reset/{token}` page the way the claim pair once did — the two live
    under different prefixes by construction.
+7. **`GET /probe/{token}` — the reachability-proof arrival route — goes
+   to the API.** The remote-access wizard's "prove it works" step mints a
+   one-time link at `https://<your hostname>/probe/{token}` and has you
+   open it from a phone on cellular data; the API serves the arrival page
+   itself, at the root (it is the one public remote-access operation —
+   deliberately not under `/v1`). Every recipe below routes it; a setup
+   that misses it sends the probe to the web UI, which 404s, and the
+   wizard's proof step reports an unreachable server that is actually
+   reachable — on exactly the deployment shape (Direct behind your own
+   proxy) that most needs the proof. Same public-and-already-rate-limited
+   posture as the five routes in requirement 6: exclude it from any gate
+   of your own.
 
 ## Caddy (recommended)
 
@@ -99,7 +111,10 @@ media.example.com {
     # `path` is otherwise an exact match) is the reset page's own token
     # check — distinct from the /reset/{token} PAGE, which stays on the web
     # UI; omit it and every reset link is reported as unusable.
-    @api path /v1/* /playback/* /images/* /healthz /setup/* /invites/claim/* /auth/forgot-password /auth/reset-password /auth/reset-password/*
+    # /probe/* (requirement 7) is the reachability-proof arrival route —
+    # API-side, at the root; without it the wizard's proof step 404s into
+    # the web UI.
+    @api path /v1/* /playback/* /images/* /healthz /setup/* /invites/claim/* /auth/forgot-password /auth/reset-password /auth/reset-password/* /probe/*
     reverse_proxy @api 127.0.0.1:3001
     reverse_proxy 127.0.0.1:3000
 }
@@ -185,7 +200,10 @@ server {
     # which answers HTML and makes good links look unusable. The
     # /reset/{token} PAGE is a different path entirely and still falls
     # through, as it should.
-    location ~ ^/(invites/claim/[^/]+|auth/(forgot|reset)-password|auth/reset-password/[^/]+)$ {
+    # probe/[^/]+ (requirement 7) is the reachability-proof arrival route
+    # — API-side, at the root; without it the wizard's proof step falls
+    # through to the web UI location below and 404s.
+    location ~ ^/(invites/claim/[^/]+|auth/(forgot|reset)-password|auth/reset-password/[^/]+|probe/[^/]+)$ {
         proxy_pass http://127.0.0.1:3001;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -236,7 +254,10 @@ labels:
   # (requirement 3) is the OTHER `?token=`-authed <img>/<video> src target
   # alongside the playback file route — missing here would silently 404
   # every poster/thumbnail through this router.
-  - "traefik.http.routers.loombre-api.rule=Host(`media.example.com`) && (PathPrefix(`/v1`) || PathPrefix(`/playback`) || PathPrefix(`/images`) || PathPrefix(`/setup`) || Path(`/healthz`) || PathPrefix(`/invites/claim`) || Path(`/auth/forgot-password`) || Path(`/auth/reset-password`) || PathPrefix(`/auth/reset-password/`))"
+  # PathPrefix(`/probe/`) (requirement 7) — with the trailing slash, the
+  # token segment — is the reachability-proof arrival route, API-side at
+  # the root; without it the wizard's proof step 404s into the web router.
+  - "traefik.http.routers.loombre-api.rule=Host(`media.example.com`) && (PathPrefix(`/v1`) || PathPrefix(`/playback`) || PathPrefix(`/images`) || PathPrefix(`/setup`) || Path(`/healthz`) || PathPrefix(`/invites/claim`) || Path(`/auth/forgot-password`) || Path(`/auth/reset-password`) || PathPrefix(`/auth/reset-password/`) || PathPrefix(`/probe/`))"
   - "traefik.http.routers.loombre-api.tls.certresolver=letsencrypt"
   - "traefik.http.routers.loombre-api.service=loombre-api"
   - "traefik.http.services.loombre-api.loadbalancer.server.port=3001"

@@ -186,7 +186,11 @@ lines.push(
       "(`POSTGRES_PASSWORD`, `LOOMBRE_JWT_SECRET`), performance-tier and transcode tuning " +
       "(`LOOMBRE_TIER`, `LOOMBRE_ALLOW_TRANSCODE`, `LOOMBRE_MAX_STREAM_BITRATE`, " +
       "`LOOMBRE_TRANSCODE_WORKER_CONCURRENCY`), metadata-provider keys " +
-      "(`LOOMBRE_TMDB_API_KEY`, `LOOMBRE_TVDB_API_KEY`), TLS/ACME companions not already " +
+      "(`LOOMBRE_TMDB_API_KEY`, `LOOMBRE_TVDB_API_KEY`), the SMTP AUTH credential pair " +
+      "(`LOOMBRE_SMTP_USERNAME`/`LOOMBRE_SMTP_PASSWORD` — keyring-class secrets, not registry " +
+      "settings like the `LOOMBRE_SMTP_*` pins above; set BOTH or NEITHER, and while set the " +
+      "admin Mail screen's credentials card is read-only — see the Admin Guide's " +
+      "[Mail](/admin-guide/mail) page), TLS/ACME companions not already " +
       "covered by the registry pins above (`LOOMBRE_TLS_CERT_PATH`/`KEY_PATH`, " +
       "`LOOMBRE_HTTPS_PORT`, `LOOMBRE_ACME_EMAIL`, `LOOMBRE_ACME_DIRECTORY_URL`, " +
       "`LOOMBRE_ACME_STAGING`, `LOOMBRE_ACME_DNS_HOOK` and its propagation-timeout companion, " +
