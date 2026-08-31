@@ -2,7 +2,7 @@
 //
 // The pinned minisign public key (P4.9 location #1: keys/minisign.pub —
 // this file is a direct, byte-faithful embed of it). The server's
-// update-check verifier (apps/server/src/session/update-check) imports
+// update-check verifier (apps/server/src/common/update-check) imports
 // ONLY this constant, never reads keys/minisign.pub off disk at runtime —
 // see scripts/release/lib/embed-public-key.mjs's header for why.
 // Regenerate with `pnpm embed-public-key` whenever keys/minisign.pub

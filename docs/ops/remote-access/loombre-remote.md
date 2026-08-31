@@ -22,9 +22,10 @@
      LOOMBRE_WG_SUBNET, requiresRestart:true) entries — also FROZEN and
      landed. The WireGuard listener itself is REAL, landed code too
      (lane WG1: apps/server/src/remote/wireguard/
-     remote-wireguard.service.ts — the live packages/wg-native-backed
-     listener behind the controller's enable/disable/status/enroll/revoke
-     operations; this page's earlier not-yet-landed caveat is resolved).
+     remote-wireguard.service.ts — the live listener, backed by
+     packages/wg-native, behind the controller's enable/disable/
+     status/enroll/revoke operations; this page's earlier
+     not-yet-landed caveat is resolved).
      Silence/
      invisibility claim — STATE.md R9 ("WG handshake silence verified by
      test: unauthenticated probe packets receive no response") and

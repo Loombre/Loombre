@@ -53,7 +53,7 @@
 // this page points to installers/docker/loombre.env.example for those,
 // same as the stub it replaces did.
 
-import { writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SETTINGS_REGISTRY } from "../../packages/shared/src/settings-registry.js";
@@ -64,6 +64,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, "..", "..");
 const OUTPUT_PATH = join(REPO_ROOT, "docs", "ops", "env-reference.md");
 const ENV_EXAMPLE_PATH = join(REPO_ROOT, "installers", "docker", "loombre.env.example");
+const COMPOSE_PATH = join(REPO_ROOT, "docker-compose.prod.yml");
 
 const envOnlyEntries = SETTINGS_REGISTRY.filter((entry) => entry.scope === "env-only");
 const pinnedUiEntries = SETTINGS_REGISTRY.filter((entry) => entry.scope === "ui" && entry.envVar);
@@ -200,48 +201,166 @@ for (const entry of pinnedUiEntries) {
   lines.push(renderPin(entry, "###"));
 }
 
-lines.push(
-  "## Secrets and other bootstrap variables not in this list",
-  "",
-  exampleExists
-    ? "This page covers only registry-backed settings. A number of other operational " +
-      "variables live outside the registry and therefore aren't listed above: secrets " +
-      "(`POSTGRES_PASSWORD`, `LOOMBRE_JWT_SECRET`), performance-tier and transcode tuning " +
-      "(`LOOMBRE_TIER`, `LOOMBRE_ALLOW_TRANSCODE`, `LOOMBRE_MAX_STREAM_BITRATE`, " +
-      "`LOOMBRE_TRANSCODE_WORKER_CONCURRENCY`, `LOOMBRE_TRANSCODE_MAX_SUSPEND_MS`, " +
-      "`LOOMBRE_TRANSCODE_RUNG_SWITCH_COOLDOWN_MS`, `LOOMBRE_TRANSCODE_COPY_READRATE` and " +
-      "its burst-window companion `LOOMBRE_TRANSCODE_COPY_READRATE_BURST_SEC`), " +
-      "the web UI service's own port (`LOOMBRE_WEB_PORT`, default 3000 — read by the web " +
-      "process, not the server/worker; see [systemd](/ops/systemd) and each platform's " +
-      "[Install](/install/) page), the update-check manifest mirror " +
-      "(`LOOMBRE_UPDATE_MANIFEST_URL` — see [Updating Loombre](/ops/updating); its companion " +
-      "`LOOMBRE_UPDATE_CHECK` IS covered above, as a registry pin), metadata-provider keys " +
-      "(`LOOMBRE_TMDB_API_KEY`, `LOOMBRE_TVDB_API_KEY`), the SMTP AUTH credential pair " +
-      "(`LOOMBRE_SMTP_USERNAME`/`LOOMBRE_SMTP_PASSWORD` — keyring-class secrets, not registry " +
-      "settings like the `LOOMBRE_SMTP_*` pins above; set BOTH or NEITHER, and while set the " +
-      "admin Mail screen's credentials card is read-only — see the Admin Guide's " +
-      "[Mail](/admin-guide/mail) page), TLS/ACME companions not already " +
-      "covered by the registry pins above (`LOOMBRE_TLS_CERT_PATH`/`KEY_PATH`, " +
-      "`LOOMBRE_HTTP_PORT`/`LOOMBRE_HTTPS_PORT`, `LOOMBRE_ACME_EMAIL`, `LOOMBRE_ACME_DIRECTORY_URL`, " +
-      "`LOOMBRE_ACME_STAGING`, `LOOMBRE_ACME_DNS_HOOK` and its propagation-timeout companion, " +
-      "`LOOMBRE_ACME_CA_BUNDLE`, `LOOMBRE_ACME_RENEW_WINDOW_DAYS`/`RENEW_CHECK_INTERVAL_MS` " +
-      "— see [docs/ops/remote-access/acme.md](/ops/remote-access/acme); `LOOMBRE_ACME_DOMAINS`/`CHALLENGE_TYPE`/`TOS_AGREED` " +
-      "ARE covered above, as registry pins), IPC and logging " +
-      "(`LOOMBRE_IPC_*`, `LOOMBRE_LOG_FILE` — every install shape (macOS pkg, Windows MSI, " +
-      "Docker, Linux tarball) sets this automatically to a real, already-populated log file " +
-      "so the admin Dashboard's log-tail card works out of the box; see each platform's own " +
-      "[Install](/install/) page for the exact path, or override it yourself), and " +
-      "embedded-PG plumbing " +
-      "(`LOOMBRE_EMBEDDED_PG_*`). The full, accurate, hand-maintained list of every variable " +
-      "Loombre's Docker Compose distribution reads lives in " +
+// ---------------------------------------------------------------------------
+// Catch-all: out-of-registry operational variables — MECHANICALLY DERIVED
+// (doc-audit-2026-08-30 M20/T04-2: the predecessor of this section was one
+// hand-maintained prose paragraph, and it drifted three independent ways in
+// a single audit — F24-5 LOOMBRE_WEB_PORT, F21-6 the transcode pair, T04-2
+// LOOMBRE_HTTP_PORT — plus two more residuals the fix run's own Lane 3c
+// found, LOOMBRE_TRANSCODE_POLL_MS and LOOMBRE_SCAN_POLL). Membership is
+// now computed, never typed:
+//
+//   derived = names(installers/docker/loombre.env.example)
+//           ∪ ${VAR} interpolation names(docker-compose.prod.yml)
+//           −  every envVar the settings registry covers above
+//
+// Only `${VAR}` interpolations are read from the compose file — a literal
+// `KEY: value` there (e.g. LOOMBRE_LOG_FILE's fixed container path) is not
+// operator-settable through Compose, so it isn't a variable this list
+// should advertise as such (LOOMBRE_LOG_FILE is documented in the curated
+// families below instead). The DESCRIPTIONS stay curated in
+// COMPOSE_VAR_NOTES, but a derived name missing a note still renders (with
+// a generic pointer + a build-time warning), so a newly compose-forwarded
+// variable can never again be silently absent from this page; a note whose
+// name is no longer derived is skipped with a warning, so a removed
+// variable can't linger. Vars read by code OUTSIDE the compose surface
+// (worker tuning, TLS/ACME companions, IPC, embedded-PG) live in the
+// second explicit array, OUT_OF_COMPOSE_FAMILIES — the "second, explicit
+// array" T04-2 asked for.
+
+function parseEnvExampleNames(text) {
+  const names = new Set();
+  for (const line of text.split("\n")) {
+    const m = /^#?\s*([A-Z][A-Z0-9_]*)=/.exec(line);
+    if (m) names.add(m[1]);
+  }
+  return names;
+}
+
+function parseComposeInterpolationNames(text) {
+  const names = new Set();
+  for (const m of text.matchAll(/\$\{([A-Z][A-Z0-9_]*)/g)) names.add(m[1]);
+  return names;
+}
+
+/** Curated notes for compose-derived names. ORDER IS RENDER ORDER.
+ *  Membership in the page is decided by the derivation, never by this map. */
+const COMPOSE_VAR_NOTES = [
+  ["POSTGRES_PASSWORD", "secret — the Compose Postgres container's superuser password (required; the compose file refuses to start without it)."],
+  ["POSTGRES_DB", "the Compose Postgres container's database name (default `loombre`)."],
+  ["POSTGRES_USER", "the Compose Postgres container's role name (default `loombre`)."],
+  ["LOOMBRE_JWT_SECRET", "secret — signs Loombre's auth tokens (required under Compose)."],
+  ["LOOMBRE_PORT", "Compose interpolation alias: sets the server container's `PORT` (default 3001) — `PORT` itself is a registry variable covered above."],
+  ["LOOMBRE_WEB_PORT", "the web UI service's own port (default 3000 — read by the web process, not the server/worker; see [systemd](/ops/systemd) and each platform's [Install](/install/) page)."],
+  ["LOOMBRE_SERVER_ORIGIN", "where the web process reaches the server's API (Compose default: the server container's own address)."],
+  ["LOOMBRE_WEB_URL", "the web UI URL the server uses for links and its CORS default (Compose default: `http://localhost:<LOOMBRE_WEB_PORT>`)."],
+  ["LOOMBRE_TIER", "performance-tier override for the tier autodetector."],
+  ["LOOMBRE_ALLOW_TRANSCODE", "transcode kill-switch."],
+  ["LOOMBRE_MAX_STREAM_BITRATE", "per-stream bitrate ceiling."],
+  ["LOOMBRE_TRANSCODE_WORKER_CONCURRENCY", "worker transcode-job concurrency."],
+  ["LOOMBRE_TRANSCODE_POLL_MS", "worker transcode job-queue poll interval, in milliseconds."],
+  ["LOOMBRE_SCAN_POLL", "forces the library watcher's polling backend on (`1`) or off (`0`) for every watched path — the documented escape hatch for network mounts; see [docs/install/docker.md](/install/docker)'s media-library notes."],
+  ["LOOMBRE_TMDB_API_KEY", "metadata-provider key (TMDB)."],
+  ["LOOMBRE_TVDB_API_KEY", "metadata-provider key (TVDB)."],
+  ["LOOMBRE_SMTP_USERNAME", "half of the SMTP AUTH credential pair — keyring-class secret, not a registry setting like the `LOOMBRE_SMTP_*` pins above; set BOTH or NEITHER, and while set the admin Mail screen's credentials card is read-only — see the Admin Guide's [Mail](/admin-guide/mail) page."],
+  ["LOOMBRE_SMTP_PASSWORD", "the other half of the SMTP AUTH credential pair — same rules as `LOOMBRE_SMTP_USERNAME`."],
+  ["COMPOSE_PROJECT_NAME", "Compose stack plumbing (project name) — interpolation-only, never seen by Loombre processes."],
+  ["LOOMBRE_IMAGE", "Compose stack plumbing (server/worker image override) — interpolation-only, never seen by Loombre processes."],
+  ["LOOMBRE_WEB_IMAGE", "Compose stack plumbing (web image override) — interpolation-only, never seen by Loombre processes."],
+];
+
+/** Out-of-registry variables the server/worker read directly that the
+ *  Compose surface does NOT forward (deliberately, for the TLS/ACME group —
+ *  see the Docker exception note at the top of this page). Curated, family
+ *  by family; each names the page that documents it. */
+const OUT_OF_COMPOSE_FAMILIES = [
+  "worker transcode tuning read directly from the environment (`LOOMBRE_TRANSCODE_MAX_SUSPEND_MS`, " +
+    "`LOOMBRE_TRANSCODE_RUNG_SWITCH_COOLDOWN_MS`, `LOOMBRE_TRANSCODE_COPY_READRATE` and its " +
+    "burst-window companion `LOOMBRE_TRANSCODE_COPY_READRATE_BURST_SEC`)",
+  "the update-check manifest mirror (`LOOMBRE_UPDATE_MANIFEST_URL` — see " +
+    "[Updating Loombre](/ops/updating); its companion `LOOMBRE_UPDATE_CHECK` IS covered above, " +
+    "as a registry pin)",
+  "TLS/ACME companions not already covered by the registry pins above " +
+    "(`LOOMBRE_TLS_CERT_PATH`/`KEY_PATH`, `LOOMBRE_HTTP_PORT`/`LOOMBRE_HTTPS_PORT`, " +
+    "`LOOMBRE_ACME_EMAIL`, `LOOMBRE_ACME_DIRECTORY_URL`, `LOOMBRE_ACME_STAGING`, " +
+    "`LOOMBRE_ACME_DNS_HOOK` and its propagation-timeout companion, `LOOMBRE_ACME_CA_BUNDLE`, " +
+    "`LOOMBRE_ACME_RENEW_WINDOW_DAYS`/`RENEW_CHECK_INTERVAL_MS` — see " +
+    "[docs/ops/remote-access/acme.md](/ops/remote-access/acme); " +
+    "`LOOMBRE_ACME_DOMAINS`/`CHALLENGE_TYPE`/`TOS_AGREED` ARE covered above, as registry pins)",
+  "IPC and logging (`LOOMBRE_IPC_*`, `LOOMBRE_LOG_FILE` — every install shape (macOS pkg, " +
+    "Windows MSI, Docker, Linux tarball) sets the log file automatically to a real, " +
+    "already-populated path so the admin Dashboard's log-tail card works out of the box; see " +
+    "each platform's own [Install](/install/) page for the exact path, or override it yourself)",
+  "embedded-PG plumbing (`LOOMBRE_EMBEDDED_PG_*`)",
+];
+
+lines.push("## Secrets and other bootstrap variables not in this list", "");
+
+if (exampleExists) {
+  const registryEnvVars = new Set(SETTINGS_REGISTRY.map((e) => e.envVar).filter(Boolean));
+  const exampleNames = parseEnvExampleNames(readFileSync(ENV_EXAMPLE_PATH, "utf8"));
+  const composeExists = existsSync(COMPOSE_PATH);
+  if (!composeExists) {
+    console.warn(`gen-env-reference: WARNING — ${COMPOSE_PATH} not found; deriving the catch-all from loombre.env.example only.`);
+  }
+  const composeNames = composeExists
+    ? parseComposeInterpolationNames(readFileSync(COMPOSE_PATH, "utf8"))
+    : new Set();
+  const derived = new Set([...exampleNames, ...composeNames].filter((n) => !registryEnvVars.has(n)));
+
+  lines.push(
+    "This page covers only registry-backed settings. The operational variables below live " +
+      "outside the registry. The first group is derived mechanically at generation time from " +
+      "the Docker Compose distribution's own surface (`installers/docker/loombre.env.example` " +
+      "plus `docker-compose.prod.yml`'s `${VAR}` interpolations), minus everything the " +
+      "registry sections above already cover — so it always matches what that distribution " +
+      "actually reads:",
+    "",
+  );
+
+  const rendered = new Set();
+  for (const [name, note] of COMPOSE_VAR_NOTES) {
+    if (!derived.has(name)) {
+      console.warn(
+        `gen-env-reference: WARNING — COMPOSE_VAR_NOTES entry ${name} is no longer derived from ` +
+          "loombre.env.example/docker-compose.prod.yml (removed, or now registry-covered); skipped — delete its note.",
+      );
+      continue;
+    }
+    lines.push(`- \`${name}\` — ${note}`);
+    rendered.add(name);
+  }
+  for (const name of [...derived].filter((n) => !rendered.has(n)).sort()) {
+    console.warn(
+      `gen-env-reference: WARNING — derived variable ${name} has no COMPOSE_VAR_NOTES entry; ` +
+        "rendered with a generic note. Add a curated one.",
+    );
+    lines.push(
+      `- \`${name}\` — operational variable of the Docker Compose distribution; see ` +
+        "[`installers/docker/loombre.env.example`](https://github.com/Loombre/Loombre/blob/main/installers/docker/loombre.env.example) " +
+        "for its documentation.",
+    );
+  }
+
+  lines.push(
+    "",
+    "Beyond the Compose surface, the server/worker also read directly from the environment: " +
+      OUT_OF_COMPOSE_FAMILIES.join("; ") +
+      ". The full, accurate, hand-maintained list of every variable Loombre's Docker Compose " +
+      "distribution reads lives in " +
       "[`installers/docker/loombre.env.example`](https://github.com/Loombre/Loombre/blob/main/installers/docker/loombre.env.example); " +
-      "[docs/install/docker.md](/install/docker) walks the two you cannot skip."
-    : "See `installers/docker/loombre.env.example` in the repository (not found in this " +
+      "[docs/install/docker.md](/install/docker) walks the two you cannot skip.",
+    "",
+  );
+} else {
+  lines.push(
+    "See `installers/docker/loombre.env.example` in the repository (not found in this " +
       "checkout at generation time — check the path is still correct) for secrets " +
       "(`POSTGRES_PASSWORD`, `LOOMBRE_JWT_SECRET`) and other bootstrap variables outside the " +
       "settings registry this page is generated from.",
-  "",
-);
+    "",
+  );
+}
 
 mkdirSync(dirname(OUTPUT_PATH), { recursive: true });
 writeFileSync(OUTPUT_PATH, lines.join("\n").replace(/\n{3,}/g, "\n\n") + "\n");

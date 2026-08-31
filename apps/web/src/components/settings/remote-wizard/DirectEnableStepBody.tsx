@@ -147,7 +147,7 @@ function ReverseProxyBranch({ onStepComplete, onBack }: PathFlowStepBodyProps): 
         forwarded-address headers to rate-limit and log correctly — set <code>network.trustProxy</code> from Settings
         → Advanced Server (a hop count, or the proxy's own address/range) before enabling here.
       </p>
-      <p className={styles.body}>See docs/ops/reverse-proxy.md for full reverse-proxy configuration guidance.</p>
+      <p className={styles.body}>See docs/ops/remote-access/reverse-proxy.md for full reverse-proxy configuration guidance.</p>
       {error && <p className={styles.errorText}>{error}</p>}
       <div className={styles.stepActions}>
         {onBack && (

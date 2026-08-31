@@ -15,7 +15,7 @@
 // not modify pnpm-lock.yaml; it materializes a deployment from what the
 // lockfile already resolved.
 //
-// IMPORTANT (see LAYOUT.md §9): `pnpm deploy --legacy` HARDLINKS files
+// IMPORTANT (see LAYOUT.md §10's hardlink footgun): `pnpm deploy --legacy` HARDLINKS files
 // cloned from its content-addressable store for workspace (`file:`)
 // dependencies on this filesystem. Never edit a file inside a deploy
 // output in place (`fs.writeFileSync` on an existing path truncates the
@@ -157,11 +157,14 @@ function buildWorkspace() {
     run("npx", ["tsc", "-p", path.join(REPO_ROOT, pkgRelDir, "tsconfig.json")]);
   }
 
-  // packages/db: self-contained tsconfig.json (no `extends`) — but
-  // package.json `exports` still points at src/ (LAYOUT.md §9), so
-  // deployApp() patches the DEPLOYED copy afterward. This just needs
-  // dist/ to exist.
-  log("compiling packages/db to dist/ (LAYOUT.md §9: no build script wired to its exports)");
+  // packages/db: self-contained tsconfig.json (no `extends`). LAYOUT.md
+  // §9 (SUPERSEDED): the package now ships a real dist/ build with
+  // dist-pointing `exports` upstream, so this direct compile — and
+  // deployApp()'s exports-patch pass on the DEPLOYED copy — are
+  // redundant-but-harmless packaging-time accommodations kept for now;
+  // trimming them is this script's owner's call. This just needs dist/
+  // to exist.
+  log("compiling packages/db to dist/ (redundant-but-harmless — LAYOUT.md §9, superseded)");
   run("npx", ["tsc", "-p", "packages/db/tsconfig.json"]);
 
   // packages/jobs: SCRATCH tsconfig, deliberately never reads the live
@@ -173,10 +176,11 @@ function buildWorkspace() {
   log("compiling packages/jobs to dist/ via a scratch tsconfig (decoupled from its live tsconfig.json)");
   compileJobsWithScratchConfig();
 
-  // packages/release-manifest: apps/server's own (pnpm-script-based)
-  // prebuild step normally builds this first — replicated directly here
-  // since this function never invokes pnpm scripts (reason 2 above).
-  log("compiling packages/release-manifest to dist/ (normally apps/server's own prebuild step)");
+  // packages/release-manifest: has its own `build` script (apps/server's
+  // former prebuild hook is gone — LAYOUT.md §10, superseded) — compiled
+  // directly here since this function never invokes pnpm scripts
+  // (reason 2 above).
+  log("compiling packages/release-manifest to dist/ (its own build script, run directly)");
   run("npx", ["tsc", "-p", path.join(REPO_ROOT, "packages", "release-manifest", "tsconfig.json")]);
 
   // apps/server, apps/worker: their own tsconfig.json is intact; all
@@ -241,7 +245,10 @@ function deployApp(pkgName, outDirName) {
   run("pnpm", ["--filter", pkgName, "deploy", rawDeployDir, "--prod", "--legacy"]);
 
   // Patch @loombre/db + @loombre/jobs's deployed package.json to point at
-  // dist/ instead of src/*.ts — see LAYOUT.md §9. Walk defensively rather
+  // dist/ instead of src/*.ts — LAYOUT.md §9 (SUPERSEDED: both packages
+  // now ship dist-pointing exports upstream, so this pass normally finds
+  // nothing to patch and takes its documented success branch below).
+  // Walk defensively rather
   // than hardcoding the .pnpm virtual-store hash path (it's derived from
   // the workspace's relative path + a content hash, not guaranteed stable
   // across pnpm versions).
@@ -279,12 +286,13 @@ function deployApp(pkgName, outDirName) {
   if (patched > 0) {
     log(`patched ${patched} deployed package.json export map(s) (@loombre/db, @loombre/jobs) to point at dist/`);
   } else {
-    // Not fatal: LAYOUT.md §9's workaround is only needed while
-    // @loombre/db / @loombre/jobs ship src-pointing exports. If upstream
-    // has since fixed that (worth checking for on every rerun — this
-    // lane recommends exactly that fix), there's nothing to patch and
-    // that's success, not failure. The actual invariant that matters —
-    // the deployed app resolves and boots — is proven by smoke.mjs.
+    // The EXPECTED branch since LAYOUT.md §9 was superseded: upstream
+    // fixed the packages for real (dist-pointing exports), so there is
+    // nothing to patch and that's success, not failure. The patch pass
+    // above is kept as a redundant-but-harmless accommodation (it would
+    // catch a regression to src-pointing exports). The actual invariant
+    // that matters — the deployed app resolves and boots — is proven by
+    // smoke.mjs.
     log(
       "no @loombre/db / @loombre/jobs exports needed patching — either they now ship dist-pointing exports " +
         "upstream (LAYOUT.md §9's workaround would then be obsolete) or this deploy has no such dependency.",
@@ -292,16 +300,18 @@ function deployApp(pkgName, outDirName) {
   }
 
   // apps/server-only: ajv is a *runtime* dependency (device-profile
-  // validation) miscategorized as devDependency — `--prod` omits it.
-  // Vendor in the exact resolved version already pinned in
-  // pnpm-lock.yaml for apps/server's own devDependencies entry (NOT a
-  // fresh/unpinned fetch) — see LAYOUT.md §9.
+  // validation). It WAS miscategorized as a devDependency — `--prod`
+  // omitted it — and is now a real apps/server `dependencies` entry
+  // (LAYOUT.md §9, superseded), so `pnpm deploy --prod` already carries
+  // it; this vendoring pass is a redundant-but-harmless accommodation
+  // kept for now. It vendors the exact resolved version already pinned
+  // in pnpm-lock.yaml (NOT a fresh/unpinned fetch).
   if (pkgName === "@loombre/server") {
     const ajvSourceDir = path.join(REPO_ROOT, "apps", "server", "node_modules", "ajv");
     if (!existsSync(ajvSourceDir)) {
       throw new Error(
         "deployApp(@loombre/server): apps/server/node_modules/ajv not found — run `pnpm install` first, " +
-          "or apps/server no longer depends on ajv (update LAYOUT.md §9 + this script together).",
+          "or apps/server no longer depends on ajv (retire this vendoring pass and LAYOUT.md §9's record together).",
       );
     }
     // ajv resolves its own transitive deps (fast-deep-equal, fast-uri,
@@ -492,28 +502,25 @@ async function fetchRuntimes(payloadRoot) {
 }
 
 /**
- * Workaround for a DELIBERATE, DOCUMENTED deviation in newly-landed lane-I
- * code (apps/server/src/common/update-check/release-manifest-import.ts,
- * discovered mid-lane): under this wave's LOCKFILE FROZEN rule (lane F is
- * sole lockfile owner), apps/server cannot add a real
- * `"@loombre/release-manifest": "workspace:*"` dependency (that needs a
- * pnpm-lock.yaml change), so it reaches packages/release-manifest/dist by
- * a hardcoded RELATIVE import instead
- * (`../../../../../packages/release-manifest/dist/index.js`, 5 levels up
- * from apps/server/{src,dist}/common/update-check/ to repo root). That
- * file's own header already documents the intended follow-up once the
- * freeze lifts (declare the real dependency, delete the relative-import
- * shim) — this is not a bug to fix, just a packaging-time consequence to
- * route around: a `pnpm deploy` output does NOT preserve the monorepo's
- * directory depth, so the relative import silently resolves to nowhere
- * once deployed. Stages packages/release-manifest's dist at the exact
- * depth 5 `../` from `<payloadRoot>/opt/loombre/<version>/server/dist/
- * common/update-check/` actually lands at — one level ABOVE the version
- * dir, i.e. `<payloadRoot>/opt/loombre/packages/release-manifest/dist`, NOT
- * inside it (verified empirically against the real ERR_MODULE_NOT_FOUND
- * path Node printed when this was first wrong — see this lane's report)
- * — so the payload boots without needing to touch apps/server's source at
- * all. Flagged in the final report for lane I.
+ * SUPERSEDED premise, staging kept (LAYOUT.md §10): the relative-import
+ * shim this worked around (apps/server/src/common/update-check/
+ * release-manifest-import.ts, a documented lockfile-frozen-wave
+ * workaround) is DELETED — `"@loombre/release-manifest": "workspace:*"`
+ * is now a real apps/server `dependencies` entry and
+ * apps/server/src/common/update-check/config.ts imports it as a normal
+ * bare specifier, which `pnpm deploy --prod` resolves like any other
+ * dependency. With the real dependency in place this staging step is
+ * redundant but harmless; retiring it is this script's owner's call.
+ * Historical record of what it accommodated: the shim's hardcoded
+ * relative path (`../../../../../packages/release-manifest/dist/index.js`,
+ * 5 levels up to repo root) assumed the full monorepo layout — true in
+ * dev/CI, false once `pnpm deploy` isolated apps/server — so this staged
+ * packages/release-manifest's dist at the exact depth 5 `../` from
+ * `<payloadRoot>/opt/loombre/<version>/server/dist/common/update-check/`
+ * lands at: one level ABOVE the version dir, i.e.
+ * `<payloadRoot>/opt/loombre/packages/release-manifest/dist` (verified
+ * empirically against the real ERR_MODULE_NOT_FOUND path Node printed
+ * when this was first wrong).
  */
 function stagePackagesReleaseManifestForRawRelativeImport(payloadRoot) {
   const srcDist = path.join(REPO_ROOT, "packages", "release-manifest", "dist");

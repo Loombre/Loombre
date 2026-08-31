@@ -38,13 +38,16 @@ import type { Express, NextFunction, Request, Response } from "express";
 /** ~180 days — long enough to be meaningfully "sticky" for a browser,
  *  short enough that a misconfigured cert/DNS mistake self-heals inside
  *  half a year rather than requiring a manual browser HSTS-cache clear.
- *  Overridable (LOOMBRE_HSTS_MAX_AGE_SECONDS) for operators who want the
- *  much longer preload-list-eligible value (31536000, one year+). Loombre
- *  never submits to the HSTS preload list itself (D14: no phone-home,
- *  and preload submission is an irreversible-by-Loombre act against a
- *  domain we don't own) — an operator who wants preload eligibility sets
- *  their own `includeSubDomains; preload` via the env override plus their
- *  own submission, documented in docs/ops/remote-access/acme.md. */
+ *  NOT operator-overridable: applyHsts's only call site (src/main.ts)
+ *  never passes `maxAgeSeconds`, so every internally-terminated install
+ *  sends exactly `max-age=<this>; includeSubDomains` — never `preload`.
+ *  Loombre never submits to the HSTS preload list itself (D14: no
+ *  phone-home, and preload submission is an irreversible-by-Loombre act
+ *  against a domain we don't own) — an operator who wants the longer
+ *  preload-eligible value (31536000, one year+) and a `preload`
+ *  directive terminates TLS at their own reverse proxy and sets the
+ *  header there, documented in docs/ops/remote-access/acme.md's "HSTS"
+ *  section. */
 export const DEFAULT_HSTS_MAX_AGE_SECONDS = 15_552_000;
 
 export interface HstsOptions {

@@ -22,12 +22,18 @@
 // (isolates one workspace package + its resolved prod dependency graph
 // into a standalone directory, `--legacy` because this workspace uses a
 // shared lockfile and pnpm's newer deploy implementation refuses that
-// combination). It is NOT sufficient on its own, for one specific reason
-// discovered while proving this script against the real workspace:
+// combination). At the time this was written it was NOT sufficient on its
+// own, for one specific reason discovered while proving this script
+// against the real workspace — a premise SINCE FIXED UPSTREAM (Phase 4
+// Wave 3, lane STRUCT; LAYOUT.md "Why `@loombre/db`/`@loombre/jobs` are
+// compiled..."): both packages now ship real compiled dist/ builds with
+// dist-pointing `exports`, so the precompile step below is a
+// redundant-but-harmless accommodation, and retiring it is this script's
+// owner's call. The reason, as found:
 //
-//   @loombre/db and @loombre/jobs ship TS SOURCE ONLY, by declared design
-//   (their package.json `exports` point at ./src/*.ts, not a built dist —
-//   see packages/db's own module header). Every other in-repo consumer
+//   @loombre/db and @loombre/jobs shipped TS SOURCE ONLY, by declared
+//   design at the time (their package.json `exports` pointed at
+//   ./src/*.ts, not a built dist). Every other in-repo consumer
 //   (dev server, perf-t0 harness, vitest) bridges this at IMPORT TIME via
 //   tsx's esbuild-backed loader. tsx is a devDependency, so `--prod`
 //   correctly excludes it — and even if it were vendored in by hand,
@@ -76,17 +82,17 @@
 // Two more gaps surfaced by the FIRST real container smoke run against a
 // deployed tarball (both fixed below, both discoveries worth flagging to
 // whichever lane next touches these package.json files):
-//   3. apps/server/package.json lists `ajv` under devDependencies, but
+//   3. apps/server/package.json listed `ajv` under devDependencies while
 //      apps/server/src/common/device-profile-validator.ts imports it at
 //      RUNTIME — `pnpm deploy --prod` correctly strips devDependencies,
 //      so the deployed server crashed at boot with
 //      ERR_MODULE_NOT_FOUND('ajv'). Worked around here by vendoring the
 //      already-resolved `ajv` package (pinned in the lockfile, not
 //      `pnpm add`-ed) straight into the deployed server's node_modules —
-//      see vendorResolvedNpmPackage. The real fix (moving `ajv` to
-//      `dependencies` in apps/server/package.json) is one line, but is in
-//      apps/ and out of this lane's ownership; flagged in the handoff
-//      report as an orchestrator TODO.
+//      see vendorResolvedNpmPackage. SINCE FIXED UPSTREAM: `ajv` is now a
+//      real apps/server `dependencies` entry, so the vendoring is a
+//      redundant-but-harmless accommodation; retiring it is this
+//      script's owner's call.
 //   4. apps/worker depends on `sharp`, which resolves a PLATFORM-SPECIFIC
 //      native binary package (`@img/sharp-<platform>-<arch>`) — exactly
 //      the esbuild problem from point 1 above, but for a real production
@@ -641,39 +647,38 @@ function fixServerAjv(serverDeployDir) {
 // ─────────────────────────────────────────────────────────────────────────
 
 /**
- * apps/server/src/common/update-check/release-manifest-import.ts imports
- * @loombre/release-manifest (a FROZEN contract package) via a RELATIVE
- * path into its compiled dist (`../../../../../packages/release-manifest/dist/index.js`)
- * instead of a normal package-specifier import — a DELIBERATE, DOCUMENTED
- * choice by the release lane (see that file's own header comment): their
- * wave was also under a "lockfile frozen" constraint and couldn't add
- * "@loombre/release-manifest" to apps/server/package.json's dependencies.
- * That relative path assumes apps/server/dist sits inside the full
- * monorepo layout (repo-root/apps/server/dist/... with a sibling
- * repo-root/packages/ directory) — true in dev/CI, false once `pnpm
- * deploy` isolates apps/server into its own tree. Fixed by replicating
- * that ONE relative path's target at the equivalent depth under the
- * tarball's own stage root: stageDir/packages/release-manifest/dist/ —
- * release-manifest has zero runtime dependencies of its own (confirmed:
- * its package.json declares none), so a plain directory copy of its
- * already-built dist/ (built as an apps/server "prebuild" step per that
- * file's comment) is sufficient; nothing else to resolve. This package is
- * FROZEN (never edited by this lane) — only its own already-built output
- * is copied, read-only.
+ * SUPERSEDED premise, staging kept (LAYOUT.md item 3 under "Three
+ * packaging-time-only fixes"): the relative-import shim this routed
+ * around (apps/server/src/common/update-check/release-manifest-import.ts,
+ * a documented lockfile-frozen-wave workaround) is DELETED —
+ * `"@loombre/release-manifest": "workspace:*"` is now a real apps/server
+ * `dependencies` entry and apps/server/src/common/update-check/config.ts
+ * imports it as a normal bare specifier, which `pnpm deploy --prod`
+ * resolves like any other dependency. With the real dependency in place
+ * this staging step is redundant but harmless; retiring it is this
+ * script's owner's call. Historical record: the shim's hardcoded relative
+ * path (`../../../../../packages/release-manifest/dist/index.js`, 5
+ * levels up to repo root) assumed the full monorepo layout — true in
+ * dev/CI, false once `pnpm deploy` isolated apps/server — so this copied
+ * release-manifest's already-built dist/ to the equivalent depth under
+ * the tarball's own stage root (stageDir/packages/release-manifest/dist/;
+ * the package has zero runtime dependencies of its own, so a plain
+ * directory copy sufficed). The package itself is never edited here —
+ * only its built output is copied, read-only.
  */
 function bundleReleaseManifestForServer(stageDir) {
   const src = join(REPO_ROOT, "packages", "release-manifest", "dist");
   if (!existsSync(src)) {
     throw new Error(
-      `build-tarball: ${src} does not exist — apps/server's build should have produced it ` +
-        `(its "prebuild" script runs tsc against packages/release-manifest/tsconfig.json; ` +
+      `build-tarball: ${src} does not exist — the workspace build should have produced it ` +
+        `(packages/release-manifest's own "build" script, run as an apps/server workspace dependency; ` +
         `re-run without --skip-app-build if you skipped it)`,
     );
   }
   const dest = join(stageDir, "packages", "release-manifest", "dist");
   mkdirSync(dirname(dest), { recursive: true });
   cpSync(src, dest, { recursive: true });
-  console.log(`build-tarball: bundled packages/release-manifest/dist (apps/server's documented relative-import workaround) -> ${dest}`);
+  console.log(`build-tarball: bundled packages/release-manifest/dist (redundant-but-harmless accommodation; see the docstring above) -> ${dest}`);
 }
 
 // ─────────────────────────────────────────────────────────────────────────

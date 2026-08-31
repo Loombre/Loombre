@@ -195,7 +195,7 @@ describe("POST /admin/remote/direct/acme-test", () => {
     // A deterministic, FAST failure mode (unlike a network-unreachable ACME
     // directory, which drives acme-client's own multi-attempt retry/backoff
     // policy well past any sane test timeout) — this is also a REAL
-    // production failure shape (docs/ops/acme.md's whole "the port story,
+    // production failure shape (docs/ops/remote-access/acme.md's whole "the port story,
     // honestly" section): something else already has LOOMBRE_HTTP_PORT.
     const { createServer } = await import("node:net");
     const blocker = createServer();

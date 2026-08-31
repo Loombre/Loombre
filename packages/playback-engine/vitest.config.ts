@@ -7,9 +7,10 @@ import { configDefaults, defineConfig } from "vitest/config";
  * matrix.spec.ts — the burn-up runner, which runs only via
  * `pnpm run test:matrix` (vitest.matrix.config.ts). Historical note: the
  * split dates from Phase 0, when matrix.spec.ts was the genuinely-red
- * exit proof; the matrix has long since burned up (517/517 green — see
- * matrix/burnup.json for the current state) and the split is kept so the
- * two projects stay independently runnable.
+ * exit proof; the matrix has long since burned up (every case green —
+ * matrix/burnup.json is the single source of truth for the count,
+ * deliberately not restated here) and the split is kept so the two
+ * projects stay independently runnable.
  */
 export default defineConfig({
   test: {

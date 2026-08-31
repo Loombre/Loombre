@@ -31,7 +31,7 @@ export function renderPublicKeyFileSource(rawFileContents) {
     "//\n" +
     "// The pinned minisign public key (P4.9 location #1: keys/minisign.pub —\n" +
     "// this file is a direct, byte-faithful embed of it). The server's\n" +
-    "// update-check verifier (apps/server/src/session/update-check) imports\n" +
+    "// update-check verifier (apps/server/src/common/update-check) imports\n" +
     "// ONLY this constant, never reads keys/minisign.pub off disk at runtime —\n" +
     "// see scripts/release/lib/embed-public-key.mjs's header for why.\n" +
     "// Regenerate with `pnpm embed-public-key` whenever keys/minisign.pub\n" +

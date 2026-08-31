@@ -108,7 +108,7 @@ apps/web           Next.js client
 packages/contract  openapi.yaml + event schemas — the source of truth
 packages/sdk       generated TS client (CI-regenerated, drift-gated)
 packages/playback-engine  pure decision fn + test matrix (zero I/O imports)
-packages/db        schema, migrations (hand-rolled scripts/migrate.mjs), query layer (Kysely), seed
+packages/db        schema, migrations (hand-rolled packages/db/scripts/migrate.mjs), query layer (Kysely), seed
 packages/shared    enums, ids, time utils (the only cross-module package)
 packages/jobs      typed job-queue abstraction (pg-boss driver + jobs-table ledger mirror)
 packages/plugin-host      LPP v1 host core (SSRF-guarded fetch, breaker, callPlugin)

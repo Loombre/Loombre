@@ -122,7 +122,7 @@ describe("DirectEnableStepBody — reverse-proxy branch (trust-proxy guidance + 
   it("shows trust-proxy guidance and a docs reference before enabling", async () => {
     await render("reverse-proxy");
     expect(textOf()).toContain("network.trustProxy");
-    expect(textOf()).toContain("docs/ops/reverse-proxy.md");
+    expect(textOf()).toContain("docs/ops/remote-access/reverse-proxy.md");
     expect(buttonByText("Enable Direct access")).toBeTruthy();
   });
 

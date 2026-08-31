@@ -27,7 +27,7 @@
  *
  * Exits non-zero and prints `file:line: reason` for every hit.
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { readdirSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join, relative, sep } from "node:path";
@@ -443,6 +443,93 @@ const RZI_SURFACE_LITERAL_ALLOWLIST = new Set([
   "apps/server/src/common/viewer-context.provider.ts",
 ]);
 
+// ---------------------------------------------------------------------------
+// (g) SOURCING-CITATION gate (doc-audit-2026-08-30 V11-V1 + F29-10, run
+// DFX-2026-08-31 Wave 4): every repo path named inside a docs/**.md
+// `<!-- Sourcing ... -->` comment must exist at HEAD. Nothing checked these
+// before, and that single gap produced four confirmed stale-citation
+// findings in one audit (three admin-guide pages + capability-report.md all
+// citing Next.js route files a restructure had deleted).
+//
+// PATH-ONLY, deliberately: `:line` / `:from-to` suffixes are stripped
+// before the existence check, never validated — line anchors rot within
+// weeks (audit N20) and the house rule for living docs is cite symbols,
+// not lines (F14-2). A citation like `guard.ts:88-110` therefore passes as
+// long as guard.ts exists; the SYMBOL names around it are the durable part.
+//
+// Mechanics: only HTML comments beginning `<!-- Sourcing` are scanned (the
+// verification trail), never rendered prose. Comment lines are re-joined so
+// a path wrapped at a `/` (the comments' 72-col house style, e.g.
+// "apps/server/src/\n     catalog/users.controller.ts") reassembles before
+// extraction. A token must start with a real top-level repo directory
+// (SOURCING_PATH_PREFIXES) and contain a `/` — bare file names and section
+// references (`§6.4`) are prose, not citations. `{a,b}` alternation
+// expands one level; a trailing `/*`/`/**` glob checks its directory.
+//
+// Escape hatch, fails closed like the other markers here: a comment that
+// DELIBERATELY cites a deleted/historical path carries
+// `sourcing:allow-unresolved <path>` inside the same Sourcing comment,
+// naming the exact path it excuses — an unrelated marker excuses nothing.
+const SOURCING_COMMENT = /<!--\s*Sourcing[\s\S]*?-->/g;
+const SOURCING_ALLOW_MARKER = "sourcing:allow-unresolved";
+const SOURCING_PATH_PREFIXES = [
+  "apps",
+  "packages",
+  "docs",
+  "scripts",
+  "installers",
+  "examples",
+  "design",
+  "keys",
+  "perf",
+  "reports",
+];
+const SOURCING_TOKEN = new RegExp(
+  `(?:^|[\\s\`'"(\\[])((?:${SOURCING_PATH_PREFIXES.join("|")})/[A-Za-z0-9_@.*{},/\\[\\]-]+)`,
+  "g",
+);
+
+/** "apps/server/src/\n     catalog/x.ts" -> "apps/server/src/catalog/x.ts";
+ *  every other line break becomes a plain space. */
+function joinSourcingCommentLines(comment) {
+  const rawLines = comment.split("\n").map((l) => l.trim());
+  let joined = "";
+  for (const l of rawLines) {
+    if (joined.endsWith("/")) joined += l;
+    else joined += (joined ? " " : "") + l;
+  }
+  return joined;
+}
+
+/** One raw token -> the list of repo-relative paths to existence-check. */
+function sourcingTokenToPaths(rawToken) {
+  let token = rawToken.replace(/[.,;:]+$/, ""); // trailing prose punctuation
+  // {a,b} alternation, one level (e.g. reports/state/{STATE,DECISIONS}.md).
+  const brace = /^([^{]*)\{([^}]*)\}(.*)$/.exec(token);
+  const variants = brace
+    ? brace[2].split(",").map((alt) => `${brace[1]}${alt.trim()}${brace[3]}`)
+    : [token];
+  const out = [];
+  for (let v of variants) {
+    v = v.replace(/[.,;:]+$/, "");
+    v = v.replace(/(?::\d+(?:\s*[-–]\s*\d+)?)+$/, ""); // :line / :from-to
+    v = v.replace(/\/\*{1,2}$/, ""); // trailing /* or /** glob -> its dir
+    v = v.replace(/\/+$/, ""); // trailing slash -> the dir itself
+    // A glob BASENAME (`_components/*.tsx`, `matrix/*.yaml`) checks its
+    // directory — the citation's durable claim is "these files live here".
+    const lastSlash = v.lastIndexOf("/");
+    if (lastSlash !== -1 && v.slice(lastSlash + 1).includes("*")) v = v.slice(0, lastSlash);
+    if (v.includes("/")) out.push(v);
+  }
+  return out;
+}
+
+/** True when every path a token names exists. */
+function sourcingTokenResolves(rawToken) {
+  const paths = sourcingTokenToPaths(rawToken);
+  return paths.length === 0 || paths.every((p) => existsSync(join(ROOT, p)));
+}
+
 function escapeRegExp(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -598,6 +685,39 @@ for (const { full, rel } of files) {
         });
       }
     });
+  }
+
+  // (g) SOURCING-CITATION pass — whole-comment, so it runs over `content`
+  // rather than inside the single-line loop below.
+  if (rel.startsWith("docs/") && rel.endsWith(".md")) {
+    SOURCING_COMMENT.lastIndex = 0;
+    for (let cm = SOURCING_COMMENT.exec(content); cm; cm = SOURCING_COMMENT.exec(content)) {
+      const commentLineNo = content.slice(0, cm.index).split("\n").length;
+      const joined = joinSourcingCommentLines(cm[0]);
+      SOURCING_TOKEN.lastIndex = 0;
+      for (let tm = SOURCING_TOKEN.exec(joined); tm; tm = SOURCING_TOKEN.exec(joined)) {
+        let token = tm[1];
+        if (!sourcingTokenResolves(token) && /[-.]$/.test(token)) {
+          // Wrap-repair: the 72-col house style can break a path at a "-"
+          // or a "." (…/stash-path-\n mapping.ts, …/data-freedom.\n
+          // controller.ts). The break became a space in `joined`; re-join
+          // with the next word and retry before flagging.
+          const next = /^ (\S+)/.exec(joined.slice(tm.index + tm[0].length));
+          if (next && sourcingTokenResolves(token + next[1])) token = token + next[1];
+        }
+        if (sourcingTokenResolves(token)) continue;
+        for (const p of sourcingTokenToPaths(token)) {
+          if (existsSync(join(ROOT, p))) continue;
+          if (cm[0].includes(`${SOURCING_ALLOW_MARKER} ${p}`)) continue;
+          violations.push({
+            rel,
+            lineNo: commentLineNo,
+            code: "sourcing-citation:unresolved-path",
+            line: `Sourcing comment cites \`${p}\`, which does not exist at HEAD — repoint it at the code that owns this now (path-only check; :line suffixes are ignored)`,
+          });
+        }
+      }
+    }
   }
 
   lines.forEach((line, idx) => {

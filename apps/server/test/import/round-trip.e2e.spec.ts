@@ -28,7 +28,7 @@
 // loombre_e_roundtrip_test): both databases are created via ensureTestDatabase's
 // suffix convention off the SAME base connection string every sibling
 // e2e spec already uses (`<base>_e_test` / `<base>_e_roundtrip_test` — the
-// "_test" tail is required by scripts/migrate.mjs's reset guard, see its
+// "_test" tail is required by packages/db/scripts/migrate.mjs's reset guard, see its
 // header), never the shared `loombre` dev database. No TCP port is ever bound — supertest talks
 // to `app.getHttpServer()` in-process (the same convention every other
 // apps/server e2e spec already uses), so the 3700-3799 allocation is

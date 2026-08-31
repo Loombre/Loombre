@@ -10,7 +10,7 @@
 // operator/install page (docs/install/*.md, docs/ops/*.md) stays exactly
 // where every other doc in the repo already links to it (README.md,
 // STATE.md, CLAUDE.md all use repo-relative paths like
-// `docs/ops/reverse-proxy.md`) — rooting the site anywhere else would mean
+// `docs/ops/remote-access/reverse-proxy.md`) — rooting the site anywhere else would mean
 // either breaking those links or maintaining two copies. New guides
 // (user-guide/, admin-guide/, developer-guide/, api-reference/) sit as
 // sibling top-level directories under docs/ for the same reason: one tree,

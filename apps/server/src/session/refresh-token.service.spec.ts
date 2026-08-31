@@ -10,7 +10,7 @@
 // DATABASE_URL directly: turbo parallelizes independent packages' `test`
 // tasks (e.g. @loombre/jobs and @loombre/server both depend on @loombre/db but
 // not on each other), and two packages concurrently running
-// `scripts/migrate.mjs reset` (DROP SCHEMA public CASCADE + replay) against
+// `packages/db/scripts/migrate.mjs reset` (DROP SCHEMA public CASCADE + replay) against
 // the SAME database can Postgres-deadlock — discovered while wiring this
 // wave's tests into `pnpm gate`. See packages/db/src/testing.ts.
 //

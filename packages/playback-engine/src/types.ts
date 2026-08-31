@@ -286,7 +286,7 @@ export interface PlanInput {
   policy: ServerPolicy;
   /** hardware self-test results snapshot */
   caps: VerifiedCapabilities;
-  /** resolved BEFORE plan() (see §3.0) */
+  /** resolved BEFORE plan() (see §2.6) */
   selection: TrackSelection;
   /** download reserved: may emit 'remux' */
   mode: "stream" | "download";

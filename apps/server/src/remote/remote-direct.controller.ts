@@ -18,11 +18,11 @@
 // HOC TlsConfigAcme from the admin-supplied domain (the frozen contract's
 // TestRemoteDirectAcmeRequest carries `domain` ONLY — no challengeType
 // field — so the wizard's guided Direct flow is fixed to http-01, the
-// simpler of the two challenge types and the one docs/ops/acme.md
+// simpler of the two challenge types and the one docs/ops/remote-access/acme.md
 // recommends whenever port 80 is reachable; dns-01 remains available as an
 // ADVANCED env-only path outside the wizard, unaffected), spins up its OWN
 // short-lived Http01ChallengeServer bound to LOOMBRE_HTTP_PORT (default 80
-// — the SAME privileged-port story docs/ops/acme.md already documents
+// — the SAME privileged-port story docs/ops/remote-access/acme.md already documents
 // honestly; this endpoint does not and cannot change that), runs the real
 // issuance, and on success calls persistIssuedCertificate() — THE SAME
 // file apps/server/src/tls/runtime.ts's boot-time createTlsRuntime() reads

@@ -130,7 +130,7 @@ function main() {
     console.error(`\n[perf-baseline-check] FAILED — ${REL_PATH} changed without an updated reason:\n`);
     for (const v of violations) console.error(`  - ${v}`);
     console.error(
-      `\nSee ${REL_PATH}'s own "$rule" header, and README.md's "Performance budgets" section.`,
+      `\nSee ${REL_PATH}'s own "$rule" header, and docs/developer-guide/architecture/performance-budgets.md.`,
     );
     process.exit(1);
   }

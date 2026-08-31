@@ -25,7 +25,8 @@ import { ConnectorManager } from "./remote/tunnel/connector-manager.js";
 /**
  * LOOMBRE_TRUST_PROXY (STATE.md P2.2, docs/PLAN.md §10: "plain HTTP behind
  * a user's reverse proxy with trust-proxy config" is the documented v1
- * remote-access path — see README.md's "Remote access" section). OFF by
+ * remote-access path — see docs/ops/remote-access/reverse-proxy.md's
+ * "Trust-proxy configuration" section). OFF by
  * default: `req.ip` is the raw socket address and X-Forwarded-For is
  * ignored, so nothing a client sends can move the auth rate limiter's or
  * anomaly log's IP key. Only when an operator running behind their OWN

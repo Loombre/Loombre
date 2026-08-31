@@ -155,7 +155,7 @@ paths:
   # ────────────────────────── Public claim surface (E2/M12) ─────────────────
   # F1 (opus adversarial review, fix wave): mounted under /invites, NOT the
   # bare /claim/{token} this pair originally shared with the Next.js web
-  # page at apps/web/src/app/claim/[token] — docs/ops/reverse-proxy.md
+  # page at apps/web/src/app/claim/[token] — docs/ops/remote-access/reverse-proxy.md
   # routes /claim/* to the API, so a real invite link opened JSON instead
   # of the claim page. /reset/{token} and /forgot avoided this collision
   # from the start by living under distinct API paths (/auth/*-password);

@@ -1,5 +1,10 @@
 # installers/docker/BUILD-NOTES.md
 
+> Point-in-time note (2026-08-31): commit SHAs cited in this log's
+> verification narrative (`34979cb`, `cd3a6dd`) predate the repository's
+> history squash (history starts at `1e6a4f0`, 2026-07-25) and no longer
+> resolve in this checkout. They are preserved as the dated record.
+
 Lane I2 (Phase 4 Wave 1) build/verification log — native-module and
 packaging findings from actually building this Dockerfile for
 linux/amd64 + linux/arm64 via buildx, and running the automated smoke

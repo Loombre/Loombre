@@ -177,19 +177,20 @@ that column, not the fact that the emulation call returned.
 ## 5. Baselines to compare against
 
 The probe procedure above (§1–§4) is unchanged across waves. What changes is
-the expected table. The ORIGINAL pre-run baseline (2026-08-29, before Wave 0)
-and the post-Wave-0 state both stand below; a wave gate compares against the
-newest column and treats the older ones as history.
+the expected table. The ORIGINAL pre-run baseline (2026-08-29, before Wave 0),
+the post-Wave-0 state, and the at-UIFIX-close state all stand below; a wave
+gate compares against the newest column ("at UIFIX close") and treats the
+older ones as history.
 
-| control | pre-run fine/coarse | after Wave 0 fine/coarse | target when its lane lands |
-|---|---|---|---|
-| `ui/Input .input` | 44 / 44 | **36 / 44** | done (Lane 0) |
-| `ui/Button .button` | 44 / 44 | **36 / 44** | done (Lane 0) |
-| `ui/SegmentedControl .segment` | 44 / 44 | **28 / 36** (`calc(--control-height - --space-xs)`) | done (Lane 0) |
-| `SettingsTabs .tab` | 34.84 / 34.84 | 34.84 / 34.84 | 36 / 44 (Lane E, I5) |
-| `ZoneControls .rangeInput` | 21.5 / 21.5 | 21.5 / 21.5 | 36 / 44 (Lane G, K2) |
-| `ZoneControls .densitySegment` | 36 / 36 | 36 / 36 | 36 / 44 (Lane G, K1) |
-| `MetadataCard .actionPill` | 44 / 44 | 44 / 44 | 36 / 44 (Lane C, G2/H) |
+| control | pre-run fine/coarse | after Wave 0 fine/coarse | at UIFIX close (2026-08-29) fine/coarse | target when its lane lands |
+|---|---|---|---|---|
+| `ui/Input .input` | 44 / 44 | **36 / 44** | **36 / 44** | done (Lane 0) |
+| `ui/Button .button` | 44 / 44 | **36 / 44** | **36 / 44** | done (Lane 0) |
+| `ui/SegmentedControl .segment` | 44 / 44 | **28 / 36** (`calc(--control-height - --space-xs)`) | **28 / 36** (same calc — on the token) | done (Lane 0) |
+| `SettingsTabs .tab` | 34.84 / 34.84 | 34.84 / 34.84 | **36 / 44** | done (Lane E, I5) |
+| `ZoneControls .rangeInput` | 21.5 / 21.5 | 21.5 / 21.5 | **36 / 44** | done (Lane G, K2) |
+| `ZoneControls .densitySegment` | 36 / 36 | 36 / 36 | **36 / 44** | done (Lane G, K1) |
+| `MetadataCard .actionPill` | 44 / 44 | 44 / 44 | **36 / 44** | done (Lane C, G2/H) |
 
 Static corroboration flipped at Wave 0 and now reads (expected non-zero):
 
@@ -198,7 +199,8 @@ grep -rn  'control-height'              apps/web/src --include='*.css'   # token
 grep -rnE 'pointer:\s*(coarse|fine)'    apps/web/src --include='*.css'   # one coarse block in tokens.css
 ```
 
-The fine and coarse columns MUST diverge to 36 / 44 for every control whose
-lane has landed; identical columns on a landed control is a regression.
+The fine and coarse columns MUST diverge for every control whose lane has
+landed (to 36 / 44, or to `.segment`'s calc-derived 28 / 36); identical
+columns on a landed control is a regression.
 (Historical note: pre-run, both greps returned zero and all fine/coarse
 columns were byte-identical — recorded in reports/state/phase0/probe-baseline.md.)

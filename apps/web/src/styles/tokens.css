@@ -11,9 +11,12 @@
  * Phosphor retheme (design/phosphor/README.md is THE spec; U1 in STATE.md):
  * this file replaces the former warm-ember palette wholesale — cool
  * near-black background, white-alpha surfaces, amber accent, self-hosted
- * Archivo (variable wdth+wght) + IBM Plex Mono. Values below are transcribed
- * verbatim from the README's "Proposed tokens.css" block; it is authoritative
- * for every token it defines.
+ * Archivo (variable wdth+wght) + IBM Plex Mono. Values started from the
+ * README's "Proposed tokens.css" block and have since grown past it
+ * (UD-6/UD-7-era amendments, tracked in that block's own preamble) —
+ * THIS file is authoritative for token values; where the two differ, the
+ * shipped file wins, and the README block is periodically refreshed to
+ * match.
  *
  * Dark only (README "Light theme — removed", STATE.md decision U line):
  * the former `:root[data-theme="light"]` block existed for exactly one

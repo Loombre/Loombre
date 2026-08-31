@@ -95,7 +95,7 @@ with source URLs, (b) a license row here, (c) an aggregation-posture note.
 
 **Vendor-mirror provenance note (Task #16, private-repo holding vs.
 distribution).** Upstreams garbage-collect old releases — BtbN deleted our
-pinned autobuild mid-rc.7-draft (repinned in d3a6883d) — so this repo now
+pinned autobuild mid-rc.7-draft (repinned in b8809e7) — so this repo now
 holds a deletion-proof mirror of the seven ffmpeg/ffprobe archives above,
 byte-identical copies at a GitHub Release tagged `ffmpeg-mirror`
 (`installers/ffmpeg-manifest.json`'s top-level `mirror` block records the
