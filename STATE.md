@@ -1,4 +1,6 @@
 # STATE.md — Lumbre Phase 4 (Phases 0–2 complete; Phase 3 automated exit met, owner review items Open)
+> HISTORICAL ORIGINAL — this file was the project's single source of truth until the state tier split to reports/state/; preserved as history, no longer the live record (DFX-R7).
+> Live tier: reports/state/STATE.md (dashboard) · reports/state/DECISIONS.md (decision ledger) · reports/state/OPEN.md (open items) · reports/state/NOTED.md (observations).
 
 ## Seek model V8 — PDT source-clock bridge + seek endpoint + client landing (2026-08-12, BUILT; 2026-08-20 live-QA fix pass below — owner re-QA pending)
 
