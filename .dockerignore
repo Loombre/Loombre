@@ -1,9 +1,10 @@
 # Loombre :: .dockerignore (repo root)
 #
-# Keeps the build context small — the Dockerfile's `pruner` stage does a
-# full `COPY . .` (it needs the whole workspace to run `turbo prune`), so
-# everything excluded here is bytes that never leave the host at all,
-# rather than bytes that get copied and then discarded mid-build.
+# Keeps the build context small — the Dockerfile's two prune stages
+# (`pruner` and `web-pruner`) each do a full `COPY . .` (they need the
+# whole workspace to run `turbo prune`), so everything excluded here is
+# bytes that never leave the host at all, rather than bytes that get
+# copied and then discarded mid-build.
 #
 # Mirrors .gitignore's exclusions where they apply (build output, deps,
 # local env/data) plus a few Docker-specific ones (.dockerignore/Dockerfile*
@@ -49,8 +50,10 @@ installers/docker/loombre.env
 coverage/
 **/coverage/
 
-# db local data / generated fixtures / reports (regenerated on demand,
-# never part of a build)
+# db local data, generated fixtures, local evidence/reports trees and
+# perf result artifacts — never part of a build. (reports/ is local
+# evidence plus the curated tracked reports/state/** tier, not
+# regenerated output — either way it is never a build input.)
 .pgdata/
 test-fixtures/media/
 reports/
@@ -78,4 +81,3 @@ installers/**/out/
 installers/**/dist/
 .buildx-cache/
 .buildx-cache-web/
-vendor/

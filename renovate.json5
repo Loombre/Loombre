@@ -10,7 +10,7 @@
 // DELIBERATELY NOT AUTO-TRACKED (checksum-bearing vendor manifests whose
 // values are only valid together with their sha256 fields, produced by the
 // verified fetch flows — a half-bumped manifest is worse than a stale one):
-//   installers/linux/node-manifest.json   (scripts in installers/linux)
+//   installers/node-manifest.json         (scripts/fetch-node.mjs; linux + windows lanes)
 //   installers/embedded-pg-manifest.json  (scripts/fetch-embedded-pg.mjs)
 //   installers/ffmpeg-manifest.json       (scripts/fetch-ffmpeg.mjs)
 // The same versions ARE tracked where no checksum rides along (.nvmrc,

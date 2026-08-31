@@ -4,9 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
-  # Manual trigger (see the billed-minutes note on the gate job). The os
-  # input allows validating a single expensive leg (windows 2x, macos 10x)
-  # without paying for the whole matrix.
+  # Manual trigger (see the matrix-economy note on the gate job). The os
+  # input allows validating a single slow leg (windows, macos) without
+  # running the whole matrix.
   workflow_dispatch:
     inputs:
       os:
@@ -33,12 +33,13 @@ jobs:
     name: gate (${{ matrix.os }})
     strategy:
       fail-fast: false
-      # BILLED-MINUTES ECONOMY (private repo, 2000 min/month; macOS bills 10x
-      # and Windows 2x — one full 3-OS push costs ~130+ billed minutes):
-      # ordinary pushes run ubuntu only; the Windows/macOS legs run when the
-      # commit message carries [full-ci] or the workflow is dispatched
-      # manually. macOS is additionally covered by real-hardware runs on
-      # owner hardware; use [full-ci] at phase
+      # MATRIX ECONOMY (the repo is public as of 2026-07-26 — STATE.md:3944 —
+      # so runner minutes are unmetered; this ubuntu-only default dates from
+      # the private-repo billed-minutes era and is kept for wall-clock/queue
+      # economy, not billing): ordinary pushes run ubuntu only; the
+      # Windows/macOS legs run when the commit message carries [full-ci] or
+      # the workflow is dispatched manually. macOS is additionally covered
+      # by real-hardware runs on owner hardware; use [full-ci] at phase
       # boundaries and before releases, not per-commit.
       # NOTE: this MUST live in strategy.matrix (github context available),
       # not a job-level `if` (matrix context is NOT available there — a
@@ -280,7 +281,7 @@ jobs:
           dotnet test installers/windows/service-host/LoombreServiceHost.Tests/LoombreServiceHost.Tests.csproj -c Release
 
       - name: pnpm gate:full
-        # L4: CI runs the FULL gate (15 steps + web-build-budget), not the
+        # L4: CI runs the FULL gate (17 steps + web-build-budget), not the
         # fast inner-loop default — bundle size is deterministic, not
         # hardware-sensitive like the perf-NUMBER jobs below, so there's no
         # reason to run it on fewer legs, and runner minutes are unmetered
@@ -361,9 +362,9 @@ jobs:
   # design — its job is to accumulate months of green (or red-with-
   # evidence) history so the October-2026 Node 26 LTS switch is a routine
   # Renovate PR, not a project. continue-on-error keeps a red run from
-  # failing the workflow; push-to-main only (not PRs) per the billed-
-  # minutes economy above — ubuntu only, ~one extra gate run per batched
-  # push. When Node 26 goes LTS and the pins move to it, point this job at
+  # failing the workflow; push-to-main only (not PRs) per the
+  # matrix-economy note above — ubuntu only, ~one extra gate run per
+  # batched push. When Node 26 goes LTS and the pins move to it, point this job at
   # the next Current line (27) per the standing N2 policy. L4: runs
   # `pnpm gate:full` (not just `pnpm gate`) so this evidence lane also
   # catches Node-26 web-production-build breakage early — non-blocking, so

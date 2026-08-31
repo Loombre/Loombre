@@ -33,10 +33,12 @@ A few design choices, made from the start rather than bolted on later:
 - **PostgreSQL from day one** — real columns, foreign keys, and enums;
   concurrent writes and horizontal scale aren't an eventual migration project.
 - **Content filtering enforced at the data layer, not the UI.** Restricted
-  libraries are invisible in search, browsing, and "recently added" until every
-  gate (server capability, adult age verification, opt-in PIN, explicit
-  per-library grant, live session unlock) passes — server-side, by
-  construction, not by a client politely agreeing to hide something.
+  libraries never appear in everyday search, browsing, home rails, or
+  "recently added" at all — they are reachable only inside a dedicated
+  restricted zone, and only after every gate (server capability, adult age
+  verification, opt-in PIN, explicit per-library grant, live session unlock)
+  passes — server-side, by construction, not by a client politely agreeing to
+  hide something.
 - **Budget hardware is a first-class target.** A ~$100 mini PC (Tier-0: 4-core,
   4 GB RAM) is a real
   [performance budget enforced in CI](docs/developer-guide/architecture/performance-budgets.md),
@@ -58,11 +60,11 @@ A few design choices, made from the start rather than bolted on later:
 |---|---|
 | **Media types** | Movies, TV, music (v1). Photos, live TV, and native mobile/TV apps are planned — the data model already accounts for them, but they aren't built yet. |
 | **Multi-user** | Per-user accounts, per-library permission grants, remote access. |
-| **Restricted content** | Native, opt-in, PIN-gated, server-enforced content class — invisible unless every gate passes. |
+| **Restricted content** | Native, opt-in, PIN-gated, server-enforced content class — never mixed into everyday browsing or search; reachable only inside its own zone, and only when every gate passes. |
 | **Playback** | Direct play when your device supports the file as-is; automatic, on-the-fly conversion (with a documented, reason-coded decision) when it doesn't. |
 | **Scanning** | Incremental, idempotent, rename-aware; watches your library folders continuously. |
 | **Metadata** | Provider-based lookup (movies/TV/music), with local NFO/tag data always taking precedence over anything fetched remotely. |
-| **Remote access** | Three first-class, documented paths: your own reverse proxy, built-in ACME (Let's Encrypt), or LAN-only — see [Remote access](#remote-access) below. |
+| **Remote access** | Three first-class, mutually-exclusive paths: Loombre Remote, Tunnel, or Direct — plus LAN-only for no external access at all. See [Remote access](#remote-access) below. |
 | **Data freedom** | Export your entire catalog and progress as an open JSON archive; import it into another instance. No lock-in by design. |
 | **Hardware tiers** | Explicit Tier-0/1/2 support, each with performance budgets enforced in CI. |
 | **Telemetry** | None. Ever. Architecturally absent, not a setting. |
@@ -118,6 +120,8 @@ Needs Node 24, pnpm 11, and Docker (`pnpm dev` starts PostgreSQL on host port
 
 ```bash
 pnpm install
+docker compose -f docker-compose.dev.yml up -d   # PostgreSQL on host port 5442
+pnpm db:migrate && pnpm db:seed                  # first run only: schema + seed data
 pnpm dev
 pnpm gate
 ```
@@ -133,8 +137,9 @@ pnpm gate
 | [Developer Guide](docs/developer-guide/index.md) | Architecture tour, contract-first workflow, the playback matrix regression law. |
 | [API Reference](docs/api-reference/index.md) | Generated from the OpenAPI contract. |
 
-No hosted documentation site is published yet, so these are repo-relative
-links; `pnpm docs:build` builds the real site locally into
+The same guides are published at
+[www.loombre.com/docs](https://www.loombre.com/docs); the links above are
+repo-relative. `pnpm docs:build` builds the identical site locally into
 `docs/.vitepress/dist/`.
 
 **Project internals:** [docs/PLAN.md](docs/PLAN.md) is the authoritative

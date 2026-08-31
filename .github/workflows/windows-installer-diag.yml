@@ -14,7 +14,7 @@
 # uses package.json, which the release prepare job pins to the tag
 # anyway), so a green run here is direct evidence for the release leg.
 #
-# RENAMED from windows-msi-diag: releases now publish only the .exe
+# RENAMED from the old msi-diag name: releases now publish only the .exe
 # bootstrapper, so "msi" in the name reads as testing something we no
 # longer ship. It tests BOTH, and both still matter — the .exe EMBEDS the
 # .msi (Burn installs the VC++ prerequisite, then hands off to the MSI,

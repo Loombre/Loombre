@@ -70,18 +70,18 @@ RUN corepack enable
 # explicitly from THIS stage's own full (unpruned) checkout, which still
 # has it at /repo/tsconfig.base.json.
 #
-# `@loombre/release-manifest` is included in the prune scope EXPLICITLY
-# even though nothing in @loombre/server's or @loombre/worker's own
-# `dependencies` names it — apps/server/package.json's `prebuild`/
-# `pretypecheck`/`pretest` scripts each independently run
-# `tsc -p ../../packages/release-manifest/tsconfig.json` as a bare relative
-# path (verifying that package's own types compile before touching
-# server's own build/typecheck/test). turbo prune's dependency-graph
-# walk has no way to discover that reference — it isn't a package.json
-# edge — so without this explicit extra scope, `@loombre/release-manifest`
-# is silently missing from `out/full/` and the `prebuild` step 404s on a
-# tsconfig.json that was never copied. Confirmed by reproducing the exact
-# failure and fixing it this way — see installers/docker/BUILD-NOTES.md.
+# `@loombre/release-manifest` is included as an EXPLICIT third prune
+# scope. The original reason is SUPERSEDED: when this stage was written,
+# apps/server/package.json's `prebuild`/`pretypecheck`/`pretest` hook
+# scripts each ran `tsc -p ../../packages/release-manifest/tsconfig.json`
+# as a bare relative path — not a package.json edge, so turbo prune's
+# dependency-graph walk could not discover it and `out/full/` silently
+# omitted the package (confirmed then by reproducing the exact failure —
+# see installers/docker/BUILD-NOTES.md). Those hook scripts no longer
+# exist, and `@loombre/release-manifest` is now a real `dependencies`
+# entry of apps/server — a first-class graph edge turbo prune resolves
+# unaided — so the explicit scope below is retained belt-and-braces, not
+# load-bearing.
 # ─────────────────────────────────────────────────────────────────────────
 FROM base AS pruner
 WORKDIR /repo
@@ -290,8 +290,9 @@ LABEL org.opencontainers.image.title="Loombre Web" \
       org.opencontainers.image.licenses="NOASSERTION" \
       org.opencontainers.image.vendor="Loombre"
 # licenses=NOASSERTION for the same reason as the `runtime` stage below —
-# see its comment (LICENSE-INTENT.md: AGPL-3.0 is declared intent, not the
-# license in force yet). ARG declarations are per-stage in Dockerfiles, so
+# see its comment (the label describes the IMAGE, an aggregate of the
+# repo's AGPL-3.0-only code plus a Debian/Node third-party userland).
+# ARG declarations are per-stage in Dockerfiles, so
 # the version/revision/created trio is redeclared here; the values arrive
 # from the same installers/docker/build.sh invocation either way.
 ARG LOOMBRE_VERSION=0.0.0
@@ -386,10 +387,13 @@ LABEL org.opencontainers.image.title="Loombre" \
       org.opencontainers.image.source="https://github.com/Loombre/Loombre" \
       org.opencontainers.image.licenses="NOASSERTION" \
       org.opencontainers.image.vendor="Loombre"
-# licenses=NOASSERTION, not AGPL-3.0: per LICENSE-INTENT.md this repo is
-# private/proprietary today ("all rights reserved") with AGPL-3.0 a
-# declared future intent at public launch, not the license in force yet —
-# asserting AGPL-3.0 now would be simply false. ARGs below (version/
+# licenses=NOASSERTION, not AGPL-3.0: Loombre's own code IS AGPL-3.0-only
+# (the LICENSE file + package.json; LICENSE-INTENT.md records the
+# relicense as applied 2026-07-24), but this label describes the whole
+# IMAGE, and the image is an aggregate — it also bundles the GPL BtbN
+# ffmpeg/ffprobe build (statically linked libx264/libx265 — see the
+# ffmpeg-fetch stage) and a Debian/Node userland, so no single SPDX
+# expression honestly covers the full filesystem. ARGs below (version/
 # revision/created) are build-time-supplied by installers/docker/build.sh
 # so this Dockerfile itself never hardcodes a value that would go stale.
 ARG LOOMBRE_VERSION=0.0.0
@@ -518,18 +522,24 @@ ENV NODE_ENV=production \
 #
 # LOOMBRE_AUTH_LOG_FILE and LOOMBRE_CONFIG_DIR are set above for the same
 # reason (`/data/logs`, `/data/config` — created here too): a real,
-# discovered boot failure, not a defensive guess — apps/server/src/session/
-# anomaly-log.service.ts defaults to `<process.cwd()>/logs/auth-anomaly.log`
-# when LOOMBRE_AUTH_LOG_FILE is unset, and `mkdirSync`s that directory at
+# discovered boot failure, not a defensive guess — at the time, the
+# anomaly-log service (now at apps/server/src/common/anomaly-log.service.ts)
+# defaulted to `<process.cwd()>/logs/auth-anomaly.log` when
+# LOOMBRE_AUTH_LOG_FILE was unset, and `mkdirSync`d that directory at
 # construction time, in the SessionModule's constructor chain, unconditionally
 # (not lazily on first log write). `/app` (this image's WORKDIR / cwd) is
 # intentionally NOT owned by the non-root `loombre` user — the application
 # code directory stays effectively read-only to its own runtime process,
-# which is the point of running non-root at all — so leaving this env unset
-# makes every container crash on boot with `EACCES: permission denied,
-# mkdir '/app/logs'` before Nest even finishes wiring providers. Confirmed
+# which is the point of running non-root at all — so leaving the env unset
+# crashed every container on boot with `EACCES: permission denied,
+# mkdir '/app/logs'` before Nest even finished wiring providers. Confirmed
 # by reproducing the crash, then fixing it exactly this way; see
-# installers/docker/BUILD-NOTES.md.
+# installers/docker/BUILD-NOTES.md. The service's fallback chain has since
+# grown a middle step (LOOMBRE_AUTH_LOG_FILE, else
+# `<LOOMBRE_DATA_DIR>/logs/auth-anomaly.log`, else cwd), so with
+# LOOMBRE_DATA_DIR=/data set above the cwd branch is unreachable in this
+# image even without the explicit override — it is kept belt-and-braces,
+# and as plain documentation of where the log lands.
 RUN mkdir -p /data/transcode /data/logs /data/config && chown -R loombre:loombre /data
 
 USER loombre:loombre

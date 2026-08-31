@@ -59,7 +59,7 @@ appointed representative at an online or offline event.
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the maintainers by opening an issue marked for maintainer
+reported to the maintainer by opening an issue marked for maintainer
 attention, or — where the report itself is sensitive — via GitHub's private
 [report abuse](https://github.com/contact/report-abuse) flow or a private
 security advisory on this repository. All complaints will be reviewed and

@@ -27,8 +27,8 @@ A clear description of the bug.
 
 - **Loombre version:** (Settings → About, or `GET /system/info`, or the
   `loombre --version` CLI if you installed via the Linux tarball)
-- **Install method:** Docker / Linux tarball / Windows MSI / macOS .pkg /
-  built from source
+- **Install method:** Docker / Linux tarball / Windows installer (.exe) /
+  macOS .pkg / built from source
 - **Operating system + version:**
 - **Hardware tier** (if known — see `docs/install/index.md`'s system
   requirements table): Tier-0 / Tier-1 / Tier-2 / not sure

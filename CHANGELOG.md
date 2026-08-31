@@ -13,11 +13,154 @@ yet — every entry below through Phase 4 documents *development-phase*
 history against the project's internal `STATE.md` phase tracking, not a
 shipped version (the root `package.json` version stayed effectively
 unreleased through Phases 0–3; STATE.md P4.11 introduced real single-source
-version stamping in Phase 4). Once a `v*` tag is actually pushed, entries
-below gain real semver headers and dates, and this note can be retired.
-Until then, phase names are the version axis.
+version stamping in Phase 4). Once a `v*` tag's GitHub Release is actually
+*published* — not merely drafted (the `v0.9.0-rc.*` tags pushed so far
+each produced only an unpublished draft) — entries below gain real semver
+headers and dates, and this note can be retired. Until then, phase names
+are the version axis.
 
 ## [Unreleased]
+
+### Remote access & mail: verified as packaged, and fixed (2026-08-30)
+
+A verification pass took the 2026-08-04 Remote-access and mail features
+from "reviewed and green in CI" to verified-as-shipped, and fixed what it
+found. Distribution gaps closed: the WireGuard native library and the
+mail environment plumbing were missing from every shipped distribution —
+Loombre Remote now works from a real installed artifact, not just a dev
+checkout. Live events now reach the TLS and WireGuard remote paths (the
+events socket was attached to the wrong HTTP server), a
+WebSocket-triggered shutdown hang is fixed, and enabling the tunnel path
+auto-writes its settings so the posture card shows the tunnel hostname.
+Mail hardening: queued invite/reset jobs no longer embed the action link
+— the payload carries a sealed (AES-256-GCM) reference and the worker
+builds the URL from the *current* configured public URL at send time;
+the reachability probe's URL scheme likewise derives from the configured
+public URL; the `mail.failed` event's template enum covers the
+email-in-use notice; every reverse-proxy recipe now routes
+`/probe/{token}`; and the SMTP credential pair is documented.
+
+### Restricted content is now zone-only (2026-08-30)
+
+The restricted-content visibility model is amended (docs/PLAN.md §6.4
+surface scoping): general surfaces — browse, search, home rails,
+"recently added", watchlist and progress lists, people, tags — compile
+the general-only filter unconditionally, so a live unlock never changes
+what they return. Restricted items are reachable ONLY inside the
+dedicated restricted zone (plus direct item-addressed reads), each still
+requiring the full five-gate clearance. Spatial separation replaces
+temporal: previously, a live session unlock made restricted rows appear
+in regular search/browse/recently-added until relock. `ViewerContext`
+gains a `surface` dimension enforced by the query guard itself; the zone
+gets its own watchlist rail, a zone watchlist toggle, and a route-driven
+websocket zone subscription. User and admin docs updated to the new
+model.
+
+### Web UI conformance pass (2026-08-29)
+
+A design-system enforcement run across the web client: shared
+control-height tokens and pulse keyframes, machine-enforced spacing and
+type scales (the mono floors retired), a Toast action rule, the topbar
+rebuilt as three zones with a route label and centred search field,
+sentence-case pill labels, and a full rework of Settings → Advanced —
+plus dozens of smaller alignment, copy, and behavior fixes verified
+against a 52-shot screenshot baseline. The `/browse` route budget
+re-measured green (175.6 of 200 KB gz).
+
+### Full-app QA sweep and remediation (2026-08-20 → 2026-08-25)
+
+A QA sweep of the whole app (API validation, browser flows, player,
+restricted surfaces) produced 46 findings plus four follow-up dispatch
+waves, all fixed and verified. Server: write paths gain body-key
+allowlists and honest validation (UUID checks on every plugins route,
+duplicate username/email → 409, email-format checks, a first-admin field
+allowlist), `/home/continue-watching` gains real cursor pagination, the
+whole 404 family shares one problem shape, the restricted capability is
+auth-only, and legacy `/admin/*` routes redirect at the HTTP level.
+Player: the EOF-seek wedge self-repairs, hls.js fatal retries are
+bounded with failed sessions surfaced honestly, deep-link `?t=` routes
+through the hard-seek path, keyboard shortcuts are gated while the
+resume prompt is open, StrictMode's twin session-create is deduped, and
+sessions end on full-document teardown. Web: doomed poster fetches are
+skipped, the watchlist-id fetch is shared and retried, a 401 routes to
+`/login`, browse sort round-trips through the URL, and the zone filter
+panel stops overflowing phone widths.
+
+### Seek model V8: source-clock seeking (2026-08-20)
+
+Seeking on transcode sessions is rebuilt around the source clock:
+playlists carry timing anchored to the SOURCE axis, a seek is a
+first-class server call with an explicit client landing (no more
+inferring where a seek landed), absorbed seeks land at response time,
+and hard seeks are never silently swallowed. Follow-ups serialize EOF
+progress flushes and stop segment-GET self-relocation churn.
+
+### AV1 ladder, adaptive multi-variant delivery, encoder lifecycle (2026-08-11)
+
+Transcode sessions gain a real ABR ladder: a master playlist with a
+`v{K}` variant family under a slot-handoff law (rung switches rebuild
+ffmpeg arguments and hand off mid-session under a single-restart rule),
+a Tier-0 advertised-variant cap in the pure decision engine, and a
+quality selector in the player; the playback matrix grew past 540 cases
+covering it. A parallel lifecycle-hardening pass guarantees no orphaned
+encoders: ffmpeg pids are persisted and a boot reaper reclaims
+crash-orphaned transcodes, graceful shutdown terminates in-flight runs,
+retention-pruned HLS playlists state their media sequence correctly, and
+plugin circuit-breaker state re-seeds on boot.
+
+### v0.9.0-rc.7 draft + deletion-proof ffmpeg vendoring (2026-08-10)
+
+Upstream deleted the pinned ffmpeg autobuild mid-draft, so vendoring is
+now deletion-proof: the seven ffmpeg/ffprobe archives are mirrored
+byte-identically on a dedicated `ffmpeg-mirror` release, the fetch
+script falls back to the mirror on a primary download failure, and a
+daily liveness probe watches the primary sources. The v0.9.0-rc.7 draft
+was built on the repinned vendors.
+
+### Owner fix list LD-1..13 + playback QA fixes (2026-08-10)
+
+An owner live-QA pass produced thirteen fixes across the player and
+settings — including the player transport's seek buttons moving from
+15s-back/30s-forward to a symmetric **10 seconds in both directions**
+(LD-12, superseding the 2026-07-25 transport entry below), a fixed
+session-refused layout, settings pages that report hardware-transcode
+status truthfully, one unified Plugins page (registered plugins join
+provider keys), and Advanced-server registry repairs (dead switch, chip
+locks and ordering, JSON editor). Same-day playback fixes: open-GOP HEVC
+leading pictures are stripped on seek-restart copy runs, the HLS
+manifest serves while a session is suspended, the heartbeat scheduler no
+longer crashes on first play, Safari's token rotation no longer reloads
+playback every ~15 minutes, and event ordering is guaranteed (UUIDv7
+ties sort deterministically). Dev hygiene: destructive test suites are
+isolated from the dev database, and a cleanup script swept 1,062 leaked
+test databases (14.6 GB).
+
+### v0.9.0-rc.5/rc.6 drafts, macOS live-test fixes, docs site live (2026-08-06 → 2026-08-08)
+
+Three release-candidate drafts went through the real tag-triggered
+pipeline: rc.4 and rc.5 on 2026-08-06 (the Windows WiX leg's XML-comment
+bug found by rc.4 and proven fixed by rc.5) and rc.6 on 2026-08-08
+(after clearing a dependency-audit HIGH via a scoped nanoid override). A
+three-wave polish pass landed shared design-system fixes, an IA
+restructure with page-level polish, and first-class handling of an
+empty hardware-capability set. macOS live-testing fixes: the `.pkg`
+pins Loombre.app non-relocatable (it could previously install over a
+stray copy instead of `/Applications`), the directory picker gains a
+scripted folder-access grant flow, and the menubar's reopen behavior
+opens the web UI. The documentation site went live at
+[www.loombre.com/docs](https://www.loombre.com/docs) (2026-08-07/08).
+
+### Security & correctness audit fix waves (2026-08-05 → 2026-08-06)
+
+Six fix waves against a full-codebase audit: an unauthenticated ACME
+denial-of-service plus three sibling missing-error-boundary defects;
+five silent data-loss/integrity defects; SSRF bypass, secret-leakage,
+token-revocation and rate-limit gaps; contract-surface fixes (17
+cursor-validator 500s, DELETE status drift, enum gaps); release-pipeline
+gaps (the signed-manifest gap, an arm64 hardcode, the untested default
+install path); and a polish wave for docs that fail when executed, false
+spec claims, dead code, and measured UI defects. The first fully green
+3-OS CI run on `main` followed the merged result.
 
 ### System notices: admin broadcasts with live delivery everywhere (2026-08-04)
 
@@ -242,9 +385,11 @@ prediction the player itself moved away from.
 
 ### Phosphor custom icons, accent + scanlines preferences, ⌘K polish (2026-07-25)
 
-The sidebar/tab-bar glyphs, player transport (play/pause, 15s-back/30s-
-forward seek — the buttons now show and act on the same amount, matching
-iOS's `gobackward.15`/`goforward.30`), the restricted-content lock, and a
+The sidebar/tab-bar glyphs, player transport (play/pause and the seek
+buttons — at the time 15s-back/30s-forward, matching iOS's
+`gobackward.15`/`goforward.30`; superseded 2026-08-10 by the symmetric
+±10s transport, LD-12 — see that entry above), the restricted-content
+lock, and a
 handful of other icons the Phosphor design draws are now Loombre's own
 custom glyphs instead of `lucide-react`'s. Everything else keeps its
 existing lucide icon.
@@ -271,7 +416,8 @@ a mobile grouped hub list with live-derived badges (library/user counts,
 provider-key coverage, registry key count — never stored, always
 re-fetched). Non-admins see exactly their existing profile/restricted-PIN/
 playback-preferences content, unchanged. Admins additionally get Server
-(hardware-transcode status, the telemetry line), Libraries and Users &
+(hardware-transcode status, the anti-telemetry assertion line — the
+static "no phone-home code exists" statement), Libraries and Users &
 Profiles (both restyled per the prototype, with real add-library/add-user
 sheets), Playback and Remote Access (the relevant registry keys surfaced
 inline), Plugins (metadata-provider keys) and Advanced Server (the full
@@ -350,7 +496,8 @@ pass, and a physical Tier-0 performance audit.
   reading the one value); the `loombre` CLI (`--version`, `--help`, `paths`,
   `doctor`); the tag-triggered release pipeline
   (`.github/workflows/release.yml`) building Linux/Windows/macOS
-  installers + a cosign-signed multi-arch Docker image, assembling and
+  installers + two cosign-signed multi-arch Docker images
+  (`loombre`, `loombre-web`), assembling and
   minisign-signing a release manifest + `SHA256SUMS`, and attesting build
   provenance for every artifact; the notify-only update check (`GET
   /system/update`, admin-only) — a zero-identifying-payload, minisign-

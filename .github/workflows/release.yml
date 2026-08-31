@@ -1,11 +1,12 @@
 name: Release
 
 # Tag-triggered ONLY (v* — e.g. v0.9.0). Deliberately no workflow_dispatch:
-# build-macos runs on macos-latest, which bills 10x (repo's GH Actions
-# minutes budget — see the MEMORY.md note on this); a manual-dispatch path
-# would make it too easy to burn that budget testing this workflow. Test
-# individual scripts locally (scripts/release/*.mjs all run standalone)
-# instead of dispatching the whole pipeline.
+# the tag-only trigger dates from the private-repo billed-minutes era
+# (STATE.md:5032 records that rationale and the 1624/2000-minute figure;
+# the repo is public as of 2026-07-26 — STATE.md:3944 — so runner minutes
+# are now unmetered) and stays tag-only: test individual scripts locally
+# (scripts/release/*.mjs all run standalone) instead of dispatching the
+# whole pipeline.
 on:
   push:
     tags:
@@ -78,8 +79,8 @@ jobs:
 
       # H5 (release-integrity guard against the placeholder minisign key):
       # runs right after the tag/version check above — the earliest
-      # possible fail-fast point, before any build-* job spends CI minutes
-      # (macos-latest alone bills 10x). Fails the tagged build outright if
+      # possible fail-fast point, before any build-* job spends runner
+      # time (build-macos is the slowest leg). Fails the tagged build outright if
       # any of the five checked locations (the three P4.9 trust roots plus
       # the generated packages/shared/src/update-public-key.ts plus
       # docs/install/linux.md) disagree with each other, OR if any of them
@@ -193,11 +194,7 @@ jobs:
           go-version: "1.26.5"
 
       - name: Build workspace
-        # LOOMBRE_REQUIRE_WG=1: a release artifact must never silently ship
-        # without the embedded WireGuard library (wg-native's build.mjs
-        # Go-missing skip is a local-dev convenience only) — before this,
-        # whether an installer carried the library depended on incidental
-        # runner state (2026-08-30 remote-access verification finding).
+        # LOOMBRE_REQUIRE_WG=1 rationale: see build-linux's Build workspace step above.
         env:
           LOOMBRE_REQUIRE_WG: "1"
         run: pnpm build
@@ -247,7 +244,7 @@ jobs:
           # asked for.
           #
           # The .msi is still BUILT (the bundle requires it) and still
-          # smoke-tested end-to-end by windows-msi-diag.yml, so re-publishing
+          # smoke-tested end-to-end by windows-installer-diag.yml, so re-publishing
           # it later is a one-line change here if a real managed-deployment
           # user ever appears.
           src="installers/windows/out/loombre-${LOOMBRE_VERSION}-windows-x64.exe"
@@ -267,8 +264,9 @@ jobs:
 
   # ───────────────────────────────────────────────────────────────────────
   # build-macos — calls lane I4's installers/macos/build-pkg.mjs.
-  # macos-latest bills 10x — this job only ever runs on a real `v*` tag
-  # push (workflow-level trigger above), never on workflow_dispatch.
+  # This job only ever runs on a real `v*` tag push (the workflow-level
+  # trigger above is tag-only — see this file's header), never on
+  # workflow_dispatch.
   # ───────────────────────────────────────────────────────────────────────
   build-macos:
     name: build-macos
@@ -299,11 +297,7 @@ jobs:
           go-version: "1.26.5"
 
       - name: Build workspace
-        # LOOMBRE_REQUIRE_WG=1: a release artifact must never silently ship
-        # without the embedded WireGuard library (wg-native's build.mjs
-        # Go-missing skip is a local-dev convenience only) — before this,
-        # whether an installer carried the library depended on incidental
-        # runner state (2026-08-30 remote-access verification finding).
+        # LOOMBRE_REQUIRE_WG=1 rationale: see build-linux's Build workspace step above.
         env:
           LOOMBRE_REQUIRE_WG: "1"
         run: pnpm build

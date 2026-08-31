@@ -24,8 +24,8 @@ statement is more useful than a fully-specified design.
 
 ## Does this fit Loombre's stated design goals?
 
-<!-- Worth a glance at docs/PLAN.md §1's product principles and pain-point
-     ledger before filing — Loombre is a peer competitor in the self-hosted
+<!-- Worth a glance at docs/PLAN.md §1's product principles and §2's
+     pain-point ledger before filing — Loombre is a peer competitor in the self-hosted
      media-server space with specific, deliberate architecture choices
      (contract-first, Postgres-only, no telemetry, restricted-content
      support, budget-hardware as a first-class target). A feature that cuts

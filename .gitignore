@@ -47,8 +47,11 @@ test-fixtures/stash/
 .claude/agents/
 .claude/agent-memory/
 
-# local evidence artifacts (screenshots, perf runs) — the handful of
-# tracked reports/* files are added deliberately via `git add -f`
+# local evidence artifacts (screenshots, perf runs). reports/ is ignored
+# WHOLESALE: the tracked reports/* files (292 as of 2026-08-30, mostly the
+# curated reports/state/** tier) were each added deliberately via
+# `git add -f` — and the flip side is that every NEW file under reports/
+# is invisible to `git status` until force-added the same way.
 reports/
 apps/worker/data/
 

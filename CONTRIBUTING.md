@@ -6,8 +6,9 @@ architecture invariants. This
 page distills the working rules that actually matter for a PR to land,
 plus the concrete commands to run before opening one. For a guided tour of
 the codebase itself, start with the
-[Developer Guide](docs/developer-guide/index.md) (`pnpm docs:build` builds
-the full rendered site locally; no hosted copy is published yet) — if a
+[Developer Guide](docs/developer-guide/index.md) (published at
+[www.loombre.com/docs](https://www.loombre.com/docs); `pnpm docs:build`
+builds the same rendered site locally) — if a
 term below is unfamiliar, the Developer Guide's
 [Glossary](docs/developer-guide/glossary.md) defines every piece of
 internal shorthand in one place.
@@ -140,9 +141,11 @@ consistent with `LICENSE-INTENT.md`'s contributor-provenance rule.
 
 - Fill out the PR template (`.github/PULL_REQUEST_TEMPLATE.md`) honestly
   — every box is something CI or a reviewer will actually check.
-- Keep `STATE.md` updated if your change represents a real decision or
-  closes an open item — it's the project's living record of what's been
-  decided and why, not just a status log.
+- Record a real decision in `reports/state/DECISIONS.md` (the project's
+  live, append-only decision ledger), and close any open item your change
+  settles in `reports/state/OPEN.md` — that tier is the living record of
+  what's been decided and why. The root `STATE.md` is the frozen
+  historical ledger; never append to it.
 - Small, focused PRs over large ones where the two are actually
   equivalent in risk — a contract change plus its conformance tests plus
   its SDK regeneration is normally one PR; unrelated refactors are not.

@@ -2,8 +2,8 @@
 
 Loombre is a self-hosted server that handles authentication, multi-user
 access control, and (optionally) restricted content — security issues here
-have real consequences for real households running real instances. We take
-reports seriously and will respond in good faith.
+have real consequences for real households running real instances. Reports
+are taken seriously and answered in good faith.
 
 ## Reporting a vulnerability
 
@@ -45,8 +45,9 @@ In scope: the server (`apps/server`), worker (`apps/worker`), web client
 Out of scope: vulnerabilities that require you to already have another
 user's password or PIN, denial-of-service reports against your own local
 instance with no broader implication, and issues in third-party
-dependencies that should be reported upstream instead (though we'd still
-like to know if Loombre's own usage of them makes an upstream issue worse).
+dependencies that should be reported upstream instead (though the
+maintainer would still like to know if Loombre's own usage of them makes
+an upstream issue worse).
 
 ## What to expect
 
