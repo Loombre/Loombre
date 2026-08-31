@@ -151,6 +151,11 @@ jobs:
         # attempted here).
         env:
           LOOMBRE_VERSION: ${{ needs.prepare.outputs.version }}
+          # Vendor-mirror fallback (scripts/fetch-ffmpeg.mjs): without a
+          # token an upstream 404 fails this leg outright instead of
+          # falling back to the ffmpeg-mirror release — same default
+          # Actions token the docker job already passes, no new privilege.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           node installers/linux/build-tarball.mjs --version "$LOOMBRE_VERSION" --out-dir dist/release
@@ -212,6 +217,8 @@ jobs:
         shell: bash
         env:
           LOOMBRE_VERSION: ${{ needs.prepare.outputs.version }}
+          # Vendor-mirror fallback — see build-tarball's note.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           node installers/windows/build-msi.mjs --version "$LOOMBRE_VERSION"
@@ -314,6 +321,11 @@ jobs:
         # follow-up, not attempted here). NO --out/--out-dir flag either —
         # output is ALWAYS installers/macos/dist/loombre-<version>-macos-
         # <arch>.pkg; the next step copies it into dist/release.
+        env:
+          # Vendor-mirror fallback — see build-tarball's note. (macOS pins
+          # evermeet/osxexperts, historically the stable pair, but the
+          # fallback should not be x64/arm64-leg-only.)
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           node installers/macos/build-pkg.mjs --arch=arm64

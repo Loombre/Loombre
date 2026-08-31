@@ -98,6 +98,12 @@ jobs:
 
       - name: build-msi.mjs (lane I3)
         shell: bash
+        env:
+          # Vendor-mirror fallback (scripts/fetch-ffmpeg.mjs): without a
+          # token an upstream 404 fails the fetch outright instead of
+          # falling back to the ffmpeg-mirror release — this is exactly
+          # how this workflow caught the 2026-08-30 BtbN deletion.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           LOOMBRE_VERSION="$(node -p "require('./package.json').version")"
