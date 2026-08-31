@@ -137,7 +137,10 @@ ever runs) is confined to whatever `_loombre` can reach — the app-data tree
 and the media library paths the operator configures, nothing else.
 
 ```
-KeepAlive          -> true (restart on crash; RunAtLoad true, boots at startup)
+KeepAlive          -> { SuccessfulExit: false, Crashed: true } — restart on
+                      crash ONLY; a clean (exit-0) stop is deliberately NOT
+                      auto-restarted, so `launchctl stop`/graceful shutdown
+                      sticks. (RunAtLoad true, boots at startup)
 StandardOutPath    -> /Library/Logs/Loombre/server.out.log (worker.out.log)
 StandardErrorPath  -> /Library/Logs/Loombre/server.err.log (worker.err.log)
 UserName           -> _loombre
@@ -226,17 +229,16 @@ the **contract's fixture values**, independent of this open question — see
 `installers/macos/menubar/`'s own notes for exactly what is and isn't
 proven without a live counterpart.
 
-## 5. Version stamping (interim, until lane I lands P4.11)
+## 5. Version stamping (P4.11 landed — root `package.json` is the single source)
 
-STATE.md P4.11 assigns single-source version stamping (root
-`package.json` → build-time injection → `/system/info` + `loombre --version`
-+ release manifest all reading one value) to lane I (release pipeline);
-it has not landed as of this lane's work. `build-pkg.mjs` reads the root
-`package.json`'s `"version"` field directly today (currently `0.0.1`) —
-the same file P4.11 designates as the eventual single source — so nothing
-here needs to change when lane I's build-time injection lands; this lane's
-reader just starts seeing the injected value instead of the raw
-`package.json` literal.
+STATE.md P4.11's single-source version stamping has landed as a gate
+step: `version-stamp` (`scripts/release/stamp-version.mjs`) derives the
+stamped version module the web/API "about"/update-check surfaces read,
+with the root `package.json` `"version"` field as the one authoritative
+source. `build-pkg.mjs` reads that same root `package.json` field
+directly — deliberately so: the installer consumes the single source
+itself rather than the derived stamp, so P4.11's landing changed nothing
+here and this build never needs to track the generated module.
 
 ## 6. Distribution — `pkgbuild` + `productbuild`, one payload root
 
@@ -363,73 +365,69 @@ either script is absent, but is not what a normal build exercises today.
   directory got provisioned — the out-of-the-box default now has its own
   local coverage, not just the CI release job's sudo-installer smoke.
 
-## 9. Two build-system discoveries, worked around here, flagged for lane I
+## 9. Two build-system discoveries — SUPERSEDED, both fixed upstream (Phase 4 Wave 3, lane STRUCT)
 
-Neither `packages/db` nor `packages/jobs` ships compiled `dist/` via its
-`package.json` `"exports"` — both point straight at `./src/index.ts`
+**Both discoveries below have since been fixed at the source**, exactly
+per the recommendation this section originally closed with:
+`packages/db` and `packages/jobs` now ship real compiled `dist/` builds —
+each has a `build` script and `package.json` `"exports"` pointing at
+`./dist/index.js` (`./dist/index.d.ts` for types), matching their
+siblings — and `ajv` is a real `apps/server` `dependencies` entry.
+`build-pkg.mjs` still executes its packaging-time accommodations (the
+direct `tsc` compiles, the deployed-exports patch pass, the ajv
+vendoring); against the fixed packages these are redundant but harmless —
+every mutation lands in the build's own staging/deploy copies, never in
+the source packages — and the exports-patch pass now takes its own
+documented "nothing to patch — upstream fixed" success branch. Trimming
+the now-redundant steps is the build-script owner's call, not this doc's.
+
+The two discoveries, as found at the time (historical record):
+
+Neither `packages/db` nor `packages/jobs` shipped compiled `dist/` via its
+`package.json` `"exports"` — both pointed straight at `./src/index.ts`
 (raw TypeScript), unlike every sibling package (`shared`, `playback-engine`,
-`sdk`), which point at `./dist/index.js`. Inside the monorepo this is
-invisible: pnpm workspace-links these as symlinks, and `tsx`/dev-mode Node
-transpiles TS on the fly. It breaks the instant a package is materialized
-as a *real*, non-symlinked `node_modules` entry — which is exactly what a
-production install is — because Node 22+/24 refuses to strip TypeScript
-syntax for any file whose resolved path sits inside a `node_modules`
-directory (a deliberate perf/security boundary, not a bug):
+`sdk`). Inside the monorepo this was invisible: pnpm workspace-links these
+as symlinks, and `tsx`/dev-mode Node transpiles TS on the fly. It broke
+the instant a package was materialized as a *real*, non-symlinked
+`node_modules` entry — which is exactly what a production install is —
+because Node 22+/24 refuses to strip TypeScript syntax for any file whose
+resolved path sits inside a `node_modules` directory (a deliberate
+perf/security boundary, not a bug):
 `ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`.
 
 Separately, `apps/server`'s `ajv` (used at RUNTIME by
 `common/device-profile-validator.js` for P2.3's DeviceProfile validation)
-is declared under `devDependencies`, not `dependencies` — invisible in dev
-(all deps are installed regardless of category) and invisible in every
-existing test suite, but a `--prod`-only install/deploy omits it entirely,
-producing `ERR_MODULE_NOT_FOUND` for `ajv` at server boot.
+was declared under `devDependencies`, not `dependencies` — invisible in
+dev (all deps are installed regardless of category) and invisible in every
+existing test suite, but a `--prod`-only install/deploy omitted it
+entirely, producing `ERR_MODULE_NOT_FOUND` for `ajv` at server boot.
+Neither was this lane's to fix at the time (moving a dep between
+categories touches `pnpm-lock.yaml`, frozen during that wave), so
+`build-pkg.mjs` worked around both scoped entirely to its own build
+output — the accommodations described above.
 
-**Neither is this lane's to fix** (`packages/db`/`packages/jobs`/
-`apps/server` are outside `installers/macos/**`, and moving a dep between
-`dependencies`/`devDependencies` touches `pnpm-lock.yaml` — LOCKFILE
-FROZEN this wave). `build-pkg.mjs` works around both, scoped entirely to
-its own build output:
-1. Runs a plain `tsc -p packages/{db,jobs}/tsconfig.json` before deploying
-   (both already have `outDir: dist` configured — just no `build` script
-   wired to it at the package level) — populates the *already-gitignored*
-   `dist/` those packages' own `tsconfig.json` targets, then rewrites the
-   **deployed copy's** `package.json` `"exports"` to point at `dist/`.
-2. Vendors `ajv` (+ its 4 resolved transitive deps, byte-identical to the
-   ones already resolved in `pnpm-lock.yaml` for `apps/server`'s
-   `devDependencies` entry — not a fresh/unpinned fetch) into the server
-   deploy's `node_modules`.
+## 10. A third build-system discovery: the lockfile-freeze workaround — SUPERSEDED (freeze lifted, real dependency landed)
 
-**Real recommendation for lane I / whoever owns the release pipeline**:
-promote `ajv` to `apps/server`'s `dependencies`, and give `packages/db` +
-`packages/jobs` a `build` script + dist-pointing `exports` matching their
-siblings — small, mechanical, low-risk fixes that make every platform
-lane's packaging (not just macOS) simpler, since none of this is
-macOS-specific.
-
-## 10. A third build-system discovery: a documented lockfile-freeze workaround needs packaging awareness
-
-`apps/server/src/common/update-check/release-manifest-import.ts` (landed
-mid-lane, lane I) reaches `@loombre/release-manifest` (FROZEN, Wave 0) by a
-hardcoded relative import (`../../../../../packages/release-manifest/dist/
-index.js`, 5 levels up from `apps/server/{src,dist}/common/update-check/`
-to repo root) rather than a normal workspace `dependencies` entry — its own
-header explains why: this wave's LOCKFILE FROZEN rule (lane F is sole
-lockfile owner) means adding a real `"@loombre/release-manifest":
-"workspace:*"` dependency isn't available to lane I right now, and the
-file's header already names the correct follow-up once the freeze lifts
-(add the dependency, delete this file). This is a well-reasoned, deliberate
-interim tradeoff, not a bug — but it has a real packaging-time
-consequence: a `pnpm deploy` output does not preserve the monorepo's
-directory depth, so the relative import silently resolves to nowhere once
-deployed (`ERR_MODULE_NOT_FOUND` at server boot, caught by this lane's own
-smoke test). `build-pkg.mjs` stages `packages/release-manifest/dist` at
-the exact depth that import expects — one level ABOVE the version dir,
-i.e. `/opt/loombre/packages/release-manifest/dist/`, NOT inside
-`/opt/loombre/<version>/` — purely a packaging-side accommodation, no
-apps/server source touched. Flagged for lane I as a heads-up: whichever
-lane packages Linux/Windows will hit the identical resolution failure and
-need the same accommodation (or, better, land the real dependency once the
-freeze lifts, which removes the need for any of this).
+**The follow-up this section originally called for has happened**: the
+lockfile freeze lifted, `"@loombre/release-manifest": "workspace:*"` is a
+real `apps/server` `dependencies` entry, and the interim
+`release-manifest-import.ts` shim was deleted —
+`apps/server/src/common/update-check/` now imports
+`@loombre/release-manifest` as a normal bare specifier (see `config.ts`).
+Historical record of what the shim was: during the wave whose LOCKFILE
+FROZEN rule made a lockfile change unavailable, a hardcoded relative
+import (`../../../../../packages/release-manifest/dist/index.js`, 5
+levels up to repo root) stood in for the dependency, and because a
+`pnpm deploy` output does not preserve the monorepo's directory depth,
+that import silently resolved to nowhere once deployed
+(`ERR_MODULE_NOT_FOUND` at server boot, caught by this lane's own smoke
+test). `build-pkg.mjs` accommodated it by staging
+`packages/release-manifest/dist` one level ABOVE the version dir
+(`/opt/loombre/packages/release-manifest/dist/`, NOT inside
+`/opt/loombre/<version>/`). That staging step still runs today; with the
+real dependency in place it is redundant but harmless (the normal
+`pnpm deploy` dependency resolution now carries the package), and
+retiring it is the build-script owner's call.
 
 **Sharp footgun, encountered and worked around identically**: while
 patching a hardlinked `pnpm deploy` output file in place (a `package.json`
@@ -489,8 +487,8 @@ own Node service — and this installer now completes its half:
   `loombre.env` — the seeded file documents both.
 - **Upgrade/uninstall**: `preinstall` boots out all three labels;
   `postinstall` bootstraps all three; the homebrew cask's
-  `uninstall launchctl:` stanza must list `com.loombre.web` too (cask is
-  outside this audit's file ownership — flagged in its report).
+  `uninstall launchctl:` stanza lists all three labels too
+  (`com.loombre.web` included — see `homebrew/loombre.rb`).
 
 ## 12. Uninstall script + the postinstall UID off-by-one (rc.6 uninstall audit)
 

@@ -21,9 +21,11 @@ admin screens, one level below where this guide operates.
 - **[Users & permissions](users-permissions.md)** — adding people, controlling what each of them can see, and resetting a forgotten password.
 - **[Inviting people](inviting-users.md)** — a one-time link that lets someone join themselves, no email required.
 - **[Mail](mail.md)** — the optional, provider-neutral setup that lets Loombre send those links and password resets by email.
+- **[Remote access](remote-access.md)** — the wizard for reaching your Loombre from outside your own network (Loombre Remote, Tunnel, or Direct).
 - **[Connecting Stash](connecting-stash.md)** — reading metadata from a Stash database into a restricted library, without ever writing back to it.
 - **[Capability report](capability-report.md)** — what Loombre knows about your hardware.
 - **[Jobs dashboard](jobs-dashboard.md)** — watching background work as it happens.
+- **[Sessions](sessions.md)** — who's watching right now, and why a stream is (or isn't) converting.
 - **[Restart & shut down](server-power.md)** — the two Power buttons on the Server settings tab, and what each one does and doesn't stop.
 - **[System notices](system-notices.md)** — a message every user sees live: restart warnings with a countdown, maintenance windows, or anything else worth announcing.
 - **[Plugins](plugins.md)** — connecting outside programs that look up media information or watch your server's activity feed, and exactly what each one can see.

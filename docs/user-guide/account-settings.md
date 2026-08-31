@@ -6,7 +6,7 @@
      restricted as the two operations that ask for it — apps/server/src/
      catalog/users.controller.ts's updateMe, apps/server/src/session/
      users-me.controller.ts's putRestricted. F3 session revocation on
-     password change — packages/db/src/query/identity.ts's
+     password change — packages/db/src/query/admin.ts's
      revokeOtherRefreshTokensForUser, session.revoked-by-password-change
      event. F5 email-collision out-of-band signal, mail-configured
      installs only, at most one notice per address per day — apps/server/
@@ -58,9 +58,11 @@ If you ever try to add an email address that's already attached to a
 different account here, Loombre doesn't tell you that — it just quietly
 keeps your account as it was, with nothing changed. If that ever happens
 to you the other way around — someone else tries to add your own address
-to a different account — you may get a short notice about it, at most
+to a different account — you may get a short email about it, at most
 once a day, so you know; there's nothing you need to do, and your account
-is completely unaffected either way.
+is completely unaffected either way. (That email only goes out if your
+household's Loombre has email sending turned on at all — the same way
+email-based password recovery works on this page.)
 
 ## Restricted content
 

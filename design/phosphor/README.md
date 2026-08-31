@@ -8,7 +8,7 @@ music, search, admin dashboard, the schema-driven settings registry, plugins/met
 providers, restricted-profile locking, and account management — in **two layouts**: a
 desktop sidebar app and a mobile-Safari phone experience.
 
-Target codebase: **`Loombre/Loombre`**, `apps/web` (Next.js 15.5 / React 19 / TypeScript,
+Target codebase: **`Loombre/Loombre`**, `apps/web` (Next.js 16 / React 19 / TypeScript,
 CSS Modules + `tokens.css` custom properties, `lucide-react` icons, no Tailwind).
 
 ---
@@ -81,7 +81,10 @@ decision 1 — those sections describe structure and are correct as written.
 ## Fidelity
 
 **High-fidelity.** Colors, type sizes, spacing, radii, motion, copy, and interaction states
-are all final and intentional. Recreate them precisely. Content values (titles, file paths, percentages, timestamps) are **placeholder
+are all final and intentional. Recreate them precisely. One amendment overrides the
+prototype: its subtle/hint-on-`--mono-*` label pairings (~285 across the canvas) are
+**superseded** by the LD-14/AUD-A4v3-003 rule in *Text contrast* below — recreate those
+labels at `--color-text-muted`, never the prototype's `#61666E`/`#4A4E55`. Content values (titles, file paths, percentages, timestamps) are **placeholder
 fixtures** — wire them to real API data; do not ship the fixture strings.
 
 ---
@@ -123,7 +126,9 @@ and reasonably reads a column, while `flex-wrap: wrap` is still in force from a 
 a hundred lines up. State the whole axis and the block becomes self-describing — what you
 read is what the phone gets.
 
-This is not hypothetical. `RegistryFilterBar.module.css`'s mobile block set
+This is not hypothetical. `RegistryFilterBar.module.css`'s mobile block (the component was
+later removed outright in the Settings › Advanced rework, `bcb64bb` — the lesson and this
+worked example still govern) set
 `flex-direction: column` and inherited `flex-wrap: wrap` from its desktop rule. A *wrapped*
 column container sizes its flex lines to the items' max-content width, so the nowrap pill
 strip blew the line out and both it and the stretched search field rendered ~1699px wide —
@@ -202,10 +207,12 @@ What this obliges you to do instead:
 - **Never make these tiers the only signal.** Anything encoded in faint grey must also be
   carried by position, label, or icon. Audit the places where they carry meaning — the
   registry `DEFAULT` / `PINNABLE` footers and the `SORTED BY DATE ADDED` readouts are the
-  main ones. NOT re-verified against the `--mono-*` correction above by this pass (these
-  components live outside this pass's file scope) — whoever owns them should confirm neither
-  actually renders on the `--mono-*` scale before treating this bullet as still fully closed.
-- **Expect this in an accessibility audit.** Lighthouse runs in CI (`pnpm lighthouse`); its
+  main ones. CLOSED: `apps/web/src/components/ld14-mono-scale-conformance.test.ts` settles
+  the re-verification question by construction — it fails any component stylesheet block
+  that pairs a `--mono-*` font-size with `subtle`/`hint`, so neither footer can render the
+  forbidden pairing. (Known residual: that test's scan root covers `src/components` only,
+  not `src/app`.)
+- **Expect this in an accessibility audit.** Lighthouse runs in CI (`pnpm perf:lighthouse`); its
   contrast check will flag these. Decide up front whether to annotate the exception or
   accept a lowered a11y score, and don't let the failure block the pipeline silently.
 
@@ -214,6 +221,15 @@ If the product later needs to clear AA, the smallest change is `#61666E` → `#7
 near-identical values — which is exactly why it was not taken now.
 
 ### Proposed `tokens.css` (dark / default)
+
+The block below was the handoff proposal, refreshed to match the shipped
+`apps/web/src/styles/tokens.css` where the two had diverged (UD-6/UD-7 era
+amendments, each commented inline): `--pulse-duration` added; the accent
+hover/active/focus states derived via `color-mix()` instead of flat
+literals; `--control-height`/`--control-height-touch` added;
+`--leading-display` amended `1` → `1.05`; and `--mono-sm`/`--mono-xs`
+defined-but-never-painted (lint-banned). Where they differ, the shipped
+file wins.
 
 ```css
 :root {
@@ -232,6 +248,10 @@ near-identical values — which is exactly why it was not taken now.
   --motion-slow: 400ms;
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  /* Shipped addition: shared ambient pulse for live status dots and the
+     now-playing glow — an ambient loop, deliberately NOT a --motion-*
+     interaction tier. */
+  --pulse-duration: 1.8s;
 
   /* ── Phosphor: cool near-black, white-alpha surfaces ── */
   --color-bg: #0b0c0f;
@@ -264,18 +284,28 @@ near-identical values — which is exactly why it was not taken now.
 
   /* ── Amber accent ── */
   --color-accent: #ffb454;
-  --color-accent-hover: #ffc272;
-  --color-accent-active: #e89f42;
+  /* Shipped amendment: every derived accent state is color-mix()'d from
+     --color-accent (accent became a user preference with four options —
+     per-accent literals are forbidden). The prototype's flat literals
+     were #ffc272 (hover/focus) and #e89f42 (active). */
+  --color-accent-hover: color-mix(in srgb, var(--color-accent) 82%, white);
+  --color-accent-active: color-mix(in srgb, var(--color-accent) 89%, black);
   --color-accent-subtle: color-mix(in srgb, var(--color-accent) 16%, transparent);
   --color-accent-tint: color-mix(in srgb, var(--color-accent) 12%, transparent);
   --color-accent-border: color-mix(in srgb, var(--color-accent) 40%, transparent);
   --color-accent-text: #0c0d10;   /* text ON accent — dark, not white */
-  --color-focus: #ffc272;
+  --color-focus: var(--color-accent-hover);
 
   --color-danger: #e2453a;        /* errors, destructive, unmatched files */
   --color-warning: #e0a548;       /* restricted, restart-pending, cautions */
   --color-success: #5cb87a;
   --color-dominant-fallback: #1c2128;
+
+  /* Shipped addition: pointer-branched control sizing — 36px
+     fine-pointer, 44px coarse/touch. Use these, never hardcoded 36/44px
+     literals; branch on POINTER, not viewport width. */
+  --control-height: 36px;
+  --control-height-touch: 44px;
 
   /* ── Type ── */
   --font-sans: "Archivo", system-ui, -apple-system, sans-serif;
@@ -306,15 +336,21 @@ near-identical values — which is exactly why it was not taken now.
   --text-sm: 13px;
   --text-xs: 12px;
 
-  /* Mono scale — labels, counts, paths, log lines */
+  /* Mono scale — labels, counts, paths, log lines. Shipped caveat:
+     apps/web paints ONLY --mono-lg/--mono-md; --mono-sm and --mono-xs
+     are defined but never painted, and .stylelintrc.json's font-size
+     allowed-list bans them from component CSS. Do not design new work
+     against the two smallest tiers. */
   --mono-lg: 11px;
   --mono-md: 10px;
-  --mono-sm: 9.5px;
-  --mono-xs: 8.5px;
+  --mono-sm: 9.5px;   /* never painted — lint-banned */
+  --mono-xs: 8.5px;   /* never painted — lint-banned */
   --track-mono: 0.1em;    /* default label tracking */
   --track-mono-wide: 0.16em;  /* section eyebrows */
 
-  --leading-display: 1;
+  --leading-display: 1.05;  /* shipped amendment from the prototype's 1 —
+                               the smallest value that avoids glyph
+                               clipping while keeping the single-line look */
   --leading-tight: 1.15;
   --leading-normal: 1.45;
   --leading-dense: 1.55;  /* mono blocks, log tails */
@@ -422,7 +458,12 @@ Phosphor uses two families:
 - `IBM Plex Mono` — 400/500/600, used for **all** metadata, labels, counts, paths, log
   lines, and status chips, typically uppercase with `letter-spacing: .06em–.18em`.
 
-Desktop scale: 52/26/21/19/14.5/13.5/13/12/10.5 px, mono 8–11 px.
+Desktop scale: 52/26/21/19/14.5/13.5/13/12/10.5 px, mono 8–11 px. The desktop list omits
+three more heading sizes the prototype also uses on detail screens — **40px** (Home
+featured-banner title; Person `<h1>`), **46px** (Music album `<h1>`) and **54px**
+(Series-detail `<h1>`). Map or clamp them deliberately when recreating (the shipped app
+renders 46/54 at `--text-display` (52px) and documents an explicit 40px escape hatch) —
+do not let them disappear silently.
 Mobile scale: 31/23/21/19/16/15.5/15/14.5/14/13.5/13/12.5/11.5 px, mono 8–11.5 px.
 Line heights: `.98`–`1.15` display, `1.45` body, `1.5`–`1.7` dense mono blocks.
 `text-wrap: pretty` on all multi-line body copy.
@@ -434,7 +475,12 @@ with intermediate values rounded to the nearest step. Desktop page padding `26px
 content padding `14px 16px 26px`.
 
 **Radii** — desktop 6, 8, 10, 12, 14, 18, 999px; mobile 9, 10, 11, 12, 13, 14, 16, 18, 20, 999px;
-phone bezel 46px. Map: pills/chips/inputs/buttons → `--radius-pill`; cards/dialogs/sheets →
+phone bezel 46px. (`999px` is the prototype's verbatim pill value; the shipped `tokens.css`
+deliberately rounds it up to `--radius-pill: 9999px` — same rendered result, not a typo,
+so do not "correct" either file to match the other. The prototype also uses 1/2/3/4/5/7px
+micro-radii on hairline details that appear in neither list above — map each to the
+nearest token, or add a token, when recreating; stylelint forbids literal radii.) Map:
+pills/chips/inputs/buttons → `--radius-pill`; cards/dialogs/sheets →
 `--radius-lg`; posters/thumbnails/tiles → `--radius-md`; nested chips and inline blocks →
 `--radius-sm`; avatars and icon buttons → `--radius-full`.
 
@@ -446,7 +492,8 @@ phone bezel 46px. Map: pills/chips/inputs/buttons → `--radius-pill`; cards/dia
 | `lmUp` | `.3s` | settings pane switch |
 | `lmUp` | `.22s` | modals, bottom sheets |
 | `lmPulse` | `3s` / `1.6s` infinite — `opacity 1→.3→1` | live status dots |
-| `lmEq` | `1s ease-in-out` infinite, staggered `0 / .25s / .5s` — `scaleY(.3→1)` | now-playing equalizer bars |
+| `lmEq` | `.8s ease-in-out` infinite, staggered `0 / .2s / .4s` — `scaleY(.3→1)` | music track-row equalizer (the variant that shipped — `ListRow.module.css`) |
+| `lmEq` | `1s ease-in-out` infinite, staggered `0 / .25s / .5s` — `scaleY(.3→1)` | queue-drawer now-playing indicator |
 | `lmSpin` | `linear` infinite | scan spinners |
 | transitions | `.15s` / `.2s` / `.25s` `cubic-bezier(.22,1,.36,1)` | hover, toggles, layout shifts |
 
@@ -486,9 +533,9 @@ route today.
 | Browse | `browse` | `/browse` | ✅ `app/browse/` |
 | Movie detail | `movie` | `/items/[id]` | ✅ `app/items/` |
 | Series detail | `series` | `/items/[id]` | ✅ `app/items/` |
-| Person | `person` | `/people/[id]` | **NEW** |
-| Watchlist | `watchlist` | `/watchlist` | **NEW** |
-| Restricted zone | `restricted` | `/restricted` | **NEW** |
+| Person | `person` | `/people/[id]` | ✅ `app/people/` |
+| Watchlist | `watchlist` | `/watchlist` | ✅ `app/watchlist/` |
+| Restricted zone | `restricted` | `/restricted` | ✅ `app/restricted/` |
 | Search | `search` | `/search` | ✅ `app/search/` |
 | Music / album | `music` | `/items/[id]` (album) | partial — `components/music/` |
 | Player | `player` | `/watch/[id]` | ✅ `app/watch/` |
@@ -500,7 +547,8 @@ route today.
 | Setup wizard (7 steps) | `onboarding` | `/setup` | ✅ `app/setup/` |
 | TV / 10-foot | `tv` | — | **NEW**, exploratory — confirm scope before building |
 
-**Shell.** 210px fixed sidebar: wordmark + `MEDIA SERVER · V0.9.2`; a `LIBRARY` group
+**Shell.** 210px fixed sidebar: wordmark + `MEDIA SERVER · Vx.y.z` (placeholder digits —
+the shipped sidebar renders the live app version, never a literal); a `LIBRARY` group
 (Home, Browse, Movies + count, TV Shows + count, Watchlist + count, Restricted + `PIN`
 badge/count, Search — **no Music entry**: the music library is reached through Browse's
 `Music` pill and Home's album rail, and the album/queue screen keeps its route); a `SYSTEM` group (Dashboard + live `SCAN`
@@ -584,8 +632,10 @@ badge, title, runtime.
 row, then a track table. Queue drawer supports reorder-up and remove; the current track
 cannot be removed; an animated 3-bar equalizer marks it.
 
-**Player.** Full-bleed scene, scanlines, vignette. Title, sub, transport (back-15 / play-pause /
-forward-30 with numerals in the glyphs), a click-to-seek scrubber, and capability chips
+**Player.** Full-bleed scene, scanlines, vignette. Title, sub, transport (the prototype
+draws back-15 / play-pause / forward-30 with numerals in the glyphs — AMENDED: the shipped
+transport is a symmetric **±10s** seek, per the LD-12(c) owner fix; recreate ±10 with
+matching numerals, not the prototype's 15/30), a click-to-seek scrubber, and capability chips
 (`DIRECT PLAY`, `SUBTITLES OFF`, `AIRPLAY`, `QUEUE n`). A signal/stats overlay toggles.
 
 **Playback unavailable.** Refusal screen: what was attempted, an itemized reason list
@@ -593,7 +643,7 @@ forward-30 with numerals in the glyphs), a click-to-seek scrubber, and capabilit
 fallback action (`Play the 1080p SDR version`). The design principle here is explicit —
 **never silently downgrade quality; always state the reason and offer the choice.**
 
-**Admin dashboard.** Four health cards (CPU with a 10-segment bar, GPU/NVENC + session
+**Admin dashboard.** Four health cards (CPU with a 10-segment bar, GPU/VideoToolbox + session
 count, memory, storage pool). Left column: `ACTIVE STREAMS · 3` (mode badge DIRECT PLAY /
 TRANSCODE, item, user · device, progress, detail, and a `WHY:` band explaining any
 transcode) and `LIBRARIES` (name, kind, item count, state, last scan, `SCAN NOW` / `PAUSE`,
@@ -870,7 +920,14 @@ implement it.
 
 ---
 
-## Suggested implementation order
+## Suggested implementation order — COMPLETED
+
+Every step below has shipped in `apps/web`: the retheme is live
+(`apps/web/src/styles/tokens.css:11` names this README as THE spec — U1 in
+root `STATE.md`), the labelled sidebar replaced `NavRail`, the light theme
+and `ThemeToggle` are gone, and steps 3–11's screens and primitives all
+have shipped implementations. The list is kept as the historical guide it
+was (its step numbers are cited elsewhere in this document):
 
 1. **Retheme `tokens.css`** to the block above, self-host both fonts, update `csp.ts`, and
    sweep every existing CSS module for stacked-alpha and accent-text-colour regressions.

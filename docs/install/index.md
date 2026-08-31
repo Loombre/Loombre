@@ -38,7 +38,7 @@ Pick the tier that matches your hardware. All tiers are first-class deployments
 
 ### Tier-2 (dedicated server with discrete GPU)
 
-**Reference:** Server with dedicated GPU (RTX 2060 Ti class or better), 16+ GB RAM
+**Reference:** Server with dedicated GPU (RTX 3060 Ti class or better), 16+ GB RAM
 
 **Commitment:** Worker scale-out; 10+ simultaneous transcodes
 
@@ -48,7 +48,7 @@ Pick the tier that matches your hardware. All tiers are first-class deployments
 
 Every installer ships **unsigned** — no Apple notarization, no Windows Authenticode code-signing certificate. This is a **deliberate choice, not an oversight**.
 
-Signing certificates cost $99–$299 per year, per platform. This project has no revenue and reports no telemetry (an architecture invariant; see CLAUDE.md). The fundamental choice: spend money we don't have on certificates, or use the open-source trust model instead.
+Signing certificates cost $99–$299 per year, per platform. This project has no revenue and reports no telemetry of any kind — an architecture invariant, not a setting. The fundamental choice: spend money the project doesn't have on certificates, or use the open-source trust model instead.
 
 **The open-source trust model:** you verify a cryptographic checksum and signature yourself, rather than delegating that judgment to a certificate authority. This is both more honest (you make the decision personally) and more verifiable (the release manager's signature is auditable; a certificate authority's reputation system is not).
 
@@ -96,6 +96,10 @@ For platform-specific issues, see:
 - [Windows troubleshooting](windows.md#troubleshooting)
 - [macOS troubleshooting](macos.md#troubleshooting)
 - [Docker troubleshooting](docker.md#troubleshooting)
+
+For anything the platform sections don't cover — cross-platform issues,
+known limitations, and how to report a problem well — see the dedicated
+[Troubleshooting page](troubleshooting.md).
 
 ---
 

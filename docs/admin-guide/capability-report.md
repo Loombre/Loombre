@@ -1,19 +1,23 @@
 # Capability report
 
-<!-- Sourcing: System panel's six cards (SystemInfo, CapabilityReport,
+<!-- Sourcing: the System section's six cards (SystemInfo, CapabilityReport,
      update notice, provider-keys notice, crash files, logs tail) —
-     apps/web/src/app/admin/
-     system/page.tsx header comment. Capability report shape (backends x
-     decode/encode/tone-mapping matrix, probe age, hardware-conversion
-     software version identifier) and "null envelope rendered honestly"
-     (no probe run yet is shown as such, not hidden or faked) — same file,
-     CapabilityReport card description. -->
+     apps/web/src/app/admin/page.tsx header comment (D-5 IA restructure:
+     the former /admin/system page was merged into the admin Dashboard as
+     its "System" section, composed from apps/web/src/components/admin/
+     system/*.tsx; /admin/system is now a redirect back to /admin).
+     Capability report shape (backends x decode/encode/tone-mapping
+     matrix, probe age, hardware-conversion software version identifier)
+     and "null envelope rendered honestly" (no probe run yet is shown as
+     such, not hidden or faked) — the CapabilityReport card's own header
+     comment. -->
 
-The System screen tells you what Loombre has figured out about the machine
-it's running on — useful when you're trying to understand why playback
-behaves a certain way, or before reporting a problem.
+The **System** section, near the bottom of the admin **Dashboard**, tells
+you what Loombre has figured out about the machine it's running on —
+useful when you're trying to understand why playback behaves a certain
+way, or before reporting a problem.
 
-[SCREENSHOT: System screen overview showing all cards]
+[SCREENSHOT: The Dashboard's System section showing all cards]
 
 ## System (the "System" card)
 

@@ -84,7 +84,11 @@ noted inline:
    under different prefixes by construction.
 7. **`GET /probe/{token}` — the reachability-proof arrival route — goes
    to the API.** The remote-access wizard's "prove it works" step mints a
-   one-time link at `https://<your hostname>/probe/{token}` and has you
+   one-time link at `<your hostname>/probe/{token}` — its scheme follows
+   the public web address setting's own scheme (`https` only as the
+   fallback when that setting is empty), so the "LAN-only, no TLS" path
+   below gets a reachable `http://` link rather than a dead `https://`
+   one — and has you
    open it from a phone on cellular data; the API serves the arrival page
    itself, at the root (it is the one public remote-access operation —
    deliberately not under `/v1`). Every recipe below routes it; a setup

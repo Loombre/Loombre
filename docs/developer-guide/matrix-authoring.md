@@ -1,15 +1,16 @@
 # Authoring a matrix case
 
 <!-- Sourcing: matrix case files as individual YAML files in
-     packages/playback-engine/matrix/*.yaml (512 files, verified by count,
-     matching matrix/burnup.json's entry count); case shape (name, why,
-     input, expect) from an existing case file
+     packages/playback-engine/matrix/*.yaml (one per case, matching
+     matrix/burnup.json's entry count — the manifest and the files on
+     disk are the live count; no frozen total is quoted here on purpose);
+     case shape (name, why, input, expect) from an existing case file
      (matrix/013-mp4-direct-play-hevc-sdr-main10.yaml); matrix-meta.spec.ts
      (case-count === burnup.json total, on-disk filenames === manifest
      entries, no unlisted/phantom entries); matrix.spec.ts (re-asserts each
      case's actual plan() output against burnup.json's recorded status —
      the regression law); docs/PLAYBACK.md §10 ("Phase 3 exit >= 500
-     cases" — 506 actual, prose target already exceeded); CI step
+     cases" — floor long since exceeded); CI step
      "playback matrix burn-up" (.github/workflows/ci.yml) running
      `pnpm test:matrix`. -->
 
@@ -20,8 +21,9 @@ practice.
 ## What the matrix is
 
 `packages/playback-engine/matrix/` holds one YAML file per test case —
-currently 512 of them (docs/PLAYBACK.md §10 sets a Phase 3 exit bar of
-"≥ 500 cases"; the matrix already exceeds it) — plus a manifest file,
+well past the 500 that docs/PLAYBACK.md §10 sets as the Phase 3 exit bar
+(`burnup.json` and the files on disk are the live count; this page quotes
+no frozen number, because the matrix only grows) — plus a manifest file,
 `burnup.json`, that records every case's name and current status.
 
 A case looks like this (trimmed from

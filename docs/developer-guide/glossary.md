@@ -16,9 +16,12 @@ defined once here rather than re-explained on every page.
 
 The mandatory filtering layer every catalog read passes through —
 `packages/db`'s query functions take a `ViewerContext` (user id, allowed
-library ids, whether the viewer has passed restricted-content clearance)
-and append a filtering predicate that makes an unfiltered query a
-compile-time impossibility, not a convention. See
+library ids, whether the viewer has passed restricted-content clearance,
+and the requesting surface — `'general'` or `'restricted'`) and append a
+filtering predicate that makes an unfiltered query a compile-time
+impossibility, not a convention. Restricted rows pass the predicate only
+when clearance holds AND the surface is `'restricted'` — never on
+clearance alone (docs/PLAN.md §6.4 as amended 2026-08-30). See
 [Catalog, query guard & restricted content](architecture/catalog-query-guard.md).
 
 ### Outbox (domain event outbox)

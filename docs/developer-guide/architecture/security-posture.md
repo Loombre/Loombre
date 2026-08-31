@@ -6,9 +6,10 @@
      anomaly-log.service.ts (CURRENT_PASSWORD_FAILURE kind),
      apps/server/src/gateway/current-password-invalid.exception.ts,
      packages/shared/src/settings-registry.ts's rateLimit.currentPassword.
-     F3 revoke-on-password-change — packages/db/src/query/identity.ts's
-     revokeOtherRefreshTokensForUser / revokeAllRefreshTokensForUser,
-     packages/db/src/query/admin.ts's updateUserSelf, event schema
+     F3 revoke-on-password-change — packages/db/src/query/admin.ts's
+     revokeOtherRefreshTokensForUser (module-private there) and
+     updateUserSelf, packages/db/src/query/identity.ts's
+     revokeAllRefreshTokensForUser, event schema
      session.revoked-by-password-change (ADMIN_ONLY). F5 email-collision
      signal — packages/db/src/query/admin.ts's updateUserSelf collision
      no-op, packages/db/src/query/invites.ts's claimInviteAndEmit,
@@ -101,7 +102,7 @@ A successful self-service password change (the `password` member of
 `PATCH /users/me`, applied via `updateUserSelf`,
 `packages/db/src/query/admin.ts`) revokes every **other** device's
 refresh token in the same transaction as the password-hash write —
-`revokeOtherRefreshTokensForUser` (`packages/db/src/query/identity.ts`),
+`revokeOtherRefreshTokensForUser` (`packages/db/src/query/admin.ts`),
 keyed off the caller's own device id from their access-token claim, so
 the session that performed the change survives. An outbox event,
 `session.revoked-by-password-change` (`ADMIN_ONLY` delivery), carries

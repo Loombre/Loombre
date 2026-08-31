@@ -3,9 +3,12 @@
 <!-- Sourcing: the five-gate model (capability, age, opt-in, library grant,
      session unlock) — docs/PLAN.md §6.4. Unlock re-verified on every
      request; unlock never persists across logins — docs/PLAN.md §6.4 gate
-     5. Metadata isolation (restricted items invisible in search, browsing,
-     and notifications without clearance) — docs/PLAN.md §6.4 "Metadata
-     isolation" paragraph. -->
+     5. Surface scoping (restricted rows reachable only through the
+     dedicated zone; general search/browse/home never include them, even
+     for an unlocked viewer) — docs/PLAN.md §6.4 "Surface scoping"
+     amendment 2026-08-30 + packages/db/src/query/guard.ts
+     restrictedRowsVisible. Metadata isolation — docs/PLAN.md §6.4
+     "Metadata isolation" paragraph. -->
 
 Some Loombre libraries can be marked as restricted — set up by whoever runs
 your Loombre for content that shouldn't be visible to everyone in the
@@ -15,8 +18,11 @@ it works.
 
 ## What "restricted" means
 
-A restricted item stays completely invisible to you — not in search, not
-on the home screen, nowhere — until every one of the following is true:
+Restricted items never appear in your regular library at all — not in
+search, not on the home screen, not in "recently added" — whether locked
+or unlocked. They live entirely in their own separate area, the
+[restricted zone](restricted-content-browsing.md), and even that zone
+stays closed to you until every one of the following is true:
 
 1. **Restricted content is turned on for your Loombre at all.** It's off
    by default. Ask whoever set up your Loombre if you're not sure.
@@ -52,9 +58,11 @@ new one yourself the next time you opt in.
 Restricted content is designed to be genuinely private, not just hidden
 behind a click:
 
-- It never appears in search results, browsing, or "recently added" for
-  anyone who hasn't passed every step above — including other people on
-  the same Loombre.
+- It never appears in your everyday search results, browsing, or
+  "recently added" — for anyone, ever. Unlocking doesn't mix restricted
+  content into your regular library; it only opens the separate
+  [restricted zone](restricted-content-browsing.md), which is kept apart
+  from the rest of your library the whole time.
 - Nothing about a restricted item — its title, its image, even that it
   exists — is sent to a device that hasn't unlocked it.
 

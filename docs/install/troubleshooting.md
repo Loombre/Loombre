@@ -1,7 +1,7 @@
 # Troubleshooting Loombre installation
 
-This page covers real issues discovered during Phase 4 development and 
-testing. All solutions have been verified against the actual codebase.
+This page covers real issues discovered during Phase 4 development and
+testing.
 
 ## General issues
 
@@ -30,7 +30,17 @@ Get-NetTCPConnection -LocalPort 3001 | Select-Object -Property State, OwningProc
 
 **Fix:**
 - Stop the process using port 3001, or
-- Change the port: set `LOOMBRE_PORT` to a different port (e.g., 3002) and restart
+- Change the port — the mechanism depends on your install path:
+  - **Docker:** set `LOOMBRE_PORT` in `installers/docker/loombre.env`
+    (the compose file maps it through to the container's `PORT`) and restart.
+  - **Linux / macOS:** set `PORT` in the env file
+    (`/etc/loombre/loombre.env` on Linux;
+    `/Library/Application Support/Loombre/config/loombre.env` on macOS)
+    and restart the services.
+  - **Windows:** there is no port variable to set after the fact — the
+    ports are written into each service's registry `Environment` value at
+    install time; see [the Windows page's Configure
+    section](/install/windows#configure).
 
 ### Database connection refused
 
@@ -46,7 +56,9 @@ Get-NetTCPConnection -LocalPort 3001 | Select-Object -Property State, OwningProc
    - If missing, the server should auto-provision it on first start. If it doesn't, check startup logs.
 
 2. **External PostgreSQL:**
-   - Verify the `DATABASE_URL` connection string is correct
+   - Verify the `DATABASE_URL` connection string is correct (on Windows it
+     lives in each service's registry `Environment` value — see [the
+     Windows page's Configure section](/install/windows#configure))
    - Test connectivity: `psql "$DATABASE_URL"` (or use `pg_isready` on Linux)
    - Ensure PostgreSQL 17+ is running
    - Check firewall rules allow connection from the Loombre host to the database host
@@ -100,12 +112,27 @@ sudo installer -pkg loombre-*.pkg -target /
 
 **Symptom:** Permission denied on `/Library/Application Support/Loombre/`
 
-**Fix:**
+**Fix** — restore exactly what the installer sets
+(`installers/macos/pkg/scripts/postinstall`). The app-support **root**
+directory must end up group `admin` (not group `_loombre`): the menubar
+app runs as your console user, not `_loombre`, and needs to traverse the
+root to reach the server's IPC discovery/token files — a recursive
+`_loombre:_loombre` chown alone breaks the menubar app:
+
 ```bash
 sudo chown -R _loombre:_loombre "/Library/Application Support/Loombre/"
-sudo chown -R _loombre:_loombre "/Library/Logs/Loombre/"
+sudo chown _loombre:admin "/Library/Application Support/Loombre/"
 sudo chmod 750 "/Library/Application Support/Loombre/"
+sudo chmod 750 "/Library/Application Support/Loombre/db" \
+              "/Library/Application Support/Loombre/ipc" \
+              "/Library/Application Support/Loombre/config"
+sudo chmod 700 "/Library/Application Support/Loombre/secrets"
+sudo chown -R _loombre:_loombre "/Library/Logs/Loombre/"
+sudo chmod 755 "/Library/Logs/Loombre/"
 ```
+
+(The server re-chowns the IPC *files*' group itself on every boot; the
+root directory's group is the part only you can fix here.)
 
 #### LaunchDaemon doesn't start on boot
 
@@ -132,9 +159,11 @@ sudo launchctl bootstrap system /Library/LaunchDaemons/com.loombre.web.plist
 **This is expected:** SmartScreen blocks any unsigned, low-download-count executable. 
 Click **More info → Run anyway** every time.
 
-**Workaround:** If this becomes too annoying before the release pipeline signs the
-tray binary, you can manage the server/worker directly via services.msc instead of
-the tray UI.
+**Workaround:** If this becomes too annoying, you can manage the server/worker
+directly via services.msc instead of the tray UI. (Expected while Loombre stays
+unsigned — a deliberate, unfunded posture with no scheduled end, not a temporary
+gap; see [windows.md's "Why Windows will warn
+you"](/install/windows#why-windows-will-warn-you-before-you-can-run-this).)
 
 #### Services show "Starting" and never reach "Running"
 
@@ -144,8 +173,12 @@ Get-Content -Tail 100 "$env:ProgramData\Loombre\logs\server.log"
 ```
 
 **Common issues:**
-- Database not ready yet — wait a moment and check status again
-- `DATABASE_URL` or `LOOMBRE_JWT_SECRET` not set in the environment
+- Embedded PostgreSQL still provisioning — the very first boot does a real
+  `initdb` + migration run; give it a minute and check again
+- A bad `DATABASE_URL` in the service's registry `Environment` value
+  (external-Postgres installs only — the default install sets none and runs
+  embedded PostgreSQL; see [the Windows page's Configure
+  section](/install/windows#configure))
 - Port 3001 in use by another process (see "Port already in use" above)
 
 #### Firewall blocks the server
@@ -155,7 +188,7 @@ Get-Content -Tail 100 "$env:ProgramData\Loombre\logs\server.log"
 The installer registers two inbound firewall rules, **Loombre Server** and
 **Loombre Web**.
 - Check: Windows Defender Firewall → Inbound Rules → Loombre Server and Loombre Web (both should be enabled)
-- If using a third-party firewall, manually add rules allowing TCP ports 3001 and 3000 (or your custom `LOOMBRE_PORT`/`LOOMBRE_WEB_PORT`)
+- If using a third-party firewall, manually add rules allowing TCP ports 3001 and 3000 (or your custom ports — on Windows these are written into each service's registry `Environment` value at install time; see [the Windows page's Configure section](/install/windows#configure))
 
 ### Linux
 
@@ -184,9 +217,9 @@ systemctl status loombre-server
 ```
 
 **Common issues (from journalctl output):**
-- Port in use: change `LOOMBRE_PORT` or stop the conflicting process
+- Port in use: change `PORT` in `/etc/loombre/loombre.env` or stop the
+  conflicting process
 - Data directory permission denied: `sudo chown -R loombre:loombre /var/lib/loombre/`
-- Missing `LOOMBRE_JWT_SECRET`: Set it in `/etc/loombre/loombre.env`
 
 #### Tarball extraction failed
 
@@ -233,44 +266,15 @@ progress with:
 docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env build --progress=plain
 ```
 
-#### `server` container exits immediately
+#### Everything else
 
-**Check logs:**
-```bash
-docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env logs server
-```
-
-**Common issues:**
-- `LOOMBRE_JWT_SECRET` not set
-- `DATABASE_URL` (for external Postgres mode) is unreachable or malformed
-- Port 3001 already bound on the host
-
-#### `worker` container exits but `server` stays running
-
-**Symptom:** Only the worker fails
-
-**Check logs:**
-```bash
-docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env logs worker
-```
-
-**Common issue:** `DATABASE_URL` is unreachable. If using external Postgres, verify
-the connection string and network reachability from inside the Docker container:
-```bash
-docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env exec server psql "$DATABASE_URL" -c "SELECT version();"
-```
-
-#### Bind-mounted library shows zero files after scan
-
-**Common causes:**
-- Path mismatch: you set `/media/movies` in Loombre, but mounted `/mnt/media`
-- Container can't read the mount: permissions on the host folder
-- Relative vs. absolute path: always use absolute paths in bind-mounts
-
-**Verify the mount inside the container:**
-```bash
-docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env exec server ls /media/movies
-```
+The remaining Docker issues are covered, next to the commands they belong
+to, in [docker.md's own Troubleshooting
+section](/install/docker#troubleshooting): missing env-file/secret errors,
+a `server` that never reports healthy (usually an unmigrated schema), a
+`worker` that exits immediately (usually `DATABASE_URL` unreachable),
+bind-mounted libraries scanning zero files, NAS media never noticing new
+files, and login/CORS/CSP failures.
 
 ---
 
@@ -278,18 +282,31 @@ docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.e
 
 ### Embedded PostgreSQL major-version upgrade
 
-**Scenario:** You want to upgrade from embedded PG 17 to PG 18
+**Scenario:** A Loombre release moves the embedded PostgreSQL to a new
+major version (for example 17 → 18).
 
-**What happens:** Loombre detects the version mismatch and automatically runs a
-`dump-restore` upgrade cycle the first time it boots against the new PG version.
-This takes time proportional to your library size (see `docs/ops/backup.md`'s
-"Pre-upgrade backup" section for details).
+**What happens:** Nothing automatic. At boot, Loombre compares the data
+directory's `PG_VERSION` against the release's pinned major; a mismatch is
+reported as an unusable data directory (`pg-version-mismatch`) and **the
+server refuses to start** rather than touch your data. No automatic
+upgrade runs and no automatic backup is taken. (An upgrade routine exists
+in the codebase — `EmbeddedPostgres.upgrade()` — but nothing invokes it at
+boot today.)
 
-**What you don't need to do:** Nothing — Loombre handles it automatically.
+**What you do:** A manual dump-and-restore. **Before** installing the new
+release, while the old version still runs, take a `pg_dumpall` backup —
+`docs/ops/backup.md`'s "Embedded PostgreSQL" section has the exact
+command. Then install the new release, move the old
+`<app-data>/postgres` directory aside so a fresh cluster provisions on
+first boot, and restore the dump into it per the same page's restore
+guidance.
 
-**If the upgrade fails:** A backup of your old data directory was created
-automatically before the upgrade attempted. Check the server logs for the exact
-failure reason.
+**Docker installs** have no embedded PostgreSQL at all — the catalog lives
+in the separate `postgres` container. The equivalent situation there is
+the container image moving to a new Postgres major: the same
+dump-before-upgrade, restore-after ritual applies to that container's
+volume (`docker-compose.prod.yml`'s own comments link here for exactly
+that case).
 
 ### HLS playback stutters or rebuffers
 
@@ -299,29 +316,20 @@ failure reason.
 (nginx) or ensure your proxy streams responses without buffering (Caddy/Traefik do
 this by default).
 
-### Resume doesn't work across devices
+### macOS: `_loombre` can't read media in your home folder
 
-**Scenario:** You start watching on Device A, switch to Device B, expect to resume
-at the same timestamp
+**Symptom:** The folder picker marks a home-folder path **No access**, or a
+mount under `~` isn't readable by Loombre.
 
-**Current behavior:** Each device has its own progress tracking. Resume works within
-the same device, but jumping between devices starts from the beginning.
+**Why:** macOS keeps personal home folders private (`/Users/you` is mode
+700/750), so the `_loombre` service account cannot traverse them. That is
+the system working as designed, not a broken install.
 
-**Workaround:** Continue-watching shows your recently-played items; the web client
-displays last-watched timestamps.
-
-**Timeline:** Post-v1 feature (multi-device resume state).
-
-### macOS: `_loombre` user can't access networked home folder
-
-**Symptom:** SMB/NFS mount at `~/Media/` isn't readable by Loombre
-
-**Why:** The `_loombre` service account has `NFSHomeDirectory /var/empty` and no
-login session, so `~` doesn't expand to a meaningful path.
-
-**Workaround:** Mount the network share at a system-wide path (e.g., `/Volumes/Media`)
-instead of a user folder, or enable SMB/NFS access for the `_loombre` user explicitly
-via System Settings → Sharing.
+**Fix:** See the "Media in your home folder" section of
+[docs/install/macos.md](/install/macos) — it covers the easy placements
+(`/Volumes`, `/Users/Shared`), the targeted ACL grant for media that must
+stay in your home folder, and when Full Disk Access does (and does not)
+matter.
 
 ---
 

@@ -4,7 +4,10 @@
      apps/web/src/components/music/MiniPlayerBar.tsx,
      apps/web/src/components/music/QueueDrawer.tsx,
      apps/web/src/components/music/MusicPlayerProvider.tsx. Music as v1
-     scope — docs/PLAN.md §1. -->
+     scope — docs/PLAN.md §1. Restricted zone is movie-only (a "scene" is
+     an item_type='movie' row in a restricted library; every zone read
+     pins item_type='movie') — packages/db/src/query/restricted-browse.ts
+     K1 + restricted-home.ts's per-rail item_type pins. -->
 
 Music in Loombre works a little differently from movies and shows — it's
 built to keep playing in the background while you keep browsing.
@@ -37,6 +40,7 @@ you don't want to hear.
 ## Restricted music
 
 Restricted libraries (see [Restricted content](restricted-content.md))
-are a movies-and-TV feature today — the Restricted zone screen lists
-movies and series only, so a music library can't currently be browsed
-there even if it's marked restricted.
+are a movie-library feature today — the restricted zone only ever shows
+scenes from restricted movie libraries, so a music library can't
+currently be browsed there even if it's marked restricted. (The same is
+true of TV libraries.)

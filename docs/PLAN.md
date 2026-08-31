@@ -1,9 +1,12 @@
 # Loombre — Technical Development Plan
 ### A ground-up media streaming platform competing in the self-hosted media-server space
 
-> **Status:** v1.1 — APPROVED. Name locked: **Loombre** (Spanish: hearth-fire).
-> This document is the authoritative spec. The Phase 0 Claude Code orchestration
-> prompt (PHASE0_ORCHESTRATION_PROMPT.md) is generated from this plan.
+> **Status:** v1.1 — APPROVED. Amended in place (dated in-body amendments;
+> latest: §6.4 surface scoping, 2026-08-30). Name locked: **Loombre**
+> (Spanish: hearth-fire). This document is the authoritative spec. Phase
+> orchestration prompts were generated from this plan as ephemeral,
+> uncommitted artifacts; the committed Phase 0 record lives at
+> `reports/state/phase0/`.
 > Verified 2026-07-22: no conflicting media/software product under the name;
 > arbitrary mark in this class. Formal USPTO clearance required before public launch.
 
@@ -31,9 +34,10 @@ schema, naming, or code exists anywhere in the project.
 5. **Owned end-to-end** — one contract, one generated SDK, every client speaks it.
 
 **v1 scope:** movies, TV, music · multi-user with remote access · web client ·
-restricted (adult) content class with opt-in gating · Win/macOS/Linux server.
+restricted (adult) content class with opt-in gating · out-of-process plugin
+system (LPP v1, §4.4) · Win/macOS/Linux server.
 **Post-v1 (schema-anticipated, not built):** iOS/Android apps, TV apps,
-photos, live TV/DVR, plugin system, federation/sharing.
+photos, live TV/DVR, federation/sharing.
 
 ---
 
@@ -51,7 +55,7 @@ This table is the project's institutional memory.
 | P4 | API grown by accretion: ticks timestamps, inconsistent pagination, 3 image endpoints, undocumented behavior (LS) | No contract; server code was the spec | OpenAPI contract-first, generated SDK, conformance tests, additive-only evolution policy (§4) |
 | P5 | Legacy web client sediment (LS jQuery-era single-page front end) | UI never rebuilt | One modern Next.js client, performance-budgeted (§9) |
 | P6 | Client-side content filtering: hidden libraries leak via search, collections, "recently added" (PS managed users; LS parental controls) | Filtering applied in UI/queries ad hoc | Content-class gating compiled into every query path via a single mandatory query-guard layer; unfiltered queries are impossible by construction (§6.4) |
-| P7 | Breaking plugin/API churn every major release (LS in-process plugin DLLs) | Plugins compiled against server internals | Extension points are versioned data contracts (events, providers, webhooks); plugins live out-of-process, post-v1 (§4.4) |
+| P7 | Breaking plugin/API churn every major release (LS in-process plugin DLLs) | Plugins compiled against server internals | Extension points are versioned data contracts (events, providers, webhooks); plugins live out-of-process (LPP v1, §4.4) |
 | P8 | Scanner fragility: renames re-import, watch-state loss, metadata clobbering (LS, PS) | File path used as identity | Content-hash + path identity model; scanner is idempotent and rename-aware (§8.2) |
 | P9 | Remote access as afterthought or paid gate (LS manual reverse-proxy; PS relay/paywall) | Not designed in | First-class remote access: built-in TLS via ACME or bring-your-own reverse proxy, device auth, bandwidth-aware ladders — free, in core (§10) |
 | P10 | Heavy idle footprint on small machines (PS background tasks; LS .NET baseline) | Server assumes dedicated hardware | Explicit hardware tiers with enforced perf budgets in CI (§9) |
@@ -96,14 +100,25 @@ and via domain events.
 
 **Monorepo layout** (Turborepo, pnpm, TypeScript strict):
 ```
-apps/server        NestJS: gateway/, catalog/, playback/, session/
-apps/worker        job consumers: scan, probe, image, transcode
+apps/server        NestJS: gateway/, catalog/, playback/, session/, plugins/
+apps/worker        job consumers: scan, probe, image, import, metadata,
+                   subtitles, transcode, hwcaps, crash, mail, settings,
+                   stash, plugin-delivery
 apps/web           Next.js client
 packages/contract  openapi.yaml + event schemas — the source of truth
 packages/sdk       generated TS client (CI-regenerated, drift-gated)
 packages/playback-engine  pure decision fn + test matrix (zero I/O imports)
 packages/db        schema, migrations (hand-rolled scripts/migrate.mjs), query layer (Kysely), seed
 packages/shared    enums, ids, time utils (the only cross-module package)
+packages/jobs      typed job-queue abstraction (pg-boss driver + jobs-table ledger mirror)
+packages/plugin-host      LPP v1 host core (SSRF-guarded fetch, breaker, callPlugin)
+packages/plugin-protocol  LPP v1 frozen wire contract + conformance suite
+packages/provisioning     ProvisioningInterface types (installer ↔ embedded-PG seam)
+packages/provisioning-pg  embedded PostgreSQL as a supervised child process
+packages/controller-ipc   loopback control-plane contract for tray/menubar controllers
+packages/release-manifest release manifest format + minisign verification
+packages/secrets   SecretRef backends (keychain/dpapi/libsecret/file0600) + JWT-secret persistence
+packages/wg-native embedded userspace WireGuard core (Loombre Remote)
 installers/        per-platform packaging (see §11)
 ```
 
@@ -148,17 +163,23 @@ CI-checkable rule.
 Every state change that any future feature could care about (`item.added`,
 `playback.started`, `progress.updated`, `user.created`, `scan.completed`)
 writes a typed event row to an `events` outbox table in the same transaction
-as the change. Today, consumers are the websocket broadcaster and the activity
-log. Tomorrow, they are webhooks, recommendations, Trakt-style sync, plugins —
-all buildable without touching the code paths that emit. Event payload schemas
+as the change. Today, consumers are the websocket broadcaster, the activity
+log, and the LPP v1 plugin delivery loop (worker-side outbox fanout,
+`apps/worker/src/plugin-delivery/`). Tomorrow: webhooks, recommendations,
+Trakt-style sync — all buildable without touching the code paths that emit. Event payload schemas
 live in `packages/contract` beside the API and follow the same additive-only
 policy.
 
-### 4.4 Extension points (designed now, opened post-v1)
+### 4.4 Extension points (versioned contracts; plugins shipped as LPP v1, webhooks post-v1)
 - **Metadata providers** are an internal interface (`search`, `fetchDetails`,
-  `fetchImages`) with TMDB/TVDB/MusicBrainz as the built-ins. The interface is
-  the future plugin boundary — third-party providers (including adult-content
-  providers such as a StashDB adapter) implement the same contract
+  `fetchImages`) with TMDB/TVDB/MusicBrainz as the built-ins. The interface
+  is the plugin boundary, shipped as LPP v1 (admin plugin contract paths in
+  `packages/contract`, the out-of-process host core in
+  `packages/plugin-host`, the frozen wire contract in
+  `packages/plugin-protocol`, registration/lifecycle in
+  `apps/server/src/plugins`, an admin registration UI, and the worker
+  delivery loop) — third-party providers (including adult-content
+  providers; a StashDB adapter is built) implement the same contract
   out-of-process over HTTP, never in-process code loading (P7).
 - **Webhooks** on outbox events; **scrobble/export** on the open state format
   (§8.4). Both are contracts, not code hooks.
@@ -209,7 +230,10 @@ when a type's details are displayed.
 ### 6.1 Engine & packaging
 PostgreSQL is the only supported engine (P2) — the embedded/pinned major tracks the standing runtime-currency policy (18 as of the 2026-07 supported-latest sweep; external servers: 17+). To keep zero-config installs
 on par with SQLite products, the native installers bundle a managed embedded
-Postgres (via `embedded-postgres` per-platform binaries) running as a child
+Postgres (vendored per-platform PostgreSQL binaries from
+theseus-rs/postgresql-binaries, fetched by `scripts/fetch-embedded-pg.mjs`
+and pinned in `installers/embedded-pg-manifest.json` — see
+`packages/provisioning-pg`) running as a child
 process on a localhost socket, data dir inside the app-data folder. Advanced
 users point the server at an external Postgres via one env var. Same schema,
 same code — the bundling is purely a packaging concern. No queue daemon is
@@ -220,7 +244,10 @@ UUIDv7 primary keys (time-ordered, index-friendly) · all timestamps `BIGINT`
 milliseconds · `TEXT` + `CITEXT` where case-insensitive · enums as Postgres
 enums · every FK declares its `ON DELETE` behavior deliberately · JSONB only
 where shape is inherently unknown (`media_files.probe`, event payloads,
-serialized plans, `item_attributes.value`) · every list-endpoint access path
+serialized plans, `item_attributes.value`, `devices.profile`,
+`user_settings.prefs`, `server_settings.value`, `plugins.manifest`,
+`plugins.config` — the whitelist as grown by AD5 and LD3, mirrored in
+CLAUDE.md invariant 3) · every list-endpoint access path
 has a covering index reviewed at PR time.
 
 ### 6.3 Schema (authoritative DDL follows in Phase 0; structure and rationale here)
@@ -276,6 +303,11 @@ Tables and their non-obvious design points:
   processed_at_ms`; BRIN index on time.
 - **`jobs`** — queue-agnostic job ledger mirroring `pg-boss` state for
   the admin UI.
+- **`server_settings`** — instance-wide settings: `key TEXT PRIMARY KEY`,
+  `value JSONB` (whitelisted, AD5), `updated_at_ms`, `updated_by`.
+- **`plugins`** — LPP v1 plugin registrations: `manifest JSONB` and
+  `config JSONB` (whitelisted, LD3); delivery progress tracked in
+  `plugin_delivery_cursors`.
 - **`images`** — managed image cache index: `entity_type, entity_id, kind,
   source (provider|embedded|local), width, height, blurhash, file path`.
   Blurhash computed at ingest → instant LQIP placeholders in clients (perf,
@@ -359,10 +391,12 @@ a general library.
 
 ### 7.1 The pure decision function (P3)
 ```
-plan(mediaInfo: MediaStreams[], device: DeviceProfile,
-     network: NetworkConditions, policy: ServerPolicy, clock: Ms) → PlaybackPlan
+plan(input: PlanInput) → PlaybackPlan
+// PlanInput: { media, device, network, policy, caps, selection, mode }
+// — exact shape and semantics in docs/PLAYBACK.md §1, which governs §7
 ```
-- Deterministic, side-effect-free, zero I/O — lives in
+- Deterministic, side-effect-free, zero I/O, no clock (PLAYBACK.md §0
+  Design Law 1) — lives in
   `packages/playback-engine`, imported by the server, testable on its own.
 - Output: `decision (direct-play | direct-stream | remux | transcode)`,
   per-track actions, subtitle strategy (`none | embed | hls-vtt | burn-in`),
@@ -375,7 +409,8 @@ plan(mediaInfo: MediaStreams[], device: DeviceProfile,
   is the performance strategy (§9).
 
 ### 7.2 The test matrix
-Table-driven YAML cases (`{mediaInfo, device, network} → {decision, reasons}`),
+Table-driven YAML cases (`input: {media, device, network, policy, caps,
+selection, mode}` → `expect:` decision + reasons),
 grown continuously; target ≥ 500 cases by Phase 3 exit covering: H.264/HEVC/AV1
 × 8/10-bit × SDR/HDR10/HLG/DV-profile-8 · AAC/AC3/EAC3/TrueHD/FLAC/Opus ·
 SRT/ASS/PGS/VobSub subtitles · device classes (evergreen browser, Safari,
@@ -401,8 +436,9 @@ loudly.
   enabled), path-isolated from any system ffmpeg; the arg-builder targets the
   pinned version only.
 - Music: gapless-capable delivery via direct stream where the device allows;
-  transcode to Opus/AAC ladder otherwise; ReplayGain/R128 tags read at probe
-  and exposed in the plan.
+  transcode to Opus/AAC ladder otherwise. (ReplayGain/R128 loudness
+  normalization is NOT BUILT — forward-looking intent only; no probe field
+  or plan field exists for it today.)
 
 ---
 
@@ -485,8 +521,8 @@ post-v1 writer behind a setting).
   `trust-proxy` config — both first-class, documented paths. HSTS on by
   default when TLS is terminated internally.
 - **Hardening:** per-IP and per-user rate limits on auth and search; login
-  anomaly log + optional fail2ban-compatible log format (matching your
-  besideclone posture); path traversal impossible by construction (all file
+  anomaly log + optional fail2ban-compatible log format; path traversal
+  impossible by construction (all file
   access resolves through `media_files` rows, never client-supplied paths);
   CSP + strict CORS on the web client; secrets in OS keychain/DPAPI where
   available, else 0600 file.
@@ -502,15 +538,25 @@ post-v1 writer behind a setting).
 | Platform | Primary channel | Notes |
 |----------|-----------------|-------|
 | Linux | Docker/Compose (canonical) + tarball w/ systemd unit | Your openSUSE box is the reference T2 |
-| Windows | MSI installer (WiX): service registration, firewall rule, tray controller | Embedded PG + bundled ffmpeg |
-| macOS | Signed/notarized .pkg + menubar controller; Homebrew cask | VideoToolbox path is the differentiator vs the .NET incumbents on Macs |
+| Windows | `.exe` bootstrapper (WiX Burn) wrapping the MSI payload: service registration, firewall rule, tray controller | Embedded PG + bundled ffmpeg; one published artifact per release |
+| macOS | Unsigned .pkg + menubar controller; Homebrew cask (prepared, not yet wired to a publisher — no tap exists) | VideoToolbox path is the differentiator vs the .NET incumbents on Macs |
+
+All release artifacts ship UNSIGNED in v1 — no Apple notarization, no
+Authenticode (STATE.md P4.1). Trust is delivered instead via checksums,
+minisign-signed release manifests, cosign-signed Docker images, and
+first-class unsigned-install documentation (STATE.md P4.9); the release
+pipeline keeps a no-op signing insertion point per artifact
+(`installers/sign-hook.mjs`) so adding real certificates later is a
+pipeline PR, not a rework.
 
 Single Node runtime bundled per platform (no user-installed Node); app-data in
 platform-correct locations (XDG / `%ProgramData%` / `~/Library/Application
 Support`); case-insensitivity and long-path handling in the scanner tested via
 per-OS CI runners (the matrix runs on ubuntu/windows/macos GitHub runners —
-cross-platform is CI-enforced, not claimed). First-run web onboarding wizard:
-admin creation → library paths → hardware probe → capability report.
+cross-platform is CI-enforced, not claimed). First-run web onboarding wizard,
+seven steps in fixed order (`apps/web` setup `wizard-state.ts` `STEP_ORDER`):
+welcome → admin creation → library paths → hardware probe (capability
+report) → restricted content → restore from backup → done.
 
 ---
 
@@ -525,9 +571,10 @@ admin creation → library paths → hardware probe → capability report.
 | **4 — Product hardening** | 2–3 mo | Installers all platforms; onboarding wizard; export/import; admin surfaces; perf budget audit on reference T0 hardware (physical N100) |
 | **Post-v1** | — | iOS/Android (SDK codegen → Swift/Kotlin), TV clients, plugins/webhooks GA, photos, live TV |
 
-Solo + Claude Code orchestration estimate: **14–20 months to v1**. Phases 1–3
-each get their own orchestration prompt derived from this plan; Phase 0's is
-regenerated next.
+Solo + Claude Code orchestration estimate: **14–20 months to v1**. (The
+duration table above is the original planning estimate, kept as written —
+forward-looking, not a position tracker; live phase position is recorded in
+STATE.md.)
 
 ---
 

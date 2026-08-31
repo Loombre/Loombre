@@ -47,7 +47,7 @@ very server that was just stopped):
 explains why: Docker is set up to bring the server right back whenever it
 stops, so a real shutdown has to be done where Docker runs
 (`docker compose stop` — see the
-[Docker install guide](../install/docker.md#stopping--shutting-down-completely)).
+[Docker install guide](../install/docker.md#stopping-shutting-down-completely)).
 The restart button works normally.
 
 ## What these buttons are not

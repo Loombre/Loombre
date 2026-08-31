@@ -105,7 +105,7 @@ the server, restore the pre-upgrade backup you took before applying the
 update (see above — this is exactly the scenario that backup was for),
 then either stay on the old application version against the restored data
 until a fix ships, or roll forward again once a corrected migration is
-available. `pnpm db:migrate`/`node scripts/migrate.mjs migrate` is
+available. `pnpm db:migrate`/`node packages/db/scripts/migrate.mjs migrate` is
 idempotent and safe to re-run (already-applied migrations are skipped by
 filename, tracked in `schema_migrations`) — but it only ever moves the
 schema forward, never back.

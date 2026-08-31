@@ -46,10 +46,23 @@ license text.
 
 ## Both fonts are AGPL-compatible per LICENSE-INTENT.md
 
-SIL OFL-1.1 is on the repo's license allow-list (`scripts/license-check.mjs`, run by `pnpm gate`).
-These files are static assets served same-origin, never linked into any
-Loombre binary or package — see `LICENSE-INTENT.md`'s Provenance ledger
-for the corresponding entry.
+SIL OFL-1.1 compatibility is manually verified and recorded in
+`LICENSE-INTENT.md`'s Provenance ledger (the same posture as that file's
+dovi_tool/ffmpeg entries) — it is NOT gate-checked:
+`scripts/license-check.mjs` scans the npm dependency graph only, OFL-1.1
+is not on its allow-list, and committed static font binaries are
+structurally invisible to it. These files are static assets served
+same-origin, never linked into any Loombre binary or package — see
+`LICENSE-INTENT.md`'s Provenance ledger for the corresponding entries.
+
+## The docs site carries a separate copy — not interchangeable
+
+`docs/public/fonts/` holds a second vendored copy of the same two
+families from a different pipeline (the loombre.com website workspace's
+`site/tools/build-fonts.py`, copied verbatim) with a different
+subsetting strategy: one unsplit subset per family/weight there, vs.
+this directory's per-subset (`latin`/`latin-ext`) split files. Do not
+swap files between the two sets — see `docs/public/fonts/README.md`.
 
 ## Wiring
 

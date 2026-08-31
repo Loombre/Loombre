@@ -68,6 +68,75 @@ const OUTPUT_PATH = join(REPO_ROOT, "docs", "admin-guide", "settings-reference.m
 
 const uiEntries = SETTINGS_REGISTRY.filter((entry) => entry.scope === "ui");
 
+// T04-1 per-key Docker caveats: docker-compose.prod.yml's server/worker
+// `environment:` blocks forward only an explicit variable list into the
+// containers (`loombre.env` values are Compose interpolation input, never
+// injected wholesale), so these entries' pin variables never reach the
+// server/worker processes under the shipped Docker Compose distribution.
+// The TLS/ACME group is unforwarded deliberately (MRV-R5: the Docker
+// distribution stays reverse-proxy-only); LOOMBRE_WG_PORT gets a bespoke
+// note because the compose file DOES read it — as interpolation input for
+// the published host UDP port mapping — without ever passing it to the
+// process, so the setting and the variable must be changed together.
+// Explicit constants by design, not derived from the compose file — the
+// mechanical derivation is the M20 rework, deferred to its own pass; keep
+// these lists in sync with docker-compose.prod.yml's environment: blocks
+// by hand until then.
+const DOCKER_UNFORWARDED_PLAIN_VARS = new Set([
+  "LOOMBRE_RATE_LOGIN",
+  "LOOMBRE_RATE_REFRESH",
+  "LOOMBRE_RATE_UNLOCK",
+  "LOOMBRE_RATE_CURRENT_PASSWORD",
+  "LOOMBRE_RATE_SETUP",
+  "LOOMBRE_RATE_CAPABILITIES",
+  "LOOMBRE_RATE_EXPORT",
+  "LOOMBRE_RATE_MEDIA_TOKEN",
+  "LOOMBRE_RATE_CLAIM",
+  "LOOMBRE_RATE_PASSWORD_RESET",
+  "LOOMBRE_RATE_PROBE",
+  "LOOMBRE_RATE_LOGIN_BY_IDENTIFIER",
+  "LOOMBRE_RATE_REFRESH_BY_DEVICE",
+  "LOOMBRE_RATE_SEARCH",
+  "LOOMBRE_UPDATE_CHECK",
+  "LOOMBRE_WG_SUBNET",
+  "LOOMBRE_WG_ENDPOINT_HOST",
+  "LOOMBRE_CLOUDFLARED_PATH",
+  "LOOMBRE_TUNNEL_HOSTNAME",
+]);
+const DOCKER_UNFORWARDED_TLS_VARS = new Set([
+  "LOOMBRE_TLS_MODE",
+  "LOOMBRE_ACME_DOMAINS",
+  "LOOMBRE_ACME_CHALLENGE_TYPE",
+  "LOOMBRE_ACME_TOS_AGREED",
+]);
+
+function dockerCaveatFor(envVar) {
+  if (envVar === "LOOMBRE_WG_PORT") {
+    return (
+      "- **Running Loombre in Docker?** The shipped Compose setup passes only an explicit list of variables " +
+      "into the containers, and `LOOMBRE_WG_PORT` isn't one of them — setting it in `loombre.env` never " +
+      "reaches the server process. The Compose file *does* read it to pick which host UDP port it publishes, " +
+      "so it must match this setting: if you change one, change both — nothing connects them automatically."
+    );
+  }
+  if (DOCKER_UNFORWARDED_TLS_VARS.has(envVar)) {
+    return (
+      `- **Running Loombre in Docker?** \`${envVar}\` is deliberately not passed into the containers: ` +
+      "the Docker distribution handles HTTPS with a reverse proxy in front of Loombre, never in-process — " +
+      "see the [Docker install guide](/install/docker). Setting it in `loombre.env` has no effect there."
+    );
+  }
+  if (DOCKER_UNFORWARDED_PLAIN_VARS.has(envVar)) {
+    return (
+      "- **Running Loombre in Docker?** The shipped Compose setup passes only an explicit list of variables " +
+      `into the containers, and \`${envVar}\` isn't one of them — setting it in \`loombre.env\` has no ` +
+      "effect there. Change the setting here on the settings screen instead, or have whoever installed " +
+      "Loombre add the variable to the compose file's `environment:` blocks."
+    );
+  }
+  return undefined;
+}
+
 const byCategory = new Map();
 for (const entry of uiEntries) {
   if (!byCategory.has(entry.category)) byCategory.set(entry.category, []);
@@ -116,6 +185,10 @@ function renderSetting(entry) {
     lines.push(
       `- **Can be locked:** if \`${entry.envVar}\` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).`,
     );
+    // T04-1: the per-key Docker caveat, emitted only for pin variables the
+    // shipped compose file never forwards — see dockerCaveatFor above.
+    const dockerCaveat = dockerCaveatFor(entry.envVar);
+    if (dockerCaveat) lines.push(dockerCaveat);
   }
   lines.push("");
   return lines.join("\n");
@@ -129,7 +202,15 @@ const lines = [
   "     edit by hand, edits are overwritten on the next `pnpm docs:build`.",
   "     Setting descriptions below are reproduced VERBATIM from the registry",
   "     (the same text the settings screen renders) — see this script's",
-  "     header comment for why. -->",
+  '     header comment for why. Per-key "Running Loombre in Docker?" notes',
+  "     (T04-1): docker-compose.prod.yml's environment: blocks forward only",
+  "     an explicit variable list, so the annotated keys' pin variables never",
+  "     reach the containers — the TLS/ACME group deliberately so (MRV-R5:",
+  "     the Docker distribution stays reverse-proxy-only); LOOMBRE_WG_PORT is",
+  "     additionally compose-interpolation input for the published host UDP",
+  "     port (docker-compose.prod.yml ports mapping,",
+  "     installers/docker/loombre.env.example). These notes must be emitted",
+  "     by the generator identically or the docs:build drift check fails. -->",
   "",
   "Every setting Loombre's settings screen lets you change, grouped the way " +
     "the screen groups them, generated directly from the same source the " +

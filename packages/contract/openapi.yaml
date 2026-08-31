@@ -25,8 +25,8 @@ info:
     `deprecated: true` plus a `Sunset` response header for two minor releases
     minimum before a major bump.
   license:
-    name: AGPL-3.0-relicense-pending
-    identifier: LicenseRef-Loombre-Private
+    name: AGPL-3.0-only
+    identifier: AGPL-3.0-only
 externalDocs:
   description: Loombre documentation
   url: https://loombre.com/docs/
@@ -81,13 +81,14 @@ tags:
   - name: admin
     description: Admin-only job ledger introspection, settings, and plugin management (LPP v1)
   - name: remote
+    # A10 (the live-isAdmin pattern).
     description: >-
       Loombre Remote (embedded userspace WireGuard), BYO-token Cloudflare
       tunnel, and Direct (ACME/reverse-proxy) — the three remote-access
       paths, their wizard re-entry state, the cellular-QR reachability
       proof, and the public probe-arrival page. Every mutation is admin
-      + live-isAdmin (A10 pattern); GET /probe/{token} is this run's only
-      public operation in this tag (`security: []`) — see its own
+      + live-isAdmin; GET /probe/{token} is this tag's only
+      public operation (`security: []`) — see its own
       description for the enumeration-resistant posture.
   - name: setup
     description: >-
@@ -175,8 +176,9 @@ paths:
       operationId: getClaimState
       tags: [invites]
       summary: Resolve an invite token's presets, without claiming it
+      # M12.
       description: >-
-        Public (M12). Invalid, expired, already-claimed, or revoked tokens
+        Public. Invalid, expired, already-claimed, or revoked tokens
         all resolve to the shared not-found problem (see the `NotFound`
         response): BYTE-IDENTICAL across the four cases, and BYTE-IDENTICAL
         to what an unknown route answers at this same path — `instance` is
@@ -201,13 +203,14 @@ paths:
       operationId: claimInvite
       tags: [invites]
       summary: Claim an invite, creating an account and signing in
+      # M12 (public posture); M13 (auto-login); LD-13c (emailApplied).
       description: >-
-        Public (M12). Same byte-identical-404 posture as getClaimState for
+        Public. Same byte-identical-404 posture as getClaimState for
         an invalid/expired/claimed/revoked token — a username collision
         against an OTHERWISE valid token is a distinct 422 (the token
-        itself was fine). Auto-logs in on success (M13): the response is a
+        itself was fine). Auto-logs in on success: the response is a
         real TokenPair, same composition as POST /setup/first-admin's own
-        token minting, additively carrying `emailApplied` (LD-13c — see
+        token minting, additively carrying `emailApplied` (see
         TokenPair's own property description).
       security: []
       requestBody:
@@ -304,7 +307,8 @@ paths:
     post:
       operationId: authForgotPassword
       tags: [auth]
-      summary: Request a self-service password-reset email (E3b)
+      summary: Request a self-service password-reset email
+      # E3b; the 202 anti-enumeration posture is E3b/E8.
       description: >-
         PUBLIC, unauthenticated, and deliberately unenumerable: the response
         is the SAME 202 with the SAME body whether or not `identifier`
@@ -328,7 +332,7 @@ paths:
         '202':
           description: >-
             Always this exact body, regardless of whether the account/email
-            exists or mail is configured (anti-enumeration, E3b/E8).
+            exists or mail is configured (anti-enumeration).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ForgotPasswordResponse' }
@@ -346,7 +350,8 @@ paths:
     post:
       operationId: authResetPassword
       tags: [auth]
-      summary: Complete a self-service password reset with a mailed token (E3b)
+      summary: Complete a self-service password reset with a mailed token
+      # E3b; the indistinguishable-404 rule is M12/E8.
       description: >-
         PUBLIC, unauthenticated. Atomically consumes `token` (single-use;
         a concurrent second consume of the same token loses the race) and,
@@ -356,7 +361,7 @@ paths:
         unknown token all produce the IDENTICAL 404 this operation shares
         with an unknown route at this same path (the shared not-found
         problem — a fixed generic `detail` and an `instance` that is the
-        request path and nothing else; M12/E8: none of those cases may be
+        request path and nothing else; none of those cases may be
         distinguishable from one another or from a malformed request to a
         nonexistent path). Rate-limited per
         `rateLimit.passwordReset` (shared with `authForgotPassword`).
@@ -398,8 +403,9 @@ paths:
       operationId: getPasswordResetState
       tags: [auth]
       summary: Resolve whether a password-reset token is still usable, without consuming it
+      # LD-15.
       description: >-
-        PUBLIC, unauthenticated (LD-15). A read-only liveness probe for the
+        PUBLIC, unauthenticated. A read-only liveness probe for the
         token in a mailed reset link: a 200 means the token is currently
         unused and unexpired, and NOTHING is consumed — the caller must
         still POST /auth/reset-password to complete the reset, and that
@@ -808,7 +814,7 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409':
           description: >-
-            The supplied `email` already belongs to another account (G9).
+            The supplied `email` already belongs to another account.
             Compared case-insensitively (CITEXT) after trimming, so a
             case-only or padded variant of a taken address conflicts too.
             Only `email` can collide on this operation — `username` is not
@@ -838,7 +844,10 @@ paths:
     post:
       operationId: adminResetUserPassword
       tags: [users]
-      summary: Admin/CLI password recovery, tier (a) (E3a/M14)
+      summary: Admin/CLI password recovery, tier (a)
+      # E3a/M14; the self-reset currentPassword requirement is R-F3 (opus
+      # adversarial review fix wave), same F1 reasoning as PATCH /users/me
+      # / PUT /users/me/restricted.
       description: >-
         Generates a random temporary password, argon2id-hashes and stores
         it, sets `mustChangePassword` on the target user, and revokes EVERY
@@ -846,10 +855,10 @@ paths:
         temporary password is returned ONCE in this response and is never
         retrievable again — the server keeps only its hash. Self-reset (an
         admin resetting their own account) is permitted — they know the
-        consequence — but requires `currentPassword` (R-F3, opus
-        adversarial review fix wave: a bearer token alone must never mint
-        a permanent account takeover, same F1 reasoning as `PATCH
-        /users/me`/`PUT /users/me/restricted`). Resetting ANOTHER user's
+        consequence — but requires `currentPassword`: a bearer token alone
+        must never mint
+        a permanent account takeover, the same reasoning as `PATCH
+        /users/me`/`PUT /users/me/restricted`. Resetting ANOTHER user's
         password needs no `currentPassword` — that path is already
         live-admin-verified and audited. When the mail tier is active and
         the target user has an email on file, a non-fatal `security-notice`
@@ -898,8 +907,10 @@ paths:
       operationId: updateMe
       tags: [users]
       summary: Update the current user's own profile
+      # G3 (STATE.md "Current-password re-auth on self-changes"); the 409
+      # collision rule below is G9.
       description: >-
-        G3 (STATE.md "Current-password re-auth on self-changes"): a body
+        A body
         containing `password` and/or `email` (any value, `null` included)
         requires `currentPassword` — see UpdateMeRequest's own
         `dependentRequired`. A missing/wrong currentPassword when required
@@ -1038,8 +1049,9 @@ paths:
       operationId: createInvite
       tags: [invites]
       summary: Create a one-time, expiring invite link (admin)
+      # M4.
       description: >-
-        Rejects 422 on any restricted-class or unknown library id (M4) —
+        Rejects 422 on any restricted-class or unknown library id —
         invites can never grant restricted-library access or admin role
         (no such field exists on this request at all). The raw claim token
         is returned exactly once, in this response only.
@@ -1382,9 +1394,10 @@ paths:
       operationId: getItemChapters
       tags: [catalog-video]
       summary: Chapter markers for an item's timeline
+      # S7/K9.
       description: >-
         Generic and content-agnostic (`chapter_markers`, migrations/0019
-        — item_type 'movie' rows today, i.e. Stash scene markers, S7/K9;
+        — item_type 'movie' rows today, i.e. Stash scene markers;
         the schema does not restrict this to any one item type). Visibility
         rides the owning item: byte-identical 401/404 to what a direct GET
         on the item itself would return for the same viewer, including for
@@ -1648,13 +1661,15 @@ paths:
         In-progress items for the current user (computed per-viewer-context;
         never cached across users with different restricted-content
         clearance)
+      # d3-b9 (filter-before-page rule); adi-F2 (the
+      # getRecentlyAdded/search precedent).
       description: >-
         Pages over the types `ContinueWatchingEntry.item` admits
         (movie/episode/track) — the eligibility filter is applied BEFORE
         the page is cut, so `limit` means "up to N entries you can
         render" and an empty page never ships with a non-null
-        `nextCursor` (d3-b9; same rule as `getRecentlyAdded`/`search`
-        after adi-F2). A progress row against any other item type — a
+        `nextCursor` (same rule as `getRecentlyAdded`/`search`). A
+        progress row against any other item type — a
         container written before `putProgress` began refusing them — is
         skipped by the query, never by the response. A GENERAL surface
         (§6.4 surface scoping): a restricted in-progress row never appears
@@ -1708,10 +1723,11 @@ paths:
     get:
       operationId: getImage
       tags: [images]
+      # Anti-pattern P4 (no per-kind endpoint proliferation).
       summary: >-
         Fetch a pre-scaled managed image (poster/backdrop/logo/disc/thumb).
-        One endpoint for all image kinds and entity types (anti-pattern P4:
-        no per-kind endpoint proliferation).
+        One endpoint for all image kinds and entity types — deliberately
+        not one endpoint per kind.
       parameters:
         - name: width
           in: query
@@ -1921,6 +1937,7 @@ paths:
     get:
       operationId: getPlaybackHlsFile
       tags: [playback]
+      # LD-16 (never a second pipeline).
       summary: >-
         Serve one HLS variant playlist/init segment/media segment for a
         session. Updates the session's `requested_segment` (parsed from
@@ -1929,7 +1946,7 @@ paths:
         active one additionally records a rung-switch request
         (`requestRungSwitch`); the worker hands the session's existing
         admission slot to that rung at its next poll tick and never starts a
-        second pipeline (LD-16). A request for a segment index outside the
+        second pipeline. A request for a segment index outside the
         currently-produced window (before the current run's start, or more
         than 3 segments ahead of `produced_segment`) triggers a seek request
         (`requestSeek`) and responds 503 (hls.js-compatible retry
@@ -1953,9 +1970,10 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
         '503':
+          # V8 (forward-only numbering).
           description: >-
             The requested segment is outside the produced window; a restart
-            has been requested (V8: the requested URI itself never returns —
+            has been requested (the requested URI itself never returns —
             forward-only numbering — so clients should re-read the playlist
             for the new run rather than retry this URI indefinitely;
             Retry-After header set). Secondary/defensive path — the primary
@@ -2075,9 +2093,10 @@ paths:
     post:
       operationId: requestPlaybackSeek
       tags: [playback]
+      # Owner-decision V8.
       summary: >-
         Record a hard-seek intent for a transcode session (docs/PLAYBACK.md
-        §9, owner-decision V8). A thin, contract-visible alias of the
+        §9). A thin, contract-visible alias of the
         segment-GET side effect: writes the same `seek_target_ms` column
         with the same last-write-wins absorption, and — when `rungIndex`
         rides along — the same single-statement coincident-pair write
@@ -2400,9 +2419,10 @@ paths:
       operationId: listRestrictedZoneItems
       tags: [restricted]
       deprecated: true
+      # Superseded per the STATE.md Stash run, K4.
       summary: >-
-        DEPRECATED — superseded by GET /restricted/browse (STATE.md Stash
-        run, K4). Kept per the additive-only evolution policy (removed
+        DEPRECATED — superseded by GET /restricted/browse.
+        Kept per the additive-only evolution policy (removed
         operations are deprecated for two minor releases minimum, never
         hard-deleted mid-major).
       description: >-
@@ -2435,26 +2455,27 @@ paths:
       operationId: getRestrictedHome
       tags: [restricted]
       summary: Restricted zone home rails (continue watching, watchlist, recently added, studios, performers)
+      # RZI-D2a (watchlistInZone as the one watchlist surface); U10 (the
+      # count-only aggregate disclosure). R1 review lane: this description
+      # previously said studios/performers "still resolve" while locked —
+      # the implementation has always returned them empty, and empty is
+      # the correct, safer reading of docs/PLAN.md §6.4. Corrected so
+      # nobody "conforms" the code to the description and opens the leak.
+      # Pinned by packages/db/test/leak.spec.ts 12f/12h and the HTTP twin
+      # in apps/server/test/libraries.e2e.spec.ts.
       description: >-
         404 for a viewer with NO restricted-library entitlement at all —
         same posture as every other zone read (GET /restricted/count). For
         an entitled-but-LOCKED viewer (gate 5 not currently passed) ALL
         FIVE rails come back empty — continueWatchingInZone,
-        watchlistInZone (RZI-D2a: the only surface a watchlisted restricted
+        watchlistInZone (the only surface a watchlisted restricted
         title ever renders on), recentlyAddedInZone, studios and performers
         alike — guard-consistent
-        with GET /restricted/browse. The zone's U10 aggregate disclosure
+        with GET /restricted/browse. The zone's aggregate disclosure
         (that a zone exists, and how many items are in it) is made by GET
         /restricted/count and by that endpoint ALONE; a locked viewer never
         learns a studio or performer NAME from this endpoint, because a
         studio/performer roster is zone content, not an aggregate.
-        (R1 review lane: this paragraph previously said studios/performers
-        "still resolve" while locked — the implementation has always
-        returned them empty, and empty is the correct, safer reading of
-        docs/PLAN.md §6.4. Corrected here so nobody "conforms" the code
-        to the description and opens the leak. Pinned by
-        packages/db/test/leak.spec.ts 12f/12h and the HTTP twin in
-        apps/server/test/libraries.e2e.spec.ts.)
       responses:
         '200':
           description: Zone home rails
@@ -2470,10 +2491,11 @@ paths:
       operationId: listRestrictedBrowse
       tags: [restricted]
       summary: Keyset browse of the restricted zone with combinable filters
+      # STATE.md K4 (supersession); S10 (the 33k-scene scale proof).
       description: >-
-        SUPERSEDES the old full-fetch GET /restricted/items design (STATE.md
-        K4): real guarded server-side keyset pagination, proven at 33k-scene
-        scale (S10) rather than the client fetching the whole zone and
+        SUPERSEDES the old full-fetch GET /restricted/items
+        design: real guarded server-side keyset pagination, proven at 33k-scene
+        scale rather than the client fetching the whole zone and
         filtering locally. 404 for a viewer with NO restricted-library
         entitlement at all; an entitled-but-locked viewer gets 200 with an
         EMPTY page (gate 5 — same posture the old endpoint documented). A
@@ -2517,10 +2539,11 @@ paths:
         - name: resolution
           in: query
           required: false
+          # S5 (probe is the technical authority).
           description: >-
             Comma-separated RestrictedResolutionBand values — ANY match
             (e.g. "FHD,UHD"). Derived per-item from the primary probed
-            video stream's height (S5's technical authority); an item with
+            video stream's height; an item with
             no probed video stream never matches a non-empty filter.
           schema: { type: string }
         - name: yearMin
@@ -2555,11 +2578,12 @@ paths:
       operationId: getRestrictedScene
       tags: [restricted]
       summary: Restricted-zone scene detail
+      # The chapters twin landed in Lane E.
       description: >-
         Byte-identical 404 to an uncleared viewer, a nonexistent id, and a
         general-catalog id (house pattern — see GET /movies/{id}). Markers
         are embedded here (chapter_markers rows for this item) —
-        GET /items/{id}/chapters (Lane E) is the generic, content-agnostic
+        GET /items/{id}/chapters is the generic, content-agnostic
         twin the player itself consumes.
       responses:
         '200':
@@ -2750,8 +2774,9 @@ paths:
       operationId: putAdminLibraryStashConnection
       tags: [admin]
       summary: Configure (or reconfigure) a library's Stash SQLite connection (admin)
+      # K15 (genreTagNames).
       description: >-
-        Writes sqlitePath/enabled, plus genreTagNames (K15 — see
+        Writes sqlitePath/enabled, plus genreTagNames (see
         PutAdminStashConnectionRequest.genreTagNames for its omit/null/
         array tri-state). Enqueues a `stash-inventory` job on every
         successful save so the path-mapping preview has fresh data without
@@ -2777,16 +2802,18 @@ paths:
       operationId: deleteAdminLibraryStashConnection
       tags: [admin]
       summary: Forget a library's Stash SQLite connection entirely (admin)
+      # Stash OPEN ledger item 6 (the prior surface was disable-only via
+      # PUT enabled:false); S1 (no credential to clear); S8 (the staleness
+      # law).
       description: >-
-        Stash OPEN ledger item 6 ("forget this connection entirely" — the
-        prior surface was disable-only via PUT enabled:false). Deletes the
+        Deletes the
         library_stash_connections row (sqlite_path, enabled, status, and
         every other connection-config/outcome column) — there is no
-        keyring-held secret to clear alongside it (S1: Stash is a
+        keyring-held secret to clear alongside it (Stash is a
         first-party read-only SQLite-file provider, never an HTTP API with
         a credential). NEVER destructive to catalog content: previously
         synced metadata, matched catalog items, and stash_scene_links rows
-        are untouched (S8's staleness law — synced facts are KEPT, never
+        are untouched (synced facts are KEPT, never
         deleted, even when their source connection itself is forgotten),
         as are this library's stash-path-mappings (a future re-attach does
         not require re-entering them). A pending/scheduled sync is not
@@ -2830,7 +2857,7 @@ paths:
       description: >-
         `mappings` is the FULL replacement list — `position` is the array
         index, not supplied explicitly. An empty array clears every
-        mapping (S4's oshash tier becomes the only match path). 404 if the
+        mapping (the oshash matching tier becomes the only match path). 404 if the
         library itself does not exist (checked before body validation).
       requestBody:
         required: true
@@ -2856,9 +2883,10 @@ paths:
       operationId: previewAdminLibraryStashPathMappings
       tags: [admin]
       summary: Preview match counts for a CANDIDATE (unsaved) mapping set (admin)
+      # K10; the empty-mapping fallback above is S4's oshash tier.
       description: >-
         Pure SQL over the last inventory/sync snapshot's stored Stash paths
-        (K10) — never opens the Stash SQLite file itself, so this works as
+        — never opens the Stash SQLite file itself, so this works as
         soon as one `stash-inventory` job has run. Reflects `mappings` AS
         SUBMITTED, not what is currently saved, so an admin can try a
         mapping before committing it via PUT. 404 if the library itself
@@ -2887,8 +2915,9 @@ paths:
       operationId: postAdminLibraryStashSync
       tags: [admin]
       summary: Enqueue a full or incremental Stash sync for a library (admin)
+      # S8.
       description: >-
-        Enqueues a `stash-sync` job (S8) and returns its id honestly — this
+        Enqueues a `stash-sync` job and returns its id honestly — this
         endpoint does not wait for the sync to complete. 404 if the library
         itself does not exist (checked before body validation).
       requestBody:
@@ -3211,7 +3240,7 @@ paths:
         instance. `restartPendingKeys` lists requiresRestart:true keys whose
         effective value has changed since this server instance booted;
         non-empty means a restart is needed for those changes to fully take
-        effect. `providerKeys` (A9) carries TMDB/TVDB key status only — the
+        effect. `providerKeys` carries TMDB/TVDB key status only — the
         key value itself is never returned by any endpoint.
       responses:
         '200':
@@ -3292,8 +3321,9 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409':
+          # A8.
           description: >-
-            The key is currently pinned by its environment variable (A8) —
+            The key is currently pinned by its environment variable —
             env always wins; the submitted value cannot take effect while
             the pin is active, regardless of whether it would otherwise be
             valid on its own. The DB value underneath, if any, is preserved
@@ -3322,12 +3352,13 @@ paths:
       operationId: setAdminProviderKey
       tags: [admin]
       summary: Set (or replace) a provider API key (admin, write-only)
+      # A9 (write-only keyring posture); A10 (live-admin re-verify).
       description: >-
-        A9: write-only — the submitted key is never echoed back, logged, or
+        Write-only — the submitted key is never echoed back, logged, or
         otherwise readable again through this API (status reads — GET
         /admin/settings — report set/source/lastSetMs only, never the
         value). Stored via the platform secret keyring (packages/secrets),
-        never in server_settings (no encryption-at-rest story there). A10
+        never in server_settings (no encryption-at-rest story there). A
         live-admin re-verify gates this exactly like updateAdminSetting.
       requestBody:
         required: true
@@ -3348,7 +3379,8 @@ paths:
       description: >-
         Removes the stored keyring entry. A real env var for this provider
         (LOOMBRE_TMDB_API_KEY / LOOMBRE_TVDB_API_KEY), if set, still wins on
-        the next status read regardless (A8 precedence) — this only clears
+        the next status read regardless (env always takes precedence) —
+        this only clears
         the keyring-stored fallback.
       responses:
         '204': { description: Key cleared }
@@ -3371,6 +3403,7 @@ paths:
       operationId: setAdminMailCredentials
       tags: [admin]
       summary: Set (or replace) the SMTP username/password (admin, write-only)
+      # A9 keyring pattern; A10 live-admin re-verify.
       description: >-
         Write-only, same posture as setAdminProviderKey: the submitted
         credentials are never echoed back, logged, or otherwise readable
@@ -3380,7 +3413,7 @@ paths:
         server_settings. Credentials are OPTIONAL overall — unauthenticated
         SMTP (a private-network relay) is a legal configuration; this
         endpoint exists for the common case of a real mail provider that
-        requires them. A10 live-admin re-verify gates this exactly like
+        requires them. A live-admin re-verify gates this exactly like
         setAdminProviderKey.
       requestBody:
         required: true
@@ -3470,8 +3503,10 @@ paths:
       operationId: previewAdminPlugin
       tags: [admin]
       summary: Fetch and validate a plugin's manifest without registering it (admin)
+      # C4 (the confirmation screen); the unknown-capability 422 is C2.
       description: >-
-        C4's confirmation-screen data source: fetches GET <url>/lpp/manifest
+        The registration confirmation screen's data source: fetches GET
+        <url>/lpp/manifest
         through the same SSRF-guarded transport registration itself uses,
         runs it through the staged manifest parser, and returns a summary —
         every declared capability with its scope, the full configSchema, and
@@ -3479,7 +3514,7 @@ paths:
         this twice for the same URL never conflicts with anything, and
         nothing here mints a secret. An unknown capability type in the
         manifest fails with 422 whose `detail` states plainly that this
-        Loombre does not support that capability type yet (C2); a
+        Loombre does not support that capability type yet; a
         SSRF-rejected URL (private/loopback/disallowed address, unless
         `lanAllowlist` covers it) also fails 422.
       requestBody:
@@ -3521,8 +3556,9 @@ paths:
       operationId: registerAdminPlugin
       tags: [admin]
       summary: Register a plugin (admin)
+      # LD6 (the registration state machine).
       description: >-
-        LD6's registration state machine: re-fetches and re-validates the
+        The registration state machine: re-fetches and re-validates the
         manifest at `url` (never trusts a client-supplied preview payload),
         validates the submitted grants against it, validates `config`
         against the manifest's configSchema (secret fields route to the
@@ -3576,8 +3612,9 @@ paths:
       operationId: removeAdminPlugin
       tags: [admin]
       summary: Remove a plugin (admin)
+      # LD9.
       description: >-
-        LD9: deletes the plugin row (plugin_event_grants CASCADE) and every
+        Deletes the plugin row (plugin_event_grants CASCADE) and every
         keyring entry it owns — the HMAC and every secret config field.
         Nothing keyring-side survives.
       responses:
@@ -3658,8 +3695,9 @@ paths:
       operationId: updateAdminPluginPseudonymization
       tags: [admin]
       summary: Toggle whether this plugin receives pseudonymous or real actor ids (admin)
+      # LPP v1 mission §3.2, Lane W5b.
       description: >-
-        LPP v1 mission §3.2 (Lane W5b): plugins.pseudonymize_actor_ids
+        plugins.pseudonymize_actor_ids
         (migrations/0016_plugin_delivery_cursors.sql), default TRUE — every
         user-id-bearing field the outbox delivery loop's actor-field map
         names for a delivered event is replaced with a per-(plugin,user)
@@ -3831,16 +3869,17 @@ paths:
       operationId: getAdminLibraryProviderChain
       tags: [admin]
       summary: Read a library's metadata-provider fallback chain (admin)
+      # LPP v1, Lane W3/W5b; eligibility rule LPP C5 STRICT.
       description: >-
-        LPP v1, Lane W3/W5b (migrations/0015_library_provider_chains.sql).
-        `isDefault: true` means this library has ZERO
+        `isDefault: true` (migrations/0015_library_provider_chains.sql)
+        means this library has ZERO
         library_provider_entries rows — `entries` then reflects the legacy
         hardcoded per-mediaKind default chain
         (apps/worker/src/metadata/provider-chain-defaults.ts), shown
         READ-ONLY for reference; putAdminLibraryProviderChain is the only
         way to customize it. `eligiblePlugins` is every registered plugin
         whose `contentClass` strictly EQUALS this library's `contentClass`
-        (LPP C5 STRICT, apps/server/src/plugins/scope.ts) — the admin
+        (apps/server/src/plugins/scope.ts) — the admin
         add-entry picker's plugin choice list. `builtinProviderNames` is the
         closed set of built-in provider names, always eligible regardless of
         `contentClass`.
@@ -3858,6 +3897,7 @@ paths:
       operationId: putAdminLibraryProviderChain
       tags: [admin]
       summary: Replace a library's metadata-provider fallback chain wholesale (admin)
+      # The 422 content-class rule is LPP C5 STRICT.
       description: >-
         `entries` is the FULL replacement chain — `position` is the array
         index, not supplied explicitly. An empty `entries` array clears the
@@ -3866,7 +3906,7 @@ paths:
         write) on: a malformed entry (wrong shape for its `providerKind`),
         an unrecognized `builtinName`, a `pluginId` that does not resolve to
         a registered plugin, or a `pluginId` whose plugin.contentClass does
-        not EQUAL this library's contentClass exactly (422, LPP C5 STRICT —
+        not EQUAL this library's contentClass exactly (422 —
         the error names both content classes involved). 404 if the library
         itself does not exist.
       requestBody:
@@ -3895,19 +3935,21 @@ paths:
       operationId: getAdminStashSyncReport
       tags: [admin]
       summary: The latest Stash metadata-sync report for a library (admin)
+      # STATE.md S8/K14 (Stash SQLite metadata sync, Lane C sync engine);
+      # live queries per K10/S4/S8; unmatchedLoombreFiles landed in the FX3
+      # fix wave (S4/S8's "both unmatched sides" law).
       description: >-
-        STATE.md S8/K14 (Stash SQLite metadata sync, Lane C sync engine).
         `report` is the most recently STARTED `stash-sync` job's counts
         (matched/updated/unmatched/stale/skipped) and status — null when no
         sync has ever run for this library yet, same honest-empty-shape
         precedent as GET /admin/capabilities's `{report: null}` before the
         first hwprobe. `unmatchedScenes`/`staleScenes` are NOT a frozen
         snapshot from the report row — both are LIVE, keyset-paginated
-        queries over the current stash_scene_links table (K10/S4/S8), so
+        queries over the current stash_scene_links table, so
         they reflect fixes (a corrected path mapping, a scene reappearing
         in Stash) immediately, without waiting for the next sync run.
-        `unmatchedLoombreFiles` (FX3 fix wave) is the Loombre-side twin —
-        S4/S8 document BOTH unmatched sides as the report's job; this is
+        `unmatchedLoombreFiles` is the Loombre-side twin —
+        BOTH unmatched sides are the report's job; this is
         also a live query, over media_files/catalog_items, never a report
         snapshot.
       parameters:
@@ -4047,14 +4089,16 @@ paths:
       operationId: getRemoteState
       tags: [remote]
       summary: Wizard re-entry read — derived active path + per-path status (admin)
+      # RG15/RG5 refinement (derived activePath); RG10 (the server
+      # persists only outcomes).
       description: >-
-        `activePath` is DERIVED, never stored (RG15/RG5 refinement — there
+        `activePath` is DERIVED, never stored (there
         is no `remote.activePath` setting): computed from the three
         subsystems' own enabled state, at most one of which can be enabled
         at a time (the staged enable flows below 409 rather than allowing
         two paths live together). Lets the wizard re-enter mid-flow or land
         on the posture handoff without the client tracking step state
-        itself (RG10 — the server persists only outcomes).
+        itself — the server persists only outcomes.
       responses:
         '200':
           description: Derived remote-access state
@@ -4070,13 +4114,15 @@ paths:
       operationId: enableRemoteWireguard
       tags: [remote]
       summary: Enable Loombre Remote — embedded userspace WireGuard (admin)
+      # R1; the userspace listener is RG1/RG2; staged flow RG10
+      # (plugin-registration shape); single-active-path rule RG5/RG15.
       description: >-
-        R1: generates the server WG keypair (private key in the KEYRING,
+        Generates the server WG keypair (private key in the KEYRING,
         never server_settings) and opens the in-process userspace listener
-        (wireguard-go + netstack, RG1/RG2) — no kernel module, no root, no
+        (wireguard-go + netstack) — no kernel module, no root, no
         routing-table changes, LAN never exposed. Staged validate→stage→
-        commit (RG10, plugin-registration shape); 409 when a DIFFERENT path
-        is already active (at most one active path, RG5/RG15).
+        commit; 409 when a DIFFERENT path
+        is already active (at most one active path).
       responses:
         '200':
           description: Wireguard enabled
@@ -4097,8 +4143,9 @@ paths:
       operationId: disableRemoteWireguard
       tags: [remote]
       summary: Disable Loombre Remote — verified teardown (admin)
+      # R8.
       description: >-
-        R8: revokes every enrolled peer and drops the listener, verified —
+        Revokes every enrolled peer and drops the listener, verified —
         not merely a flag flip. Idempotent: disabling an already-disabled
         listener still returns 200 with the (already-disabled) status.
       responses:
@@ -4131,8 +4178,9 @@ paths:
       operationId: listRemoteWireguardDevices
       tags: [remote]
       summary: List enrolled Remote (WireGuard) devices (admin)
+      # R2.
       description: >-
-        R2: these ARE rows in the existing devices list (kind: remote) —
+        These ARE rows in the existing devices list (kind: remote) —
         this is the WireGuard-scoped view of that same population (tunnel
         IP, enrollment/handshake timestamps) rather than a separate entity.
       parameters:
@@ -4151,13 +4199,14 @@ paths:
       operationId: enrollRemoteWireguardDevice
       tags: [remote]
       summary: Enroll a device — one-time provisioning payload (admin)
+      # R2/R3; tunnel-IP allocation is RG9.
       description: >-
-        R2/R3: generates a fresh peer keypair server-side, allocates the
-        next free tunnel IP (RG9, subnet default 10.82.146.0/24, server
+        Generates a fresh peer keypair server-side, allocates the
+        next free tunnel IP (subnet default 10.82.146.0/24, server
         =.1, devices from .2), and returns the FULL wg-quick config text
         ONCE — the private key is not retained after this response (same
         posture as invite links). The config is split-tunnel ONLY
-        (AllowedIPs scoped to the Loombre tunnel address, R3) and
+        (AllowedIPs scoped to the Loombre tunnel address) and
         APP-AGNOSTIC standard WireGuard semantics (packages/shared/src/
         remote/provisioning.ts — today's official WireGuard app and
         tomorrow's native Loombre clients enroll through this identical
@@ -4195,11 +4244,12 @@ paths:
       operationId: revokeRemoteWireguardDevice
       tags: [remote]
       summary: Revoke an enrolled Remote device — removes the peer live (admin)
+      # R2/RG3 (the refresh-token revoke is RG3's pre-existing-gap closure
+      # — lane WG2 wired it; the Wave-0 shell only reserved the shape).
       description: >-
-        R2/RG3: removes the live WG peer (handshake fails immediately after)
-        AND revokes the underlying device row's refresh tokens (RG3's
-        pre-existing-gap closure — WG2 wires this; this Wave-0 shell only
-        reserves the operation's shape). Distinct from the self-service
+        Removes the live WG peer (handshake fails immediately after)
+        AND revokes the underlying device row's refresh
+        tokens. Distinct from the self-service
         DELETE /devices/{id}: this is an ADMIN-scoped revoke of ANY user's
         enrolled device, not only the caller's own.
       responses:
@@ -4214,8 +4264,9 @@ paths:
       operationId: setRemoteTunnelToken
       tags: [remote]
       summary: Set the BYO Cloudflare API token — write-only (admin)
+      # R4/R9.
       description: >-
-        R4/R9: write-only, same posture as setAdminProviderKey/
+        Write-only, same posture as setAdminProviderKey/
         setAdminMailCredentials — the submitted token is never echoed back,
         logged, or otherwise readable again through this API; stored in the
         platform KEYRING (packages/secrets), never server_settings. Returns
@@ -4252,12 +4303,14 @@ paths:
       operationId: enableRemoteTunnel
       tags: [remote]
       summary: Enable the Tunnel path — creates the tunnel + DNS route, starts the connector (admin)
+      # R4; the supervisor shape is RG7; staged validate→stage→commit is
+      # RG10.
       description: >-
-        R4: creates a Cloudflare tunnel + DNS route via the stored token,
-        then runs cloudflared as a managed, supervised child process (RG7 —
+        Creates a Cloudflare tunnel + DNS route via the stored token,
+        then runs cloudflared as a managed, supervised child process (the
         EmbeddedPostgres supervisor / spawnFfmpegRun shape: SIGTERM→timeout→
         SIGKILL, stderr ring buffer, full-jitter backoff). Staged
-        validate→stage→commit (RG10); 409 when a different path is already
+        validate→stage→commit; 409 when a different path is already
         active, or when no valid token is stored.
       requestBody:
         required: true
@@ -4285,7 +4338,8 @@ paths:
       operationId: disableRemoteTunnel
       tags: [remote]
       summary: Disable the Tunnel path — verified connector teardown (admin)
-      description: R8 — tears down the tunnel + DNS route and stops the connector process, verified. Idempotent.
+      # R8.
+      description: Tears down the tunnel + DNS route and stops the connector process, verified. Idempotent.
       responses:
         '200':
           description: Tunnel disabled
@@ -4316,7 +4370,8 @@ paths:
       operationId: getRemoteTunnelLogs
       tags: [remote]
       summary: Bounded tail of the connector's stderr ring buffer (admin)
-      description: RG7 — the supervised cloudflared child's in-memory stderr ring buffer, not a file (no LOOMBRE_LOG_FILE dependency).
+      # RG7.
+      description: The supervised cloudflared child's in-memory stderr ring buffer, not a file (no LOOMBRE_LOG_FILE dependency).
       parameters:
         - name: lines
           in: query
@@ -4337,8 +4392,9 @@ paths:
       operationId: testRemoteDirectAcme
       tags: [remote]
       summary: Staged test certificate issuance before committing Direct/ACME (admin)
+      # RG12.
       description: >-
-        RG12: runs a real STAGED test issuance through the existing
+        Runs a real STAGED test issuance through the existing
         issue-certificate.ts module BEFORE tls.mode is ever flipped
         (lockout-risk mitigation) — proves issuance is feasible for the
         given domain without touching live TLS config.
@@ -4363,13 +4419,14 @@ paths:
       operationId: enableRemoteDirect
       tags: [remote]
       summary: Enable the Direct path — ACME issuance or reverse-proxy mode (admin)
+      # R5; staged validate→stage→commit is RG10.
       description: >-
-        R5: `mode: acme` commits tls.mode via the existing restart
+        `mode: acme` commits tls.mode via the existing restart
         machinery (server-power UI) after a passing acme-test; `mode:
         reverse-proxy` records the trust-proxy configuration instead — the
         wizard never touches the router itself (HARD LINE: detect,
         instruct, verify, never auto-configure the network — no UPnP,
-        ever). Staged validate→stage→commit (RG10); 409 when a different
+        ever). Staged validate→stage→commit; 409 when a different
         path is already active.
       requestBody:
         required: true
@@ -4397,7 +4454,8 @@ paths:
       operationId: disableRemoteDirect
       tags: [remote]
       summary: Disable the Direct path (admin)
-      description: R8 — verified disable. Idempotent.
+      # R8.
+      description: Verified disable. Idempotent.
       responses:
         '200':
           description: Direct path disabled
@@ -4413,8 +4471,9 @@ paths:
       operationId: diagnoseRemote
       tags: [remote]
       summary: Classify a failed reachability proof (admin)
+      # R5/R6/RG11.
       description: >-
-        R5/R6/RG11 — pure WAN-classification decision function
+        Pure WAN-classification decision function
         (packages/shared/src/remote/diagnosis.ts): RFC 6598 (100.64/10) WAN
         -> definite CGNAT; RFC1918 WAN -> double-NAT; WAN matches the
         DNS-resolved public endpoint but the probe never arrived -> a
@@ -4443,8 +4502,9 @@ paths:
       operationId: createRemoteProbe
       tags: [remote]
       summary: Mint a one-time reachability-proof probe token (admin)
+      # R6; the hash-at-rest posture is house pattern M3/RG6.
       description: >-
-        R6: hashed at rest (SHA-256, house pattern M3/RG6 — constant-time by
+        Hashed at rest (SHA-256 — constant-time by
         construction, argon2id deliberately NOT used on this unauth-reached
         token), 15-minute expiry, single-use, bound to `expectedEndpoint`.
         The raw token appears ONLY in THIS response, embedded in `probeUrl`
@@ -4474,10 +4534,11 @@ paths:
       operationId: getRemoteProbe
       tags: [remote]
       summary: Poll a probe's arrival state (admin)
+      # RG11 (the diagnosis decision function).
       description: >-
         The wizard watches this to light the reachability proof green
         end-to-end. `diagnosis` is populated once the probe has definitively
-        failed to arrive (RG11's decision function) — never speculative
+        failed to arrive — never speculative
         while still `pending`.
       responses:
         '200':
@@ -4501,14 +4562,15 @@ paths:
       operationId: getRemotePosture
       tags: [remote]
       summary: Exposure-aware security posture card (admin)
+      # R7; the outbox events are RG4.
       description: >-
-        R7: evaluates every posture check applicable to the currently
+        Evaluates every posture check applicable to the currently
         active remote-access path (packages/shared/src/remote/
         posture-model.ts's frozen POSTURE_CHECK_KEYS/applicableChecks —
         `checks` is empty when no path is enabled, since every active path
         always yields at least one check). Grades link to fix actions.
         Regressions/recoveries are separately reported via the admin-only
-        outbox (`posture.regressed`/`posture.recovered`, RG4) by a
+        outbox (`posture.regressed`/`posture.recovered`) by a
         background sweep — this endpoint itself is a stateless "evaluate
         now" read with no side effects.
       responses:
@@ -4532,14 +4594,20 @@ paths:
     get:
       operationId: getProbePage
       tags: [remote]
-      summary: Reachability-proof arrival page — PUBLIC by necessity (R6/R9)
+      summary: Reachability-proof arrival page — PUBLIC by necessity
+      # R6/R9; constant-time lookup is RG6's SHA-256 hash equality.
+      # Wave-0 note (moved from the description): the Wave-0 shell IS the
+      # final behavior for every case except a genuinely-arrived probe (no
+      # probe tokens existed yet, so every request legitimately 404'd); a
+      # later lane added the real single-use lookup + arrival-marking
+      # without changing the response shape.
       description: >-
-        R6/R9: one of only THREE new unauthenticated surfaces this
+        One of only THREE new unauthenticated surfaces this
         subsystem introduces (alongside the WireGuard UDP listener itself
         and the tunnel connector's own inbound edge) — necessarily public
         because the whole point is an external phone-on-cellular request
         with no prior credentials. Rate-limited (`rateLimit.probe`,
-        per-IP), token-gated, constant-time lookup (RG6's SHA-256 hash
+        per-IP), token-gated, constant-time lookup (SHA-256 hash
         equality — same posture as invite-claim), and returns a STATIC
         success page with ZERO server info (no version, no instance name,
         nothing an unauthenticated prober could use for reconnaissance).
@@ -4551,11 +4619,7 @@ paths:
         same "invisible == nonexistent" posture as POST /setup/first-admin
         once configured and GET/POST /invites/claim/{token}) — the four
         cases are deliberately indistinguishable from the outside
-        (enumeration-resistant). Wave 0: this shell IS the final behavior
-        for every case except a genuinely-arrived probe (no probe tokens
-        exist yet, so every request legitimately 404s); a later lane adds
-        the real single-use lookup + arrival-marking without changing this
-        response shape.
+        (enumeration-resistant).
       security: []
       responses:
         '200':
@@ -4706,6 +4770,7 @@ components:
     ImageEntityType:
       type: string
       enum: [movie, series, season, episode, artist, album, track, person, tag]
+      # S9 (studio logos) / S6 (studios are kind=studio tags).
       description: >-
         Entity types a managed image can belong to. `person` images are
         guarded by the SAME leak rule listPeople/getPersonById use
@@ -4713,8 +4778,8 @@ components:
         person invisible to the caller has no reachable images either.
         This value plus the server-side mapping
         fix close that gap so a Person page portrait
-        (GET /images/person/{id}/thumb) can be served. `tag` (S9 — studio
-        logos: studios are kind=studio tags, S6) is guarded the same way,
+        (GET /images/person/{id}/thumb) can be served. `tag` (studio
+        logos — studios are kind=studio tags) is guarded the same way,
         via applyGuardToTags + applied-to->=1-visible-item.
 
     ImageKind:
@@ -4803,8 +4868,9 @@ components:
         deviceId: { type: string, format: uuid }
         mustChangePassword:
           type: boolean
+          # E3a/M14.
           description: >-
-            E3a/M14 — true iff an admin/CLI temporary-password reset is
+            True iff an admin/CLI temporary-password reset is
             still pending a real password change. Additive; always sent
             by authLogin and authRefresh (never omitted, even when false)
             so older clients that ignore it are unaffected. While true, the
@@ -4813,19 +4879,23 @@ components:
             enforced server-side, not merely advisory.
         emailApplied:
           type: boolean
+          # LD-13c (STATE.md "Mail posture trio"); the silent collision
+          # no-op is F3/G6's pre-existing E8-safe behavior; the explicit
+          # `email: null` opt-out is LD-13b.
           description: >-
-            LD-13c (STATE.md "Mail posture trio"): additive; sent ONLY by
+            Additive; sent ONLY by
             claimInvite (never authLogin/authRefresh/first-admin — a fresh
             claim is the only TokenPair-returning op where an email can
             silently fail to apply). `false` iff the claim's intended email
             (submitted or preset-inherited) collided with another account's
-            and was therefore silently dropped (F3/G6's existing E8-safe
-            silent-no-op — this field is the honest signal that behavior
+            and was therefore silently dropped (the pre-existing,
+            enumeration-safe silent no-op — this field is the honest
+            signal that behavior
             already existed without). `true` whenever the email ended up
             applied as intended, INCLUDING when no email was ever
             submitted/preset (nothing to drop) and when the claimant
             explicitly opted out via ClaimInviteRequest's `email: null`
-            (LD-13b — intent achieved, not a drop). Deliberately POST-AUTH
+            (intent achieved, not a drop). Deliberately POST-AUTH
             ONLY (never surfaced pre-account-creation, e.g. GET
             /invites/claim/{token} or any pre-creation error path): a
             caller can only read this field by completing a real, rate-
@@ -4845,9 +4915,10 @@ components:
     ForgotPasswordResponse:
       type: object
       additionalProperties: false
+      # E3b/E8.
       description: >-
         Deliberately empty — the fixed, content-free 202 body every call
-        returns regardless of outcome (E3b/E8 anti-enumeration).
+        returns regardless of outcome (anti-enumeration).
 
     ResetPasswordRequest:
       type: object
@@ -4864,12 +4935,13 @@ components:
     PasswordResetState:
       type: object
       additionalProperties: false
+      # E8/M12 (the byte-identical-404 posture).
       description: >-
         Deliberately empty, exactly like ForgotPasswordResponse above: the
         200 ITSELF is the entire signal (this token is live). Carrying any
         member — the account's username, the expiry instant, which of the
         four failure cases applied — would hand an unauthenticated caller
-        precisely what the byte-identical-404 posture (E8/M12) exists to
+        precisely what the byte-identical-404 posture exists to
         withhold. ClaimState carries presets only because a claimant must
         SEE them to fill the claim form; the reset form has no field to
         prefill, so there is nothing legitimate to put here.
@@ -4877,8 +4949,9 @@ components:
     AdminResetPasswordRequest:
       type: object
       additionalProperties: false
+      # R-F3 (opus adversarial review, fix wave).
       description: >-
-        R-F3 (opus adversarial review, fix wave): `currentPassword` is
+        `currentPassword` is
         required ONLY when the path `id` equals the caller's own userId —
         a condition the schema itself cannot express (there is no
         same-as-caller relational operator in JSON Schema), so it is an
@@ -4995,13 +5068,14 @@ components:
     DeviceKind:
       type: string
       enum: [app, remote]
+      # STATE.md "Loombre Remote", lane WG2, R2/RG3 (R2: "enrolled devices
+      # appear in the existing devices list (kind: remote)").
       description: >-
-        STATE.md "Loombre Remote", lane WG2, R2/RG3: 'app' (default —
+        'app' (default —
         every login-created device) or 'remote' (admin-initiated WireGuard
         enrollment ONLY, POST /admin/remote/wireguard/devices — never the
-        login path). ADDITIVE field on the devices-list Device schema
-        (R2's "enrolled devices appear in the existing devices list
-        (kind: remote)").
+        login path). ADDITIVE field on the devices-list Device schema:
+        enrolled devices appear in the existing devices list.
 
     Device:
       type: object
@@ -5074,8 +5148,9 @@ components:
           additionalProperties: { $ref: '#/components/schemas/CapabilityDetail' }
         passwordResetAvailable:
           type: boolean
+          # M8.
           description: >-
-            M8 — true iff self-service "forgot password" (authForgotPassword/
+            True iff self-service "forgot password" (authForgotPassword/
             authResetPassword) is usable on this instance: mail is
             configured (a generic SMTP transport with host/from-address/
             public-URL all set — credentials optional). Additive; always
@@ -5426,10 +5501,10 @@ components:
         email:
           type: [string, 'null']
           format: email
+          # M1 (an additive LOOSENING — the column was CITEXT NOT NULL
+          # UNIQUE before; still CITEXT UNIQUE, just nullable now).
           description: >-
-            M1: optional login identifier — an additive LOOSENING (the
-            column was CITEXT NOT NULL UNIQUE before; still CITEXT UNIQUE,
-            just nullable now). Null = no email on file; the user
+            Optional login identifier. Null = no email on file; the user
             authenticates by username only.
         displayName: { type: [string, 'null'] }
         isAdmin: { type: boolean }
@@ -5444,8 +5519,9 @@ components:
         updatedAtMs: { type: integer, format: int64 }
         mustChangePassword:
           type: boolean
+          # E3a/M14.
           description: >-
-            E3a/M14, admin visibility — true iff an admin/CLI temporary-
+            Admin visibility — true iff an admin/CLI temporary-
             password reset is pending a real password change. Additive;
             always sent (never omitted).
 
@@ -5468,7 +5544,8 @@ components:
         email:
           type: [string, 'null']
           format: email
-          description: 'M1: optional (was required) — an admin may create an email-less user.'
+          # M1.
+          description: 'Optional (was required) — an admin may create an email-less user.'
         password: { type: string, format: password, minLength: 1 }
         displayName: { type: [string, 'null'] }
         isAdmin: { type: boolean, default: false }
@@ -5482,7 +5559,8 @@ components:
         email:
           type: [string, 'null']
           format: email
-          description: 'M1: null clears the email, matching displayName''s own null-to-clear shape below.'
+          # M1.
+          description: 'Null clears the email, matching displayName''s own null-to-clear shape below.'
         displayName: { type: [string, 'null'] }
         isAdmin: { type: boolean }
         maxContentRating: { type: [string, 'null'] }
@@ -5496,15 +5574,17 @@ components:
         email:
           type: [string, 'null']
           format: email
-          description: 'M1: null-to-clear (birthDate precedent below).'
+          # M1.
+          description: 'Null-to-clear (birthDate precedent below).'
         birthDate: { type: [string, 'null'], format: date }
         password: { type: string, format: password, minLength: 1 }
         currentPassword:
           type: string
           format: password
+          # G2/G3 (STATE.md "Current-password re-auth on self-changes");
+          # F2 (never confirm which target value was the problem).
           description: >-
-            Current-password re-authentication (G2/G3, STATE.md
-            "Current-password re-auth on self-changes"). Required
+            Current-password re-authentication. Required
             (`dependentRequired` below) whenever this request's body
             contains `password` and/or `email` — ANY value, including an
             explicit `null` to clear email — since both are account-
@@ -5515,7 +5595,7 @@ components:
             against a stored hash, never itself stored, so a shape
             constraint would add nothing. A wrong value 403s with the same
             fixed detail regardless of which field (password or email) was
-            being changed (F2: never confirms which target value was the
+            being changed (never confirming which target value was the
             problem).
       dependentRequired:
         password: [currentPassword]
@@ -5632,23 +5712,26 @@ components:
         libraryIds:
           type: array
           items: { type: string, format: uuid }
+          # M4.
           description: >-
-            General-class libraries only (M4) — a restricted-class or
+            General-class libraries only — a restricted-class or
             unknown library id 422s the whole request; may be empty.
 
     CreateInviteResponse:
       type: object
       additionalProperties: false
-      description: claimToken is returned EXACTLY ONCE — never retrievable again, never logged, never in any event payload (M3).
+      # M3.
+      description: claimToken is returned EXACTLY ONCE — never retrievable again, never logged, never in any event payload.
       required: [invite, claimToken, claimUrl]
       properties:
         invite: { $ref: '#/components/schemas/Invite' }
         claimToken: { type: string }
         claimUrl:
           type: [string, 'null']
+          # M9.
           description: >-
             publicUrl-derived claim link, or null when the public URL
-            setting is unset (M9) — the web composes a browser-origin
+            setting is unset — the web composes a browser-origin
             fallback in that case.
 
     ClaimState:
@@ -5677,9 +5760,10 @@ components:
         email:
           type: [string, 'null']
           format: email
+          # LD-13b (STATE.md "Mail posture trio").
           description: >-
             Defaults to the invite's own emailPreset when this member is
-            ABSENT. LD-13b (STATE.md "Mail posture trio"): an explicit
+            ABSENT. An explicit
             `null` opts OUT of the preset outright — the new account gets
             no email at all, even when the invite carries a preset —
             distinct from omitting the member. A submitted string is used
@@ -5717,17 +5801,19 @@ components:
         currentPassword:
           type: string
           format: password
+          # G2/G3 (STATE.md "Current-password re-auth on self-changes");
+          # F1 (PIN set/change and opt-in/out are one operation); F4
+          # ("currentPassword is additional, not a PIN replacement").
           description: >-
-            Current-password re-authentication (G2/G3, STATE.md
-            "Current-password re-auth on self-changes"). ALWAYS required —
+            Current-password re-authentication. ALWAYS required —
             every call to this endpoint is account-critical (PIN set/change
-            AND opt-in/out are one operation, F1). Deliberately
+            AND opt-in/out are one operation). Deliberately
             UNCONSTRAINED, same reasoning as currentPin above: it proves an
             already-stored secret and is only ever compared against a
             stored hash, never itself stored. Distinct from currentPin —
             proving the account password does not replace proving the PIN
-            where the PIN itself is also required (F4: "currentPassword is
-            additional, not a PIN replacement").
+            where the PIN itself is also required; it is additional, not a
+            PIN replacement.
 
     RestrictedSettings:
       type: object
@@ -6096,10 +6182,11 @@ components:
           oneOf:
             - $ref: '#/components/schemas/HdrType'
             - type: 'null'
+          # d3-b10 (three null cases); browser-items-F6 (the third case).
           description: >-
-            Null in THREE cases, not two (d3-b10). The first two are
+            Null in THREE cases, not two. The first two are
             videoCodec/bitDepth's: an audio-only file, and a file not yet
-            probed. The third is browser-items-F6's — a file that HAS a
+            probed. The third is a file that HAS a
             probed video stream whose HDR verdict is genuinely UNKNOWN:
             the stored `hdr` column is null and `color_transfer` carries
             no HDR signal either (only smpte2084 -> hdr10 and
@@ -6116,6 +6203,14 @@ components:
           type: array
           items: { $ref: '#/components/schemas/MediaFileSubtitleTrack' }
 
+    # Maintenance note (deliberate repetition): the four-sentence `images`
+    # property description ("Always present; empty array …") is stated
+    # verbatim on all seven catalog entity schemas — Movie, Series, Season,
+    # Episode, Artist, Album, Track. OpenAPI/JSON Schema has no description
+    # inheritance across independently-listed sibling properties, and each
+    # entity's docs page should read standalone, so the seven copies are
+    # intentional — but if the Tier-0/additive-only policy that text states
+    # ever changes, all seven sites must change together.
     Movie:
       allOf:
         - { $ref: '#/components/schemas/CatalogItemBase' }
@@ -6270,8 +6365,9 @@ components:
         nextCursor: { type: [string, 'null'] }
 
     ChapterMarker:
+      # S7/K9.
       description: >-
-        One chapter_markers row (migrations/0019, S7/K9) — GET
+        One chapter_markers row (migrations/0019) — GET
         /items/{id}/chapters and RestrictedSceneDetail.chapters both use
         this exact shape.
       type: object
@@ -6897,7 +6993,7 @@ components:
             # LD-7 / owner-decision D1 (docs/PLAYBACK.md §4/§7.4): fires
             # once per ladder rung whose configured/selected av1 codec was
             # demoted to hevc/h264. detail is
-            # `cause=<tier0-no-hw-av1|device-no-av1|no-av1-encoder|tier0-software-route>
+            # `cause=<tier0-no-hw-av1|device-no-av1|no-av1-encoder|tier0-software-route|software-route-no-av1>
             # demotedTo=<hevc|h264> heightPx=<n>`.
             - av1-rung-demoted
             # LD-6 under LD-16 / owner-decision V2 (docs/PLAYBACK.md
@@ -6982,10 +7078,11 @@ components:
 
     LadderCodec:
       type: string
+      # av1 landed with LD-7 (Wave C1).
       description: >-
         The closed set of codecs a ladder rung may ENCODE to
         (docs/PLAYBACK.md §7/§7.1) — deliberately narrower than VideoCodec,
-        which is the SOURCE-fact union. av1 landed with LD-7 (Wave C1).
+        which is the SOURCE-fact union.
       enum: [h264, hevc, av1]
 
     LadderRung:
@@ -7054,9 +7151,10 @@ components:
         errorCode: { type: [string, 'null'] }
         manifestUrl:
           type: [string, 'null']
+          # Owner-decision V5.
           description: >-
             Relative URL to GET .../hls/master.m3u8 — the MULTI-VARIANT
-            master playlist (docs/PLAYBACK.md §9.1, owner-decision V5), for
+            master playlist (docs/PLAYBACK.md §9.1), for
             EVERY HLS session including ladder-empty ones, which render a
             single-variant master so the client has ONE path and no branch.
             Its variant URIs are `v{K}/media.m3u8`, K being the rung's index
@@ -7119,9 +7217,10 @@ components:
           description: Primary video stream >= 3840x2160 on any non-missing media file.
         hdr: { $ref: '#/components/schemas/HdrType' }
         resolution:
+          # S5 (probe is the technical authority).
           description: >-
-            Derived from the primary probed video stream's height (S5's
-            technical authority) — null when no video stream has been
+            Derived from the primary probed video stream's height — null
+            when no video stream has been
             probed yet.
           oneOf:
             - { $ref: '#/components/schemas/RestrictedResolutionBand' }
@@ -7130,16 +7229,18 @@ components:
     RestrictedResolutionBand:
       type: string
       enum: [SD, HD, FHD, UHD]
+      # S9/S10.
       description: >-
         SD < 720p <= HD < 1080p <= FHD < 2160p <= UHD, by primary video
-        stream height (S9/S10).
+        stream height.
 
     RestrictedBrowseSort:
       type: string
       enum: [added, date, title, rating, duration]
+      # K1 (the premiere-date fallback rule).
       description: >-
         `added` (catalog_items.added_at_ms), `date` (movie_details.
-        premiere_at_ms, falling back to catalog_items.year — K1), `title`,
+        premiere_at_ms, falling back to catalog_items.year), `title`,
         `rating` (community_rating), `duration` (probed media_files.
         duration_ms).
 
@@ -7168,11 +7269,13 @@ components:
         name: { type: string }
 
     RestrictedBrowseItem:
+      # K1: scene identity — scenes are item_type='movie' rows in
+      # restricted libraries (also K1: premiereAtMs's year fallback below).
       description: >-
         One restricted-zone scene row (GET /restricted/browse, GET
         /restricted/search, GET /restricted/performers/{id}/scenes) —
-        itemType is always `movie` (K1: scenes are item_type='movie' rows
-        in restricted libraries).
+        itemType is always `movie` (a scene is an item_type='movie' row
+        in a restricted library).
       allOf:
         - { $ref: '#/components/schemas/CatalogItemBase' }
         - type: object
@@ -7182,7 +7285,7 @@ components:
             premiereAtMs:
               type: [integer, 'null']
               format: int64
-              description: K1 editorial premiere date; null falls back to `year`.
+              description: Editorial premiere date; null falls back to `year`.
             durationMs:
               type: [integer, 'null']
               format: int64
@@ -7211,7 +7314,8 @@ components:
         nextCursor: { type: [string, 'null'] }
 
     RestrictedSceneMarker:
-      description: One chapter_markers row (migrations/0019, K9/S7) for this scene.
+      # K9/S7.
+      description: One chapter_markers row (migrations/0019) for this scene.
       type: object
       additionalProperties: false
       required: [id, title, startMs]
@@ -7259,8 +7363,9 @@ components:
             itemType: { type: string, const: movie }
             watchlisted:
               type: boolean
+              # RZI-D2a.
               description: >-
-                Whether the CALLER has this scene watchlisted (RZI-D2a).
+                Whether the CALLER has this scene watchlisted.
                 Carried on the scene detail because the general watchlist
                 surfaces never see restricted rows under §6.4 surface
                 scoping — the zone answers membership itself, and the zone
@@ -7268,24 +7373,25 @@ components:
             premiereAtMs:
               type: [integer, 'null']
               format: int64
-              description: K1 editorial premiere date (movie_details.premiere_at_ms); null falls back to `year`.
+              # K1.
+              description: Editorial premiere date (movie_details.premiere_at_ms); null falls back to `year`.
             contentRating: { type: [string, 'null'] }
             runtimeMs:
               type: [integer, 'null']
               format: int64
+              # S5: Stash supplies editorial facts, never technical ones.
               description: >-
                 Editorial runtime (movie_details.runtime_ms) — provider/
                 admin-set, not necessarily populated for Stash-sourced
-                scenes (S5: Stash supplies editorial facts, never technical
-                ones). Prefer `durationMs` (the PROBED primary-file
+                scenes. Prefer `durationMs` (the PROBED primary-file
                 duration) for display; this is kept for parity with
                 Movie/Episode/Track's own `runtimeMs` field.
             durationMs:
               type: [integer, 'null']
               format: int64
+              # S5 "Loombre ffprobe authoritative for technical facts".
               description: >-
-                Probed primary-file duration (S5 "Loombre ffprobe
-                authoritative for technical facts") — the same field
+                Probed primary-file duration — the same field
                 RestrictedBrowseItem carries; null until the file is probed.
             overview: { type: [string, 'null'] }
             tagline: { type: [string, 'null'] }
@@ -7321,15 +7427,15 @@ components:
       unevaluatedProperties: false
 
     RestrictedPerformer:
+      # FX2 fix wave: the `images` field was missing here until then.
       description: >-
         GET /restricted/performers row/detail — role=performer people
         credited on >=1 scene visible within the zone. Mirrors Person's
         shape (packages/db/src/query/people.ts's guard model) with a
         zone-scoped `sceneCount` in place of Person's general `creditCount`.
-        FX2 fix wave: `images` mirrors RestrictedStudio's own field exactly
-        (same shape, same guard posture) — B ingests performer portraits
-        (images entity_type='person', kind='thumb') but this field was
-        missing here until now.
+        `images` mirrors RestrictedStudio's own field exactly
+        (same shape, same guard posture) — performer portraits are ingested
+        as images entity_type='person', kind='thumb'.
       type: object
       additionalProperties: false
       required: [id, name, contentClass, sceneCount, images]
@@ -7354,8 +7460,9 @@ components:
         nextCursor: { type: [string, 'null'] }
 
     RestrictedStudio:
+      # S6.
       description: >-
-        GET /restricted/studios row/detail — kind=studio tags (S6: studios
+        GET /restricted/studios row/detail — kind=studio tags (studios
         are first-class VIA tags, no dedicated entity table).
       type: object
       additionalProperties: false
@@ -7389,8 +7496,9 @@ components:
         progress: { $ref: '#/components/schemas/Progress' }
 
     RestrictedHomeWatchlistEntry:
+      # RZI-D2a.
       description: >-
-        One watchlisted zone scene (RZI-D2a). The zone's watchlist rail is
+        One watchlisted zone scene. The zone's watchlist rail is
         the ONLY surface a watchlisted restricted title ever renders on —
         GET /watchlist excludes restricted rows unconditionally (its own
         description's law, guard-enforced since the 2026-08-30 §6.4
@@ -7406,9 +7514,11 @@ components:
           description: When the viewer watchlisted the scene (ms epoch).
 
     RestrictedHome:
+      # S9; watchlistInZone added by the RZI surface-scoping amendment
+      # (RZI-D2a).
       description: >-
-        GET /restricted/home — zone home rails (S9; watchlistInZone added
-        by the RZI surface-scoping amendment, RZI-D2a).
+        GET /restricted/home — zone home rails; watchlistInZone was added
+        by the 2026-08-30 §6.4 surface-scoping amendment.
       type: object
       additionalProperties: false
       required: [continueWatchingInZone, watchlistInZone, recentlyAddedInZone, studios, performers]
@@ -7438,11 +7548,13 @@ components:
       enum: [never_connected, ok, unsupported_schema, unreachable]
 
     AdminStashConnection:
+      # S2/S3 (worker-written status fields); S6/K15 (genreTagNames); S3
+      # (statusDetail's admin notice).
       description: >-
         GET/PUT /admin/libraries/{id}/stash-connection — packages/db's
         library_stash_connections row (migrations/0018 + 0019's additive
         genre_tag_names), config fields admin-written, status fields
-        worker-written at connect time (S2/S3).
+        worker-written at connect time.
       type: object
       additionalProperties: false
       required:
@@ -7468,7 +7580,7 @@ components:
           type: [array, 'null']
           items: { type: string }
           description: >-
-            S6/K15: which Stash tag names map to Loombre genre rather than
+            Which Stash tag names map to Loombre genre rather than
             general tags. `null` (the default, including before any
             connection has ever been saved) means the mapper's documented
             heuristic applies — a Stash tag with NO parent tag maps to
@@ -7486,7 +7598,7 @@ components:
         status: { $ref: '#/components/schemas/AdminStashConnectionStatus' }
         statusDetail:
           type: [string, 'null']
-          description: The exact S3 admin notice when status=unsupported_schema; null otherwise.
+          description: The exact admin notice when status=unsupported_schema; null otherwise.
         lastSeenSchemaVersion: { type: [integer, 'null'] }
         lastConnectedAtMs: { type: [integer, 'null'], format: int64 }
         lastCheckedAtMs: { type: [integer, 'null'], format: int64 }
@@ -7583,13 +7695,15 @@ components:
     # ═════════════════════════════ Data freedom ════════════════════════════════
     ExportUser:
       type: object
+      # M2 added displayName (E4 archive check); M1 made email nullable.
       description: >-
         A user record sans secrets (no password hash, no PIN hash, no
         tokens). This schema is reused BOTH as GET /export's response shape
         AND (nested under Archive) as POST /import's request shape —
         `displayName` is deliberately NOT in `required` despite always
-        being present on export, so an archive written before M2 (which
-        never had this key at all) still validates as an import request;
+        being present on export, so an archive written before the field
+        existed (and so never had this key at all) still validates as an
+        import request;
         the import path treats a missing key exactly like an explicit null
         (apps/worker/src/import/validate.ts).
       additionalProperties: false
@@ -7597,8 +7711,8 @@ components:
       properties:
         id: { type: string, format: uuid }
         username: { type: string }
-        email: { type: [string, 'null'], format: email, description: 'M1: nullable, an email-less user exports/imports as null.' }
-        displayName: { type: [string, 'null'], description: 'M2 (E4 archive check). Optional key: absent on a pre-M2 archive.' }
+        email: { type: [string, 'null'], format: email, description: 'Nullable — an email-less user exports/imports as null.' }
+        displayName: { type: [string, 'null'], description: 'Optional key: absent on an archive written before this field existed.' }
         isAdmin: { type: boolean }
         createdAtMs: { type: integer, format: int64 }
 
@@ -7617,8 +7731,9 @@ components:
 
     ExportArchive:
       type: object
+      # P12.
       description: >-
-        Open JSON archive per docs/PLAN.md §8.4 (P12) — data freedom without
+        Open JSON archive per docs/PLAN.md §8.4 — data freedom without
         API compatibility. Import accepts the same shape.
       additionalProperties: false
       required: [exportedAtMs, users, libraries, items, progress, playlists]
@@ -7799,8 +7914,9 @@ components:
     # ═════════ Admin: Fix Match (Phosphor retheme Wave 2, Lane L2) ═════════════
     UnmatchedLibraryItem:
       type: object
+      # U9 (derived, never stored; filePath never fabricated).
       description: >-
-        GET /admin/libraries/{id}/unmatched row. Derived, never stored (U9):
+        GET /admin/libraries/{id}/unmatched row. Derived, never stored:
         an enrichable-type catalog item (movie/series/artist/album) with zero
         provider_ids rows for it. Standard guarded-read posture (docs/PLAN.md
         §6.4, packages/db/src/query/guard.ts's applyGuard) — admins are NOT
@@ -7826,7 +7942,7 @@ components:
             A representative on-disk path for this item (the movie's own
             file, or one file discovered beneath a series/artist/album's
             hierarchy). Null when this item type has no resolvable file yet
-            — never fabricated (U9).
+            — never fabricated.
 
     UnmatchedLibraryItemPage:
       type: object
@@ -7860,7 +7976,7 @@ components:
             a 422 naming this field —
             it is deliberately NOT the `ProviderName` enum, which is a
             different, smaller closed set (the providers with an
-            admin-manageable API key, A9). The name need not appear in this
+            admin-manageable API key). The name need not appear in this
             item's own library provider chain: a forced ref bypasses chain
             resolution by design.
         externalId:
@@ -7871,7 +7987,8 @@ components:
     SettingsValueSource:
       type: string
       enum: [environment, database, default]
-      description: Which input actually determined a setting's current effective value (A8 precedence order).
+      # A8 (the precedence order).
+      description: Which input actually determined a setting's current effective value (environment > database > default).
 
     SettingsScope:
       type: string
@@ -7918,7 +8035,8 @@ components:
     ProviderName:
       type: string
       enum: [tmdb, tvdb]
-      description: Closed set of metadata providers with an admin-manageable API key (A9).
+      # A9.
+      description: Closed set of metadata providers with an admin-manageable API key.
 
     AdminSettingValue:
       type: object
@@ -7934,8 +8052,9 @@ components:
           description: Whether a change to this key only takes effect at next server boot.
         locked:
           type: boolean
+          # A8.
           description: >-
-            True iff an env pin is active RIGHT NOW (A8) — `value` above is
+            True iff an env pin is active RIGHT NOW — `value` above is
             always the env value in that case, and any stored database value
             is preserved but inert.
         lockedBy:
@@ -7953,16 +8072,18 @@ components:
         restartPendingKeys:
           type: array
           items: { type: string }
+          # A5.
           description: >-
             requiresRestart:true keys whose current effective value differs
-            from what it was at this server instance's boot (A5). Non-empty
+            from what it was at this server instance's boot. Non-empty
             means a restart is needed for those changes to fully apply.
         providerKeys:
           type: array
           items: { $ref: '#/components/schemas/ProviderKeyStatus' }
         mailCredentials:
+          # E5/M10 (optional mail transport run).
           description: >-
-            Optional mail transport run (E5/M10) — ADDITIVE field: the SMTP
+            ADDITIVE field: the SMTP
             username/password keyring entry's status (never the values
             themselves; see MailCredentialsStatus). Absent on an older
             client's cached shape is never load-bearing — mail credentials
@@ -7987,8 +8108,9 @@ components:
           description: Operator-facing caution for a setting whose misconfiguration degrades behavior but never locks the instance out.
         technicalDetails:
           type: string
+          # W13b, decision D-7's second copy layer.
           description: >-
-            ADDITIVE field (W13b, decision D-7's second copy layer): precise
+            ADDITIVE field: precise
             technical detail (protocol notes, format specifics, behavioral
             caveats) `description` deliberately leaves out of its
             plain-language register. Rendered by the admin settings screen in
@@ -8012,7 +8134,8 @@ components:
             string -> text input, array/object -> a structured editor.
         locked:
           type: boolean
-          description: Mirrors AdminSettingValue.locked for the SAME key (A8), without a second round trip to GET /admin/settings.
+          # A8.
+          description: Mirrors AdminSettingValue.locked for the SAME key, without a second round trip to GET /admin/settings.
         lockedBy: { type: string }
 
     AdminSettingsSchemaResponse:
@@ -8046,8 +8169,9 @@ components:
 
     ProviderKeyStatus:
       type: object
+      # A9.
       description: >-
-        A9: the ENTIRE shape any provider-key read ever returns — never the
+        The ENTIRE shape any provider-key read ever returns — never the
         key value itself, by construction.
       additionalProperties: false
       required: [provider, set, source]
@@ -8131,15 +8255,17 @@ components:
     PluginHealthState:
       type: string
       enum: [unknown, healthy, unhealthy]
-      description: One aggregate health value per plugin (LD7) — envelope reachability plus every GRANTED capability's static check.
+      # LD7.
+      description: One aggregate health value per plugin — envelope reachability plus every GRANTED capability's static check.
 
     PluginDisabledReason:
       type: string
       enum: [admin, breaker, scope-change]
+      # LD8 (the breaker rule).
       description: >-
         Why an enabled:false plugin is disabled. 'admin' — an admin turned
-        it off. 'breaker' — 5 consecutive failed calls auto-disabled it
-        (LD8). 'scope-change' — a manifest re-fetch found the plugin now
+        it off. 'breaker' — 5 consecutive failed calls auto-disabled
+        it. 'scope-change' — a manifest re-fetch found the plugin now
         asks for more than was approved; only reapproveAdminPlugin re-enables
         this one.
 
@@ -8178,7 +8304,8 @@ components:
         contentClass: { $ref: '#/components/schemas/ContentClass' }
 
     PluginCapability:
-      description: One manifest-declared capability, discriminated by `type`. Additive (C8) — a future LPP capability type is a new union member here, never a shape change to the existing ones.
+      # C8.
+      description: One manifest-declared capability, discriminated by `type`. Additive — a future LPP capability type is a new union member here, never a shape change to the existing ones.
       oneOf:
         - { $ref: '#/components/schemas/PluginMetadataProviderCapability' }
         - { $ref: '#/components/schemas/PluginEventSubscriberCapability' }
@@ -8190,10 +8317,11 @@ components:
 
     PluginManifestPreview:
       type: object
+      # C4 (the confirmation screen).
       description: >-
         previewAdminPlugin's result — a validated read of the plugin's
-        manifest for the C4 confirmation screen. Nothing is persisted by
-        that call.
+        manifest for the registration confirmation screen. Nothing is
+        persisted by that call.
       additionalProperties: false
       required: [name, version, protocolVersion, publisher, description, capabilities, configSchema, requestedEventTypes, manifestDigest]
       properties:
@@ -8221,8 +8349,9 @@ components:
           description: Union of every event-subscriber capability's requested eventTypes (empty if the manifest declares none).
         manifestDigest:
           type: string
+          # C-2 fix wave (adversarial-review).
           description: >-
-            C-2 fix wave (adversarial-review): a sha256 hex digest of the
+            A sha256 hex digest of the
             EXACT manifest content this preview validated. The client MUST
             round-trip this value back as `manifestDigest` on
             registerAdminPlugin / reapproveAdminPlugin — the server re-fetches
@@ -8244,7 +8373,8 @@ components:
         lanAllowlist:
           type: array
           items: { type: string }
-          description: Explicit LAN hostnames/IPs to permit for this preview fetch even if they land in a private/loopback address range (LD5).
+          # LD5.
+          description: Explicit LAN hostnames/IPs to permit for this preview fetch even if they land in a private/loopback address range.
 
     PluginEventGrant:
       type: object
@@ -8256,9 +8386,10 @@ components:
 
     AdminPlugin:
       type: object
+      # LD1/LD9 (secret handling).
       description: >-
         A registered LPP plugin's admin-facing state (migrations/0014_plugins.sql).
-        Never carries the HMAC secret or any config secret value (LD1/LD9) —
+        Never carries the HMAC secret or any config secret value —
         those exist only in the keyring and are returned exactly once, by
         registerAdminPlugin / rotateAdminPluginHmac.
       additionalProperties: false
@@ -8294,7 +8425,8 @@ components:
         grantedCapabilityTypes:
           type: array
           items: { type: string }
-          description: Subset of the manifest's declared capability `type` values this plugin is approved to use (LD6 "capability set <= declared").
+          # LD6 "capability set <= declared".
+          description: Subset of the manifest's declared capability `type` values this plugin is approved to use.
         healthState: { $ref: '#/components/schemas/PluginHealthState' }
         consecutiveFailures: { type: integer }
         lastHealthCheckMs: { type: [integer, 'null'], format: int64 }
@@ -8306,13 +8438,15 @@ components:
         lanAllowlist:
           type: array
           items: { type: string }
-          description: Explicit hostnames/IPs this plugin may target even in a private/loopback address range (LD5) — an admin opts a plugin into a specific address, never a subnet.
+          # LD5.
+          description: Explicit hostnames/IPs this plugin may target even in a private/loopback address range — an admin opts a plugin into a specific address, never a subnet.
         # No `type: object` on manifest/config (see PluginManifestPreview.
         # configSchema's own comment) — both are opaque JSON blobs.
         manifest:
           description: Verbatim last-fetched manifest snapshot (opaque) — the admin UI derives its capability/config display from this.
         config:
-          description: Non-secret configSchema field values only — secret fields are never included here (LD1); manifest.configSchema's `secret:true` flags tell the UI which field names are keyring-only.
+          # LD1.
+          description: Non-secret configSchema field values only — secret fields are never included here; manifest.configSchema's `secret:true` flags tell the UI which field names are keyring-only.
         eventGrants:
           type: array
           items: { $ref: '#/components/schemas/PluginEventGrant' }
@@ -8403,21 +8537,25 @@ components:
         grantedCapabilityTypes:
           type: array
           items: { type: string }
-          description: Subset of the manifest's declared capability `type` values to enable (LD6 "capability set <= declared").
+          # LD6 "capability set <= declared".
+          description: Subset of the manifest's declared capability `type` values to enable.
         eventTypeGrants:
           type: array
           items: { type: string }
-          description: Subset of the union of every event-subscriber capability's requested eventTypes to grant (LD6 "event grants <= requested").
+          # LD6 "event grants <= requested".
+          description: Subset of the union of every event-subscriber capability's requested eventTypes to grant.
         config:
           description: Raw submitted values keyed by configSchema property name — both secret and non-secret fields together (split server-side; secret values are never echoed back).
         lanAllowlist:
           type: array
           items: { type: string }
-          description: Explicit LAN hostnames/IPs to permit for this plugin (LD5). Defaults to none.
+          # LD5.
+          description: Explicit LAN hostnames/IPs to permit for this plugin. Defaults to none.
         manifestDigest:
           type: string
+          # C-2 fix wave.
           description: >-
-            C-2 fix wave: the `manifestDigest` a prior previewAdminPlugin
+            The `manifestDigest` a prior previewAdminPlugin
             call returned for this exact plugin. Schema-optional (kept
             additive), but ENFORCED as required server-side — omitting it is
             a 422 ("preview this plugin first"), and a value that no longer
@@ -8426,9 +8564,10 @@ components:
 
     RegisterPluginResponse:
       type: object
+      # LD1.
       description: >-
         hmacSecret is returned EXACTLY ONCE — it is never retrievable again
-        through any endpoint (LD1). The admin UI must surface it immediately
+        through any endpoint. The admin UI must surface it immediately
         with a copy affordance and a "this will not be shown again" notice.
       additionalProperties: false
       required: [plugin, hmacSecret]
@@ -8468,8 +8607,9 @@ components:
           items: { type: string }
         manifestDigest:
           type: string
+          # C-2 fix wave.
           description: >-
-            C-2 fix wave — see RegisterPluginRequest.manifestDigest's
+            See RegisterPluginRequest.manifestDigest's
             description; the identical pin/409 rule applies to the
             re-approval flow's own preview.
 
@@ -8561,7 +8701,8 @@ components:
         eligiblePlugins:
           type: array
           items: { $ref: '#/components/schemas/AdminLibraryProviderChainPluginRef' }
-          description: Every registered plugin whose contentClass strictly equals this library's contentClass (LPP C5 STRICT) — the add-entry picker's plugin choices.
+          # LPP C5 STRICT.
+          description: Every registered plugin whose contentClass strictly equals this library's contentClass — the add-entry picker's plugin choices.
         builtinProviderNames:
           type: array
           items: { type: string }
@@ -8602,12 +8743,13 @@ components:
           description: Null while status='running'.
         usedSnapshotFallback:
           type: ['boolean', 'null']
+          # FX4 fix wave (S2).
           description: >-
-            FX4 fix wave (S2): whether this run's Stash connection had to
+            Whether this sync's Stash connection had to
             fall back to a snapshot copy (apps/worker/src/stash/adapter.ts's
             readingFrom === 'snapshot' — the WAL-locked-past-retry-budget
             path) rather than reading the source database file directly.
-            Null when unknown — a run finalized by the terminal-failure
+            Null when unknown — a sync finalized by the terminal-failure
             hook never learns the answer (no access to the failed attempt's
             connection), and rows written before this field existed are
             also null, never a false claim of 'read from source'.
@@ -8637,12 +8779,15 @@ components:
 
     StashSyncLoombreFileRef:
       type: object
+      # FX3 fix wave (S4/S8 "both unmatched sides" law — the matching
+      # set-difference's Loombre-side half; apps/worker/src/stash/matching.ts
+      # documents it as the caller's responsibility, and nothing computed it
+      # until this landed).
       description: >-
-        FX3 fix wave (S4/S8 "both unmatched sides" law): one media_files row
+        One media_files row
         in the connected library with NO stash_scene_links row pointing at
-        its item — the Loombre-side half of S4's matching set-difference
-        (apps/worker/src/stash/matching.ts documents this as the caller's
-        responsibility; nothing computed it until now). Live-read, same
+        its item — the Loombre-side half of the matching set-difference.
+        Live-read, same
         posture as StashSyncSceneRef (never a report snapshot).
       additionalProperties: false
       required: [mediaFileId, itemId, itemTitle, path, sizeBytes]
@@ -8683,12 +8828,12 @@ components:
     RemotePathId:
       type: string
       enum: [none, remote, tunnel, direct]
+      # RG15 — RG5's activePath wording refined at Wave-0 freeze.
       description: >-
-        DERIVED, never a stored setting (RG15 — RG5's activePath wording
-        refined at Wave-0 freeze): `none` when no path is enabled; at most
-        one of `remote`/`tunnel`/`direct` can be enabled at a time, enforced
-        by each path's staged enable flow returning 409 against another
-        active path.
+        DERIVED, never a stored setting: `none` when no path is enabled; at
+        most one of `remote`/`tunnel`/`direct` can be enabled at a time,
+        enforced by each path's staged enable flow returning 409 against
+        another active path.
 
     RemoteState:
       type: object
@@ -8706,9 +8851,10 @@ components:
       required: [enabled, listening, listenPort, subnet, endpointHost, peerCount]
       properties:
         enabled: { type: boolean, description: 'Configured on (a server keypair exists and enrollment is possible).' }
-        listening: { type: boolean, description: 'The in-process userspace UDP listener is actually live right now (RG1/RG2).' }
+        # RG1/RG2 (listening); RG9 (subnet).
+        listening: { type: boolean, description: 'The in-process userspace UDP listener is actually live right now.' }
         listenPort: { type: integer, minimum: 1, maximum: 65535, description: 'remote.wireguardPort effective value.' }
-        subnet: { type: string, description: 'remote.subnet effective value, CIDR (RG9).' }
+        subnet: { type: string, description: 'remote.subnet effective value, CIDR.' }
         endpointHost:
           type: [string, 'null']
           description: remote.wireguardEndpointHost effective value; null when unset.
@@ -8722,10 +8868,11 @@ components:
         id:
           type: string
           format: uuid
-          description: Same id as the underlying devices row (kind='remote', R2) — this IS that row, not a separate entity.
+          # R2 (devices-row identity); RG9 (tunnelIp subnet).
+          description: Same id as the underlying devices row (kind='remote') — this IS that row, not a separate entity.
         userId: { type: string, format: uuid }
         name: { type: string }
-        tunnelIp: { type: string, description: 'Stable address from the tunnel subnet (RG9), e.g. 10.82.146.2.' }
+        tunnelIp: { type: string, description: 'Stable address from the tunnel subnet, e.g. 10.82.146.2.' }
         createdAtMs: { type: integer, format: int64 }
         lastHandshakeAtMs: { type: [integer, 'null'], format: int64, description: 'Null until the peer has ever completed a WireGuard handshake.' }
 
@@ -8750,8 +8897,9 @@ components:
     RemoteWireguardEnrollment:
       type: object
       additionalProperties: false
+      # R2/R3.
       description: >-
-        The one-time provisioning payload (R2/R3) — configText is shown
+        The one-time provisioning payload — configText is shown
         exactly once and never retrievable again through this API (same
         posture as invite links); the server does not retain the private
         key after this response.
@@ -8760,10 +8908,11 @@ components:
         device: { $ref: '#/components/schemas/RemoteWireguardDevice' }
         configText:
           type: string
+          # R3 (split-tunnel AllowedIPs).
           description: >-
             Standard wg-quick config text (packages/shared/src/remote/
             provisioning.ts, PROVISIONING_FORMAT_VERSION), split-tunnel
-            only (AllowedIPs = the server tunnel IP/32, R3). Render this as
+            only (AllowedIPs = the server tunnel IP/32). Render this as
             a QR for mobile import or offer it as a downloadable .conf for
             desktop WireGuard clients.
 
@@ -8793,7 +8942,8 @@ components:
         hostname:
           type: string
           minLength: 1
-          description: The public hostname to route through the tunnel (a DNS route is created for it, R4).
+          # R4.
+          description: The public hostname to route through the tunnel (a DNS route is created for it).
 
     RemoteTunnelStatus:
       type: object
@@ -8804,18 +8954,19 @@ components:
         connectorState:
           type: string
           enum: [stopped, starting, running, degraded, error]
-          description: The supervised cloudflared child process's current lifecycle state (RG7).
+          # RG7 (connectorState + backoffMs).
+          description: The supervised cloudflared child process's current lifecycle state.
         hostname: { type: [string, 'null'] }
-        backoffMs: { type: [integer, 'null'], format: int64, description: 'Current restart backoff (full jitter, RG7); null when not backing off.' }
+        backoffMs: { type: [integer, 'null'], format: int64, description: 'Current restart backoff (full jitter); null when not backing off.' }
         lastErrorMessage: { type: [string, 'null'] }
         tokenConfigured:
           type: boolean
+          # R4/R9. ADDITIVE T1 extension to the Wave-0 frozen shape.
           description: >-
             Whether a Cloudflare API token is currently stored in the
-            keyring (write-only, R4/R9 — this field NEVER carries the token
-            itself, by construction). ADDITIVE T1 extension to the Wave-0
-            frozen shape: the 6-op Tunnel surface has no other place a
-            standing "is a token configured" read can live (setRemoteTunnelToken's
+            keyring (write-only — this field NEVER carries the token
+            itself, by construction). This is the Tunnel surface's one
+            standing "is a token configured" read (setRemoteTunnelToken's
             200 is an ephemeral validation-at-write-time response, not an
             ongoing status).
         tokenSetAtMs:
@@ -8881,34 +9032,37 @@ components:
     DiagnosisCode:
       type: string
       enum: [portBlocked, cgnat, doubleNat, dnsMismatch, tunnelDown, connectorUnhealthy, unknown]
-      description: packages/shared/src/remote/diagnosis.ts's closed classification union (R5/R6/RG11).
+      # R5/R6/RG11.
+      description: packages/shared/src/remote/diagnosis.ts's closed classification union.
 
     DiagnoseRemoteRequest:
       type: object
       additionalProperties: false
+      # P1 ADJUDICATION (flagged, no R/RG number covers it exactly — logged
+      # at integration): `path` was added to this Wave-0-frozen schema
+      # (additive, D23-class precedent: F2's currentPassword/R-F3's maximum
+      # bound both landed the same way). RemotePathId's activePath is
+      # cross-lane DERIVED state this lane's isolated worktree cannot read.
       description: >-
-        P1 ADJUDICATION (flagged, no R/RG number covers it exactly — logged
-        at integration): `path` was added to this Wave-0-frozen schema
-        (additive, D23-class precedent: F2's currentPassword/R-F3's
-        maximum bound both landed the same way) because the Tunnel-path
-        connector-health short-circuit (the freeze's own diagnosis note)
-        and the per-path guidance mapping (packages/shared/src/remote/
-        diagnosis-guidance.ts) both need to know which path is being
-        diagnosed, and nothing server-side can safely infer it —
-        RemotePathId's activePath is cross-lane DERIVED state this lane's
-        isolated worktree cannot read. The wizard already knows its own
-        current flow, so it supplies it explicitly.
+        `path` is supplied by the caller because the Tunnel-path
+        connector-health short-circuit and the per-path guidance mapping
+        (packages/shared/src/remote/diagnosis-guidance.ts) both need to
+        know which path is being diagnosed, and nothing server-side can
+        safely infer it. The wizard already knows its own current flow, so
+        it supplies it explicitly.
       required: [expectedEndpoint, path]
       properties:
         expectedEndpoint: { type: string, minLength: 1, description: 'The public endpoint the reachability proof was bound to.' }
         wanAddress:
           type: [string, 'null']
-          description: Admin-supplied WAN address from a guided router-status-page instruction card (RG11 — no third-party echo service, no router APIs).
+          # RG11.
+          description: Admin-supplied WAN address from a guided router-status-page instruction card — no third-party echo service, no router APIs.
         path:
           $ref: '#/components/schemas/RemotePathId'
+          # P1 adjudication — see the comment on this schema.
           description: >-
-            Which path is being diagnosed (P1 adjudication, see this
-            schema's own description). Must be remote/tunnel/direct —
+            Which path is being diagnosed (see this schema's own
+            description). Must be remote/tunnel/direct —
             'none' is rejected with 422 (there is nothing to diagnose when
             no path is even being set up).
 
@@ -8923,10 +9077,12 @@ components:
     CreateRemoteProbeRequest:
       type: object
       additionalProperties: false
+      # P1 ADJUDICATION (flagged — same reasoning as DiagnoseRemoteRequest's
+      # comment): `path` was added to this Wave-0-frozen schema at
+      # integration.
       description: >-
-        P1 ADJUDICATION (flagged — same reasoning as DiagnoseRemoteRequest's
-        own description): `path` was added to this Wave-0-frozen schema so
-        `probe_tokens.path` (migrations/0031_probe_tokens.sql — "which
+        `path` exists so `probe_tokens.path`
+        (migrations/0031_probe_tokens.sql — "which
         remote path is being proven") has somewhere to come from; a probe
         is always minted for one specific path's setup flow.
       required: [expectedEndpoint, path]
@@ -8939,13 +9095,14 @@ components:
     RemoteProbeToken:
       type: object
       additionalProperties: false
-      description: The raw token appears ONLY here (R6) — embedded in probeUrl/qrPayload, never retrievable again.
+      # R6 (also R6/RG8 for qrPayload, R6 for expiresAtMs below).
+      description: The raw token appears ONLY here — embedded in probeUrl/qrPayload, never retrievable again.
       required: [id, probeUrl, qrPayload, expiresAtMs]
       properties:
         id: { type: string, format: uuid }
         probeUrl: { type: string, description: 'https://<endpoint>/probe/<token> — the exact URL GET /probe/{token} serves.' }
-        qrPayload: { type: string, description: 'The payload to render as a QR code (probeUrl, R6/RG8).' }
-        expiresAtMs: { type: integer, format: int64, description: '15-minute expiry from mint time (R6).' }
+        qrPayload: { type: string, description: 'The payload to render as a QR code (probeUrl).' }
+        expiresAtMs: { type: integer, format: int64, description: '15-minute expiry from mint time.' }
 
     RemoteProbeStatus:
       type: object
@@ -8973,7 +9130,8 @@ components:
     RemotePostureCheckKey:
       type: string
       enum: [tlsValidity, rateLimitersActive, staleAccounts, inviteLinksReachable, wgPortSilence, connectorHealth, publicUrlCoherence]
-      description: packages/shared/src/remote/posture-model.ts's frozen POSTURE_CHECK_KEYS (R7).
+      # R7.
+      description: packages/shared/src/remote/posture-model.ts's frozen POSTURE_CHECK_KEYS.
 
     RemotePostureGrade:
       type: string

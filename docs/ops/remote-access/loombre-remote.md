@@ -20,10 +20,12 @@
      remote.wireguardPort (default 51820, LOOMBRE_WG_PORT,
      requiresRestart:true) and remote.subnet (default 10.82.146.0/24,
      LOOMBRE_WG_SUBNET, requiresRestart:true) entries — also FROZEN and
-     landed (the WireGuard listener itself has not landed yet as of this
-     page's writing; these two facts are sourced from the settings
-     registry and the provisioning module specifically because those two
-     pieces are real today, not from the not-yet-built listener). Silence/
+     landed. The WireGuard listener itself is REAL, landed code too
+     (lane WG1: apps/server/src/remote/wireguard/
+     remote-wireguard.service.ts — the live packages/wg-native-backed
+     listener behind the controller's enable/disable/status/enroll/revoke
+     operations; this page's earlier not-yet-landed caveat is resolved).
+     Silence/
      invisibility claim — STATE.md R9 ("WG handshake silence verified by
      test: unauthenticated probe packets receive no response") and
      packages/shared/src/remote/comparison.ts's attackSurface cell for the
@@ -80,7 +82,13 @@ Loombre Remote's WireGuard listener binds one UDP port — **51820 by
 default** (the `remote.wireguardPort` setting, changeable from the admin
 settings screen or pinned with `LOOMBRE_WG_PORT`; changing it needs a
 server restart, since the listener can't rebind to a different port while
-it's running). Forward that UDP port on your router to the LAN address of
+it's running). One caveat for Docker Compose installs: the shipped
+compose file uses `LOOMBRE_WG_PORT` only to decide which host UDP port it
+publishes — the variable is never passed into the server process itself —
+so change the port from the admin settings screen there, and set
+`LOOMBRE_WG_PORT` to the same value so the published port follows (the
+compose file's own comment says the same: change both together). Forward
+that UDP port on your router to the LAN address of
 the machine running Loombre — exactly the same "port forwarding" or
 "virtual server" screen your router uses for any other service, just for
 a UDP port rather than the more commonly-forwarded TCP. This is the only

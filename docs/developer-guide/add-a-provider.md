@@ -14,18 +14,20 @@
      OS-keyring seam, env-still-wins precedence — keys.ts's
      resolveApiKeyWithKeyring is the worker-side consumer of that seam,
      called at boot from index.ts),
-     apps/worker/src/index.ts:151-169 (manual registration, no DI framework),
-     apps/worker/src/metadata/providers/{tmdb,tvdb,musicbrainz}.ts (the
-     three built-in providers), apps/worker/test/metadata/** (tests to
+     apps/worker/src/index.ts:182-199 (manual registration, no DI framework),
+     apps/worker/src/metadata/providers/{tmdb,tvdb,musicbrainz,stash}.ts
+     (the four built-in providers), apps/worker/test/metadata/** (tests to
      mirror), apps/worker/src/metadata/test-support.ts (makeFakeProvider).
      docs/PLAN.md §4.4 (extension points) and §8.3 (metadata & images
      precedence/provenance model). -->
 
 Loombre looks up metadata (titles, descriptions, cast, artwork) from
 external sources during scanning, through a small provider interface. This
-page is the concrete steps to add a new one, grounded in the three
-providers that already exist: TMDB and TVDB (movies/TV) and MusicBrainz
-(music).
+page is the concrete steps to add a new one, grounded in the four
+providers that already exist: TMDB and TVDB (movies/TV), MusicBrainz
+(music), and Stash — the one shipped `contentClass: 'restricted'`
+provider, attached per-library rather than sitting in the default
+provider chain (see [Connecting Stash](../admin-guide/connecting-stash.md)).
 
 ## The interface
 

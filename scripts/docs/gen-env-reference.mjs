@@ -83,10 +83,13 @@ function renderEnvOnly(entry, heading) {
   if (entry.technicalDetails) {
     lines.push(`- **Technical details:** ${stripSourceCodeRefs(entry.technicalDetails)}`);
   }
-  // platformDerivedDefault entries (paths.dataDir/paths.configDir): the
-  // registry's static `default` is an illustrative fallback the entry's own
-  // copy contradicts — the technicalDetails platform list rendered above is
-  // the true default (audit fafa47f, AUD-A6b-002). Print no bullet.
+  // platformDerivedDefault entries (paths.dataDir/paths.configDir, and
+  // database.url per F24-1 — its static default is the dev harness's 5442
+  // connection string, while a genuinely unset DATABASE_URL selects
+  // embedded PostgreSQL on 5433): the registry's static `default` is an
+  // illustrative fallback the entry's own copy contradicts — the
+  // description/technicalDetails sentence rendered above is the true
+  // default (audit fafa47f, AUD-A6b-002). Print no bullet.
   if (!entry.platformDerivedDefault) {
     lines.push(`- **Default when unset:** ${formatDefaultWithTiers(entry)}`);
   }
@@ -113,7 +116,16 @@ function renderPin(entry, heading) {
   if (entry.technicalDetails) {
     lines.push(`- **Technical details:** ${stripSourceCodeRefs(entry.technicalDetails)}`);
   }
-  lines.push(`- **Default when unset:** ${formatDefaultWithTiers(entry)} (or whatever was last saved from the settings screen)`);
+  // Same platformDerivedDefault suppression as renderEnvOnly (F33-6/T04-3:
+  // scanner.concurrency's real unset-and-no-saved-value fallback is
+  // CPU-derived, max(2, cores/2) — printing the registry's static floor
+  // literal here contradicted the description's own correct sentence two
+  // lines above). The description carries the true default; the
+  // saved-from-the-settings-screen precedence still applies and is stated
+  // in the pin paragraph above.
+  if (!entry.platformDerivedDefault) {
+    lines.push(`- **Default when unset:** ${formatDefaultWithTiers(entry)} (or whatever was last saved from the settings screen)`);
+  }
   if (entry.caution) lines.push(`- **Caution:** ${entry.caution}`);
   lines.push("");
   return lines.join("\n");
@@ -155,10 +167,21 @@ const lines = [
     "variable overrides and locks whatever's in the database or the screen.",
   "",
   "Assumption: variable names and defaults below are Loombre's own environment-variable " +
-    "convention as read by the server/worker processes directly — this is independent of " +
-    "*how* you set them (systemd `Environment=`, a Docker Compose env file, a shell export " +
+    "convention as read by the server/worker processes directly — for most install paths " +
+    "this is independent of *how* you set them (systemd `Environment=`, a shell export " +
     "before running from source, etc.); see [Install](/install/) for the mechanism that " +
     "applies to your install path.",
+  "",
+  "**Docker Compose is the one exception to \"any mechanism works\":** the shipped " +
+    "`docker-compose.prod.yml` forwards only an explicit list of variables into the " +
+    "containers — `loombre.env` values are Compose *interpolation* input, never injected " +
+    "wholesale into the container environment — so a variable on this page that the compose " +
+    "file's `environment:` blocks don't forward has no effect there. For such settings under " +
+    "Docker, use the admin settings screen instead (the environment pin simply isn't " +
+    "available), or add the variable to the compose `environment:` blocks yourself. The " +
+    "built-in TLS/ACME variables are deliberately in the unforwarded group: the Docker " +
+    "distribution handles TLS with a reverse proxy in front, never in-process — see " +
+    "[docs/install/docker.md](/install/docker).",
   "",
   "## Bootstrap & lockout-boundary variables",
   "",
@@ -185,14 +208,21 @@ lines.push(
       "variables live outside the registry and therefore aren't listed above: secrets " +
       "(`POSTGRES_PASSWORD`, `LOOMBRE_JWT_SECRET`), performance-tier and transcode tuning " +
       "(`LOOMBRE_TIER`, `LOOMBRE_ALLOW_TRANSCODE`, `LOOMBRE_MAX_STREAM_BITRATE`, " +
-      "`LOOMBRE_TRANSCODE_WORKER_CONCURRENCY`), metadata-provider keys " +
+      "`LOOMBRE_TRANSCODE_WORKER_CONCURRENCY`, `LOOMBRE_TRANSCODE_MAX_SUSPEND_MS`, " +
+      "`LOOMBRE_TRANSCODE_RUNG_SWITCH_COOLDOWN_MS`, `LOOMBRE_TRANSCODE_COPY_READRATE` and " +
+      "its burst-window companion `LOOMBRE_TRANSCODE_COPY_READRATE_BURST_SEC`), " +
+      "the web UI service's own port (`LOOMBRE_WEB_PORT`, default 3000 — read by the web " +
+      "process, not the server/worker; see [systemd](/ops/systemd) and each platform's " +
+      "[Install](/install/) page), the update-check manifest mirror " +
+      "(`LOOMBRE_UPDATE_MANIFEST_URL` — see [Updating Loombre](/ops/updating); its companion " +
+      "`LOOMBRE_UPDATE_CHECK` IS covered above, as a registry pin), metadata-provider keys " +
       "(`LOOMBRE_TMDB_API_KEY`, `LOOMBRE_TVDB_API_KEY`), the SMTP AUTH credential pair " +
       "(`LOOMBRE_SMTP_USERNAME`/`LOOMBRE_SMTP_PASSWORD` — keyring-class secrets, not registry " +
       "settings like the `LOOMBRE_SMTP_*` pins above; set BOTH or NEITHER, and while set the " +
       "admin Mail screen's credentials card is read-only — see the Admin Guide's " +
       "[Mail](/admin-guide/mail) page), TLS/ACME companions not already " +
       "covered by the registry pins above (`LOOMBRE_TLS_CERT_PATH`/`KEY_PATH`, " +
-      "`LOOMBRE_HTTPS_PORT`, `LOOMBRE_ACME_EMAIL`, `LOOMBRE_ACME_DIRECTORY_URL`, " +
+      "`LOOMBRE_HTTP_PORT`/`LOOMBRE_HTTPS_PORT`, `LOOMBRE_ACME_EMAIL`, `LOOMBRE_ACME_DIRECTORY_URL`, " +
       "`LOOMBRE_ACME_STAGING`, `LOOMBRE_ACME_DNS_HOOK` and its propagation-timeout companion, " +
       "`LOOMBRE_ACME_CA_BUNDLE`, `LOOMBRE_ACME_RENEW_WINDOW_DAYS`/`RENEW_CHECK_INTERVAL_MS` " +
       "— see [docs/ops/remote-access/acme.md](/ops/remote-access/acme); `LOOMBRE_ACME_DOMAINS`/`CHALLENGE_TYPE`/`TOS_AGREED` " +

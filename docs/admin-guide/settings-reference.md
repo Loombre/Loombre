@@ -5,7 +5,15 @@
      edit by hand, edits are overwritten on the next `pnpm docs:build`.
      Setting descriptions below are reproduced VERBATIM from the registry
      (the same text the settings screen renders) — see this script's
-     header comment for why. -->
+     header comment for why. Per-key "Running Loombre in Docker?" notes
+     (T04-1): docker-compose.prod.yml's environment: blocks forward only
+     an explicit variable list, so the annotated keys' pin variables never
+     reach the containers — the TLS/ACME group deliberately so (MRV-R5:
+     the Docker distribution stays reverse-proxy-only); LOOMBRE_WG_PORT is
+     additionally compose-interpolation input for the published host UDP
+     port (docker-compose.prod.yml ports mapping,
+     installers/docker/loombre.env.example). These notes must be emitted
+     by the generator identically or the docs:build drift check fails. -->
 
 Every setting Loombre's settings screen lets you change, grouped the way the screen groups them, generated directly from the same source the settings screen itself reads — so this page can never drift from what you actually see there.
 
@@ -219,6 +227,7 @@ Whether Loombre checks for a newer version. 'daily' checks at startup and once a
 - **Default:** `daily`
 - **Applies:** immediately — no restart needed.
 - **Can be locked:** if `LOOMBRE_UPDATE_CHECK` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+- **Running Loombre in Docker?** The shipped Compose setup passes only an explicit list of variables into the containers, and `LOOMBRE_UPDATE_CHECK` isn't one of them — setting it in `loombre.env` has no effect there. Change the setting here on the settings screen instead, or have whoever installed Loombre add the variable to the compose file's `environment:` blocks.
 
 ## Security & sign-in logging
 
@@ -247,6 +256,7 @@ How many sign-in attempts may come from one network address per minute before Lo
 - **Default:** 10
 - **Applies:** immediately — no restart needed.
 - **Can be locked:** if `LOOMBRE_RATE_LOGIN` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+- **Running Loombre in Docker?** The shipped Compose setup passes only an explicit list of variables into the containers, and `LOOMBRE_RATE_LOGIN` isn't one of them — setting it in `loombre.env` has no effect there. Change the setting here on the settings screen instead, or have whoever installed Loombre add the variable to the compose file's `environment:` blocks.
 
 ### Session refresh limit
 
@@ -258,6 +268,7 @@ How many session-refresh requests may come from one network address per minute. 
 - **Default:** 30
 - **Applies:** immediately — no restart needed.
 - **Can be locked:** if `LOOMBRE_RATE_REFRESH` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+- **Running Loombre in Docker?** The shipped Compose setup passes only an explicit list of variables into the containers, and `LOOMBRE_RATE_REFRESH` isn't one of them — setting it in `loombre.env` has no effect there. Change the setting here on the settings screen instead, or have whoever installed Loombre add the variable to the compose file's `environment:` blocks.
 
 ### Restricted-content PIN attempt limit
 
@@ -268,6 +279,7 @@ How many PIN attempts one person may make per minute when unlocking restricted c
 - **Default:** 5
 - **Applies:** immediately — no restart needed.
 - **Can be locked:** if `LOOMBRE_RATE_UNLOCK` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+- **Running Loombre in Docker?** The shipped Compose setup passes only an explicit list of variables into the containers, and `LOOMBRE_RATE_UNLOCK` isn't one of them — setting it in `loombre.env` has no effect there. Change the setting here on the settings screen instead, or have whoever installed Loombre add the variable to the compose file's `environment:` blocks.
 
 ### Current-password re-authentication attempt limit
 
@@ -278,6 +290,7 @@ How many current-password re-authentication attempts one person may make per min
 - **Default:** 10
 - **Applies:** immediately — no restart needed.
 - **Can be locked:** if `LOOMBRE_RATE_CURRENT_PASSWORD` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+- **Running Loombre in Docker?** The shipped Compose setup passes only an explicit list of variables into the containers, and `LOOMBRE_RATE_CURRENT_PASSWORD` isn't one of them — setting it in `loombre.env` has no effect there. Change the setting here on the settings screen instead, or have whoever installed Loombre add the variable to the compose file's `environment:` blocks.
 
 ### Setup wizard request limit
 
@@ -288,6 +301,7 @@ How many requests one device may make per minute to the first-time setup screen,
 - **Default:** 20
 - **Applies:** immediately — no restart needed.
 - **Can be locked:** if `LOOMBRE_RATE_SETUP` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+- **Running Loombre in Docker?** The shipped Compose setup passes only an explicit list of variables into the containers, and `LOOMBRE_RATE_SETUP` isn't one of them — setting it in `loombre.env` has no effect there. Change the setting here on the settings screen instead, or have whoever installed Loombre add the variable to the compose file's `environment:` blocks.
 
 ### Capability check request limit
 
@@ -298,6 +312,7 @@ How many times one device may ask the server what it supports, per minute. This 
 - **Default:** 120
 - **Applies:** immediately — no restart needed.
 - **Can be locked:** if `LOOMBRE_RATE_CAPABILITIES` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+- **Running Loombre in Docker?** The shipped Compose setup passes only an explicit list of variables into the containers, and `LOOMBRE_RATE_CAPABILITIES` isn't one of them — setting it in `loombre.env` has no effect there. Change the setting here on the settings screen instead, or have whoever installed Loombre add the variable to the compose file's `environment:` blocks.
 
 ### Data export request limit
 
@@ -308,6 +323,7 @@ How many full library exports one person may download per hour (not per minute �
 - **Default:** 5
 - **Applies:** immediately — no restart needed.
 - **Can be locked:** if `LOOMBRE_RATE_EXPORT` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+- **Running Loombre in Docker?** The shipped Compose setup passes only an explicit list of variables into the containers, and `LOOMBRE_RATE_EXPORT` isn't one of them — setting it in `loombre.env` has no effect there. Change the setting here on the settings screen instead, or have whoever installed Loombre add the variable to the compose file's `environment:` blocks.
 
 ### Media playback request limit
 
@@ -318,6 +334,7 @@ How many media requests one person may make per minute — posters, video, and s
 - **Default:** 600
 - **Applies:** immediately — no restart needed.
 - **Can be locked:** if `LOOMBRE_RATE_MEDIA_TOKEN` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+- **Running Loombre in Docker?** The shipped Compose setup passes only an explicit list of variables into the containers, and `LOOMBRE_RATE_MEDIA_TOKEN` isn't one of them — setting it in `loombre.env` has no effect there. Change the setting here on the settings screen instead, or have whoever installed Loombre add the variable to the compose file's `environment:` blocks.
 
 ### Claim
 
@@ -328,6 +345,7 @@ How many invite-claim attempts one device may make per minute, before any accoun
 - **Default:** 10
 - **Applies:** immediately — no restart needed.
 - **Can be locked:** if `LOOMBRE_RATE_CLAIM` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+- **Running Loombre in Docker?** The shipped Compose setup passes only an explicit list of variables into the containers, and `LOOMBRE_RATE_CLAIM` isn't one of them — setting it in `loombre.env` has no effect there. Change the setting here on the settings screen instead, or have whoever installed Loombre add the variable to the compose file's `environment:` blocks.
 
 ### Password Reset
 
@@ -338,6 +356,7 @@ How many password-recovery requests (forgot-password or reset-password) one devi
 - **Default:** 5
 - **Applies:** immediately — no restart needed.
 - **Can be locked:** if `LOOMBRE_RATE_PASSWORD_RESET` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+- **Running Loombre in Docker?** The shipped Compose setup passes only an explicit list of variables into the containers, and `LOOMBRE_RATE_PASSWORD_RESET` isn't one of them — setting it in `loombre.env` has no effect there. Change the setting here on the settings screen instead, or have whoever installed Loombre add the variable to the compose file's `environment:` blocks.
 
 ### Reachability-proof attempt limit
 
@@ -348,6 +367,7 @@ How many reachability-check attempts one device may make per minute while provin
 - **Default:** 10
 - **Applies:** immediately — no restart needed.
 - **Can be locked:** if `LOOMBRE_RATE_PROBE` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+- **Running Loombre in Docker?** The shipped Compose setup passes only an explicit list of variables into the containers, and `LOOMBRE_RATE_PROBE` isn't one of them — setting it in `loombre.env` has no effect there. Change the setting here on the settings screen instead, or have whoever installed Loombre add the variable to the compose file's `environment:` blocks.
 
 ### Login By Identifier
 
@@ -358,6 +378,7 @@ How many sign-in attempts one ACCOUNT may receive per minute, combined across ev
 - **Default:** 20
 - **Applies:** immediately — no restart needed.
 - **Can be locked:** if `LOOMBRE_RATE_LOGIN_BY_IDENTIFIER` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+- **Running Loombre in Docker?** The shipped Compose setup passes only an explicit list of variables into the containers, and `LOOMBRE_RATE_LOGIN_BY_IDENTIFIER` isn't one of them — setting it in `loombre.env` has no effect there. Change the setting here on the settings screen instead, or have whoever installed Loombre add the variable to the compose file's `environment:` blocks.
 
 ### Refresh By Device
 
@@ -368,6 +389,7 @@ How many session-refresh requests one signed-in device may receive per minute, c
 - **Default:** 40
 - **Applies:** immediately — no restart needed.
 - **Can be locked:** if `LOOMBRE_RATE_REFRESH_BY_DEVICE` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+- **Running Loombre in Docker?** The shipped Compose setup passes only an explicit list of variables into the containers, and `LOOMBRE_RATE_REFRESH_BY_DEVICE` isn't one of them — setting it in `loombre.env` has no effect there. Change the setting here on the settings screen instead, or have whoever installed Loombre add the variable to the compose file's `environment:` blocks.
 
 ### Search
 
@@ -379,6 +401,7 @@ How many search requests one person may make per minute — this covers both reg
 - **Default:** 60
 - **Applies:** immediately — no restart needed.
 - **Can be locked:** if `LOOMBRE_RATE_SEARCH` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+- **Running Loombre in Docker?** The shipped Compose setup passes only an explicit list of variables into the containers, and `LOOMBRE_RATE_SEARCH` isn't one of them — setting it in `loombre.env` has no effect there. Change the setting here on the settings screen instead, or have whoever installed Loombre add the variable to the compose file's `environment:` blocks.
 
 ## Network
 
@@ -421,6 +444,7 @@ How Loombre handles HTTPS: 'off' serves plain HTTP (the right choice when a reve
 - **Default:** `off`
 - **Applies:** after a restart. Saving this shows a reminder banner until the server restarts — Settings → Server → Power has the restart button.
 - **Can be locked:** if `LOOMBRE_TLS_MODE` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+- **Running Loombre in Docker?** `LOOMBRE_TLS_MODE` is deliberately not passed into the containers: the Docker distribution handles HTTPS with a reverse proxy in front of Loombre, never in-process — see the [Docker install guide](/install/docker). Setting it in `loombre.env` has no effect there.
 
 ### Certificate domain name(s)
 
@@ -432,6 +456,7 @@ The domain name(s) this server requests an HTTPS certificate for when TLS mode i
 - **Default:** (none)
 - **Applies:** after a restart. Saving this shows a reminder banner until the server restarts — Settings → Server → Power has the restart button.
 - **Can be locked:** if `LOOMBRE_ACME_DOMAINS` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+- **Running Loombre in Docker?** `LOOMBRE_ACME_DOMAINS` is deliberately not passed into the containers: the Docker distribution handles HTTPS with a reverse proxy in front of Loombre, never in-process — see the [Docker install guide](/install/docker). Setting it in `loombre.env` has no effect there.
 
 ### Certificate verification method
 
@@ -442,6 +467,7 @@ How Loombre proves it controls the domain above, to get a certificate for it: 'h
 - **Default:** `http-01`
 - **Applies:** after a restart. Saving this shows a reminder banner until the server restarts — Settings → Server → Power has the restart button.
 - **Can be locked:** if `LOOMBRE_ACME_CHALLENGE_TYPE` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+- **Running Loombre in Docker?** `LOOMBRE_ACME_CHALLENGE_TYPE` is deliberately not passed into the containers: the Docker distribution handles HTTPS with a reverse proxy in front of Loombre, never in-process — see the [Docker install guide](/install/docker). Setting it in `loombre.env` has no effect there.
 
 ### Accept certificate authority Terms of Service
 
@@ -452,6 +478,7 @@ Confirms you accept the certificate authority's Terms of Service on this server'
 - **Default:** Off
 - **Applies:** after a restart. Saving this shows a reminder banner until the server restarts — Settings → Server → Power has the restart button.
 - **Can be locked:** if `LOOMBRE_ACME_TOS_AGREED` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+- **Running Loombre in Docker?** `LOOMBRE_ACME_TOS_AGREED` is deliberately not passed into the containers: the Docker distribution handles HTTPS with a reverse proxy in front of Loombre, never in-process — see the [Docker install guide](/install/docker). Setting it in `loombre.env` has no effect there.
 
 ## Mail
 
@@ -540,6 +567,7 @@ Which network port Loombre Remote uses for its secure tunnel connections. A chan
 - **Default:** 51820
 - **Applies:** after a restart. Saving this shows a reminder banner until the server restarts — Settings → Server → Power has the restart button.
 - **Can be locked:** if `LOOMBRE_WG_PORT` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+- **Running Loombre in Docker?** The shipped Compose setup passes only an explicit list of variables into the containers, and `LOOMBRE_WG_PORT` isn't one of them — setting it in `loombre.env` never reaches the server process. The Compose file *does* read it to pick which host UDP port it publishes, so it must match this setting: if you change one, change both — nothing connects them automatically.
 
 ### Remote-access tunnel subnet
 
@@ -552,6 +580,7 @@ The private range of addresses Loombre Remote assigns to your server and its enr
 - **Applies:** after a restart. Saving this shows a reminder banner until the server restarts — Settings → Server → Power has the restart button.
 - **Note:** Avoid 100.64.0.0/10 (CGNAT space) — other VPN tools commonly use it, and a device running both could collide.
 - **Can be locked:** if `LOOMBRE_WG_SUBNET` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+- **Running Loombre in Docker?** The shipped Compose setup passes only an explicit list of variables into the containers, and `LOOMBRE_WG_SUBNET` isn't one of them — setting it in `loombre.env` has no effect there. Change the setting here on the settings screen instead, or have whoever installed Loombre add the variable to the compose file's `environment:` blocks.
 
 ### WireGuard public endpoint
 
@@ -563,6 +592,7 @@ The public address (hostname or IP) devices should connect to in order to reach 
 - **Default:** (empty — not set)
 - **Applies:** immediately — no restart needed.
 - **Can be locked:** if `LOOMBRE_WG_ENDPOINT_HOST` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+- **Running Loombre in Docker?** The shipped Compose setup passes only an explicit list of variables into the containers, and `LOOMBRE_WG_ENDPOINT_HOST` isn't one of them — setting it in `loombre.env` has no effect there. Change the setting here on the settings screen instead, or have whoever installed Loombre add the variable to the compose file's `environment:` blocks.
 
 ### Cloudflare tunnel binary path
 
@@ -574,6 +604,7 @@ Where to find the cloudflared program, if Loombre can't locate it automatically.
 - **Default:** (empty — not set)
 - **Applies:** immediately — no restart needed.
 - **Can be locked:** if `LOOMBRE_CLOUDFLARED_PATH` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+- **Running Loombre in Docker?** The shipped Compose setup passes only an explicit list of variables into the containers, and `LOOMBRE_CLOUDFLARED_PATH` isn't one of them — setting it in `loombre.env` has no effect there. Change the setting here on the settings screen instead, or have whoever installed Loombre add the variable to the compose file's `environment:` blocks.
 
 ### Tunnel public hostname
 
@@ -584,4 +615,5 @@ The public web address the Tunnel connection method routes through. Loombre sets
 - **Default:** (empty — not set)
 - **Applies:** immediately — no restart needed.
 - **Can be locked:** if `LOOMBRE_TUNNEL_HOSTNAME` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+- **Running Loombre in Docker?** The shipped Compose setup passes only an explicit list of variables into the containers, and `LOOMBRE_TUNNEL_HOSTNAME` isn't one of them — setting it in `loombre.env` has no effect there. Change the setting here on the settings screen instead, or have whoever installed Loombre add the variable to the compose file's `environment:` blocks.
 

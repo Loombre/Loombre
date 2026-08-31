@@ -28,6 +28,15 @@ LOOMBRE_ACME_EMAIL=you@example.com            # optional but recommended (expiry
 Everything else has a sane default (production Let's Encrypt directory,
 30-day renewal window, standard ports) — see "All settings" below.
 
+**Not available under the shipped Docker Compose distribution.** This is
+deliberate, not an oversight: the shipped `docker-compose.prod.yml`
+passes none of the TLS/ACME variables into the containers and publishes
+no 80/443 — the Docker distribution handles TLS with a reverse proxy in
+front of it instead ([Reverse proxy](reverse-proxy.md)). Setting the
+variables above in `loombre.env` there has no effect. Built-in ACME is
+for the native install paths (Linux tarball/systemd, macOS, Windows, or
+running from source).
+
 ## Choosing a challenge type
 
 | | `http-01` | `dns-01` |
@@ -254,11 +263,16 @@ non-off — the full rule, by combination:
 is that whichever hop is the browser's actual TLS endpoint is the one that
 should decide HSTS policy, and setting `LOOMBRE_TRUST_PROXY` is exactly an
 operator's declaration that a proxy — not Loombre itself — is that hop.
-Override the max-age with `LOOMBRE_HSTS_MAX_AGE_SECONDS` (default 15552000 /
-~180 days); Loombre never submits itself to the HSTS preload list (that
-requires an irreversible submission against a domain Loombre doesn't own —
-D14 no-phone-home applies here too, and it stays entirely the operator's
-own decision).
+The header Loombre sends is fixed and not configurable:
+`max-age=15552000; includeSubDomains` (~180 days — long enough to be
+meaningfully sticky, short enough that a cert/DNS mistake self-heals
+inside half a year). It never carries `preload`, and Loombre never
+submits itself to the HSTS preload list (that requires an irreversible
+submission against a domain Loombre doesn't own — the no-phone-home rule
+applies here too, and it stays entirely the operator's own decision); if
+you want preload-eligible HSTS, terminate TLS at your own reverse proxy
+and set the header there ([Reverse proxy](reverse-proxy.md)'s HSTS
+section).
 
 ## All settings
 

@@ -9,10 +9,11 @@
      exact per-capability privacy copy quoted below verbatim,
      describePluginStatus — the status-pill wording), PluginConfigForm.tsx
      (auto-rendered config form, write-only secret fields), EventGrantsEditor.tsx
-     (event-grant editor: requested vs. granted), apps/web/src/app/admin/
-     plugins/[id]/page.tsx (detail page: enable/disable, "Check for
-     updates" -> re-approval, HMAC rotation, delivery-status panel,
-     pseudonymization toggle, remove), apps/web/src/lib/plugin-delivery-status.ts
+     (event-grant editor: requested vs. granted), apps/web/src/app/settings/
+     plugins/[id]/PluginDetailScreen.tsx (detail page: enable/disable,
+     "Check for updates" -> re-approval, HMAC rotation, delivery-status
+     panel, pseudonymization toggle, remove; the old /admin/plugins route
+     is a redirect to /settings/plugins), apps/web/src/lib/plugin-delivery-status.ts
      (delivery-status copy, gap-notice wording), apps/web/src/components/
      admin/libraries/ProviderChainEditor.tsx + lib/library-provider-chain.ts
      (per-library provider-chain editor: default/customize, reorder,

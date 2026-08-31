@@ -123,13 +123,18 @@ export interface SettingsRegistryEntry<T = unknown> {
    *  never invented for a knob with no existing env convention. */
   envVar?: string;
   parseEnv?: EnvValueParser;
-  /** True when the REAL default is platform-derived at runtime (apps/
-   *  server/src/cli/app-paths.ts's resolveAppPaths) and the static
-   *  `default` below is only an illustrative fallback that cannot
-   *  reproduce it. Doc generators (scripts/docs/gen-env-reference.mjs)
-   *  suppress the "Default when unset" bullet for these entries so the
-   *  description's platform-default sentence — the true answer — is the
-   *  only default stated (audit fafa47f, AUD-A6b-002). */
+  /** True when the REAL default is derived at runtime — from the platform
+   *  (apps/server/src/cli/app-paths.ts's resolveAppPaths for the path
+   *  entries), from the host's CPU count (apps/worker/src/settings/
+   *  effective-settings.ts's resolveScanConcurrencyFromEffective for
+   *  scanner.concurrency), or from a mode selection (an unset DATABASE_URL
+   *  selects embedded-PostgreSQL provisioning, apps/server/src/bootstrap/
+   *  provisioning.ts) — and the static `default` below is only an
+   *  illustrative fallback that cannot reproduce it. Doc generators
+   *  (scripts/docs/gen-env-reference.mjs) suppress the "Default when
+   *  unset" bullet for these entries so the description's own
+   *  derived-default sentence — the true answer — is the only default
+   *  stated (audit fafa47f, AUD-A6b-002; extended per F24-1/F33-6/T04-3). */
   platformDerivedDefault?: boolean;
   /** Security review F1: true when this entry's effective/default value
    *  itself EMBEDS a credential (e.g. a connection string with an inline
@@ -311,10 +316,19 @@ const ENV_ONLY_ENTRIES: SettingsRegistryEntry[] = [
   defineSetting({
     key: "database.url",
     schema: z.string().min(1),
+    // Illustrative only — the docker-compose dev harness's connection
+    // string (docker-compose.dev.yml maps host port 5442), NOT what an
+    // unset value does in the shipped product: unset selects EMBEDDED
+    // PostgreSQL provisioning (apps/server/src/bootstrap/provisioning.ts;
+    // packages/provisioning-pg's EMBEDDED_PG_DEFAULT_PORT, 5433).
+    // platformDerivedDefault keeps this dev-harness literal out of the
+    // generated operator docs (F24-1) — the description below states the
+    // real unset behavior.
     default: "postgres://loombre:loombre@localhost:5442/loombre",
+    platformDerivedDefault: true,
     category: "database",
-    description: "Where Loombre's database lives. The server can't start without reading this first — every other setting stored in the database depends on it.",
-    technicalDetails: "PostgreSQL connection string. Read before any DB-backed configuration — including this registry's own database-stored half — can be resolved at all.",
+    description: "Where Loombre's database lives. Leave it unset and Loombre provisions and manages its own embedded PostgreSQL automatically; set it and Loombre connects to that external PostgreSQL instead — the two modes are selected purely by whether this variable is set. The server can't start without resolving this first — every other setting stored in the database depends on it.",
+    technicalDetails: "PostgreSQL connection string. Read before any DB-backed configuration — including this registry's own database-stored half — can be resolved at all. When unset, the bundled embedded PostgreSQL is provisioned under the data directory and listens on loopback port 5433; see the Operator Guide's External PostgreSQL page for the external mode.",
     requiresRestart: true,
     scope: "env-only",
     envVar: "DATABASE_URL",
@@ -535,7 +549,11 @@ const UI_ENTRIES: SettingsRegistryEntry[] = [
     // real CPU-derived value whenever source==='default', keeping the
     // Addendum A behavior invariant exact — env pins and DB rows both flow
     // through unchanged. See this lane's final report.
+    // platformDerivedDefault keeps the illustrative floor literal out of
+    // the generated operator docs (F33-6/T04-3) — the description's own
+    // half-your-cores sentence is the true default statement.
     default: 2,
+    platformDerivedDefault: true,
     category: "scanner",
     description: "How many files Loombre examines at once while scanning. Higher is faster but works the machine harder; takes effect on the next scan. When you haven't changed it, Loombre uses half your processor cores (minimum 2).",
     requiresRestart: false,
@@ -1090,7 +1108,7 @@ const UI_ENTRIES: SettingsRegistryEntry[] = [
   // the ordinary settings machinery, rather than requiring an operator to
   // hand-edit environment variables to use a feature the admin UI walks
   // them through. Every env var name is UNCHANGED from before this
-  // promotion (docs/ops/acme.md, apps/server/src/tls/config.ts) — env
+  // promotion (docs/ops/remote-access/acme.md, apps/server/src/tls/config.ts) — env
   // still wins whenever set (A8), and every one of these is
   // requiresRestart:true because apps/server/src/main.ts resolves TLS
   // mode once, at boot, before the settings service's own database read

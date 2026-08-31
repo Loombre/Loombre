@@ -3,7 +3,8 @@
 <!-- Sourcing: user CRUD + per-library permission grants via a single
      library-scoped endpoint, restricted-grant note shown whenever a user's
      library list includes a restricted library ("gate 4 of 5") —
-     apps/web/src/app/admin/users/page.tsx header comment. Five-gate model
+     apps/web/src/components/settings/sections/UsersSection.tsx header
+     comment (the old /admin/users route is a redirect to /settings/users). Five-gate model
      for restricted content — docs/PLAN.md §6.4 (linked in full from the
      User Guide's restricted-content page; summarized here from the admin
      side only). Optional mail transport + invitation & reset flows run:

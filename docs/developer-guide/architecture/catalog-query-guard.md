@@ -1,10 +1,13 @@
 # Architecture: Catalog, query guard & restricted content
 
-<!-- Sourcing: ViewerContext (userId, allowedLibraryIds, restrictedCleared)
-     — packages/db/src/context.ts:9-24. guardPredicateSql / applyGuard —
-     packages/db/src/query/guard.ts:80-98 (library-membership + content-
-     class + missing-file-visibility predicate; applyGuard as sole
-     entry point; guard.ts not exported from packages/db/src/index.ts's
+<!-- Sourcing: ViewerContext (userId, allowedLibraryIds, restrictedCleared,
+     surface) — packages/db/src/context.ts:21-44 (ViewerSurface type at :21,
+     interface at :23; `surface` is required, no default). restrictedRowsVisible
+     / guardPredicateSql / applyGuard — packages/db/src/query/guard.ts:88-110
+     (library-membership + content-class + missing-file-visibility predicate;
+     restrictedRowsVisible at :88-90 requires clearance AND a restricted
+     surface, per the 2026-08-30 §6.4 surface-scoping amendment; applyGuard as
+     sole entry point; guard.ts not exported from packages/db/src/index.ts's
      barrel — only pre-guarded functions like getItemById/listItems are).
      applyGuardToJoined/applyLibraryIdFilter/applyContentClassFilter/
      applyGuardToPeople/applyGuardToTags — same file, generalized variants
@@ -38,7 +41,8 @@ explicitly reacts against (docs/PLAN.md's pain-point ledger, P1).
         │   requires a ViewerContext:             │
         │     { userId,                           │
         │       allowedLibraryIds,                │
-        │       restrictedCleared }               │
+        │       restrictedCleared,                │
+        │       surface }                         │
         └──────────────────┬───────────────────┘
                             │  applyGuard(ctx)
                             ▼
@@ -49,7 +53,9 @@ explicitly reacts against (docs/PLAN.md's pain-point ledger, P1).
         │   query-builder layer:                  │
         │     library_id = ANY(allowedLibraryIds) │
         │     AND (content_class = 'general'      │
-        │          OR restrictedCleared)          │
+        │          OR (restrictedCleared          │
+        │              AND surface =              │
+        │                  'restricted'))         │
         │     AND <missing-file visibility>       │
         └──────────────────┬───────────────────┘
                             │
@@ -85,8 +91,15 @@ The `restricted-content` class is gated by five conditions that must ALL
 hold before a restricted row is ever sent to a client — server capability
 enabled, the user is an adult, the user has opted in with their own PIN,
 an explicit per-library permission grant, and a currently-unlocked session
-(re-verified on every request, never persisted across logins). Full detail
-in docs/PLAN.md §6.4 (internal spec — see this repo). The user-facing
+(re-verified on every request, never persisted across logins). Since the
+2026-08-30 §6.4 surface-scoping amendment, clearance is necessary but not
+sufficient: the request must ALSO come from a restricted-zone surface
+(`ctx.surface === 'restricted'` — the dedicated `/restricted/*` zone and
+the item-addressed reads that serve its playback). General surfaces —
+browse, search, home rails, watchlist/progress lists, people, tags —
+compile the general-only filter unconditionally, so a live unlock never
+changes what they return. Full detail in docs/PLAN.md §6.4 (internal
+spec — see this repo). The user-facing
 version of the same model, in plain language, is the
 [User Guide's restricted content page](../../user-guide/restricted-content.md);
 the admin-facing version is

@@ -62,10 +62,11 @@ note. Nothing here is "assumed" — if you did not run it, it is SKIPPED.
 
 ## Path 2 — Tunnel (Cloudflare)
 
-1. **Create the scoped token** following tunnel.md's walkthrough. The
-   scopes the wizard needs: token verify, Account Settings Read, Cloudflare
-   Tunnel Edit, Zone DNS Edit. Paste it into the token step (it is stored
-   write-only; you will never see it again).
+1. **Create the scoped token** following [Tunnel](tunnel.md)'s
+   walkthrough. The wizard first verifies the token itself is valid, then
+   checks it carries the three permission groups it needs: Account
+   Settings: Read, Cloudflare Tunnel: Edit, Zone: DNS Edit. Paste it into
+   the token step (it is stored write-only; you will never see it again).
 2. **Enable** with your chosen hostname (`LOOMBRE_TUNNEL_HOSTNAME`).
    Confirm the wizard provisioned the tunnel + DNS route and that the
    connector (`cloudflared`, resolved from PATH or

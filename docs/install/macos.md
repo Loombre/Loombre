@@ -2,8 +2,10 @@
 
 Loombre ships as a native `.pkg` installer: a bundled Node runtime, bundled
 ffmpeg, and a menubar controller app — no system Node, no system ffmpeg
-required. Two install paths are first-class: the `.pkg` directly, or a
-Homebrew cask that wraps the same `.pkg`.
+required. The install path is the `.pkg` directly. (A Homebrew cask
+wrapping the same `.pkg` is prepared in the repository but not yet wired
+to a publisher — no tap exists yet; see [Homebrew cask](#homebrew-cask)
+below.)
 
 ## Why macOS will warn you before you can open this
 
@@ -14,8 +16,8 @@ click by default, regardless of whether the software is actually safe.
 
 Loombre doesn't pay Apple's $99/year Developer Program fee for one honest
 reason, the same one behind every other unsigned-install page in this repo:
-**the project takes no revenue and reports no telemetry of any kind** (see
-CLAUDE.md's architecture invariants — no phone-home, ever). A Developer ID
+**the project takes no revenue and reports no telemetry of any kind** — no
+phone-home, ever; an architecture invariant, not a setting. A Developer ID
 is an annual cost with no funding source behind it. Instead, Loombre's trust
 model is the open-source standard: **you verify a cryptographic checksum
 and signature yourself** — see [Verify what you downloaded](#verify-what-you-downloaded)
@@ -26,7 +28,12 @@ boundary.
 
 Get `loombre-<version>-macos-<arch>.pkg` for your Mac (`arch` is `arm64` for
 Apple Silicon, `x64` for Intel) plus the release's shared verification
-files, from the [releases page] (or your own mirror):
+files, from the [releases page] (or your own mirror).
+
+**Apple Silicon (`arm64`) only for now** — the release pipeline builds and
+publishes only the `arm64` `.pkg` today; an Intel (`x64`) build is not yet
+published (the build script already supports `--arch=x64` — the gap is the
+pipeline, a known pending item). The downloads:
 
 - `loombre-<version>-macos-<arch>.pkg` — the installer
 - `SHA256SUMS` — checksums for every artifact in the release
@@ -155,6 +162,13 @@ checksum+signature-verified.
 
 ### Homebrew cask
 
+**Not yet installable** — the cask file ships in this repository
+(`installers/macos/homebrew/loombre.rb`) but is not yet wired to a
+publisher: no tap exists and no tagged release has been published yet
+(the same caveat the Docker page gives its published-image path), so
+`brew install` has nothing to resolve today. Once a tap and a published
+release exist, the invocation will be:
+
 ```sh
 brew install --cask --no-quarantine loombre
 ```
@@ -203,9 +217,13 @@ time the setup wizard appears.
 
 To use your own PostgreSQL 17+ instead, edit
 `/Library/Application Support/Loombre/config/loombre.env` and set
-`DATABASE_URL` (see `docs/ops/external-postgres.md`). Also consider setting
-`LOOMBRE_JWT_SECRET` (`openssl rand -base64 48`) so restarts don't log
-everyone out. This file is created once at install time and **never**
+`DATABASE_URL` (see `docs/ops/external-postgres.md`). Also consider
+setting `LOOMBRE_JWT_SECRET` explicitly (`openssl rand -base64 48`) — not
+because restarts would log anyone out (an unset secret is generated once
+and persisted automatically since P4.7/P4.17, so sessions survive
+restarts either way), but because an explicit value in this file survives
+a wiped data directory and gets backed up with the rest of your
+configuration. This file is created once at install time and **never**
 overwritten by a later upgrade — your edits survive.
 
 Restart the services after editing:
@@ -364,7 +382,7 @@ sudo rm -rf "/Library/Application Support/Loombre"
 sudo sysadminctl -deleteUser _loombre interactive
 sudo rm -rf /opt/loombre
 # Before forgetting the receipt, check it for a STRAY copy of the app: an
-# rc.6-and-earlier install (see commit 3ce5edca) could have relocated
+# rc.6-and-earlier install (see commit b935a2c) could have relocated
 # Applications/Loombre.app elsewhere on the volume instead of installing it
 # at the standard path — this lists every file the receipt actually tracks
 # so you can spot (and remove) a relocated bundle before the receipt that
@@ -387,8 +405,8 @@ tracked installing, which for a `.pkg` payload is limited; the steps above
 
 Code-signing certificates (Apple Developer ID + notarization) cost $99/year.
 This project has no revenue and reports no telemetry. Checksum + minisign-signature
-verification is the open-source trust model instead — see `docs/PLAN.md` P4.9.
-This is a deliberate, disclosed tradeoff, not an oversight.
+verification is the open-source trust model instead — see `docs/PLAN.md` §11
+and STATE.md P4.9. This is a deliberate, disclosed tradeoff, not an oversight.
 
 ---
 
@@ -414,10 +432,15 @@ Common issues:
 - **`bind EADDRINUSE`** — port 3001 (or another port) is already in use.
   Check `lsof -i :3001` to see what process is using it.
 - **Permission denied on `/Library/Application Support/Loombre/`** — the
-  installer creates this directory and makes it owned by `_loombre`. If you
-  copied it or changed permissions, restore them:
+  installer creates this directory owned by `_loombre`, with the **root
+  directory's group set to `admin`** so the menubar app (running as your
+  console user) can traverse it to the server's IPC files. If you copied
+  it or changed permissions, restore the installer's layout (the full
+  recipe, including per-subdirectory modes, is on
+  [the install troubleshooting page](/install/troubleshooting)):
   ```sh
   sudo chown -R _loombre:_loombre "/Library/Application Support/Loombre/"
+  sudo chown _loombre:admin "/Library/Application Support/Loombre/"
   sudo chmod 750 "/Library/Application Support/Loombre/"
   ```
 - **PostgreSQL won't start** — Embedded PostgreSQL data directory needs to be

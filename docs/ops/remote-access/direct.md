@@ -16,10 +16,12 @@
      their request/response shapes (TestRemoteDirectAcmeRequest,
      RemoteDirectAcmeTestResult, RemoteDirectStatus) —
      packages/contract/openapi.yaml; apps/server/src/remote/
-     remote-direct.controller.ts as of this page's writing is still the
-     Wave-0 conforming shell (Direct's real server-side lane had not landed
-     on this base yet) — described here per the frozen contract and R5/RG12
-     locked decisions, not from a live implementation; flagged for V-DOC.
+     remote-direct.controller.ts is REAL, landed code (lane D1's RG12
+     promotion: staged ACME test-before-commit via buildAdHocAcmeConfig,
+     real enable/disable with cross-path enables serialized under an
+     advisory lock, LD-9) — this page's shapes verified against it
+     directly; the earlier flagged-for-V-DOC caveat (the controller was
+     still the Wave-0 conforming shell when first drafted) is resolved.
      CGNAT classification (100.64.0.0/10 = definite carrier-grade NAT;
      RFC1918 WAN = double-NAT; WAN-vs-resolved-address mismatch = stale
      DNS) — packages/shared/src/remote/diagnosis.ts's classifyReachability

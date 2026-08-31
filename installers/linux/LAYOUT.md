@@ -72,16 +72,17 @@ outside this lane's ownership: `apps/`, `packages/`) — see the
 corresponding functions' doc comments in `build-tarball.mjs` for the full
 story:
 
-1. **`ajv` (apps/server)** — listed under `devDependencies` but imported
-   at runtime by `device-profile-validator.ts`; `--prod` correctly strips
-   it, so the deployed server crashed at boot with
-   `ERR_MODULE_NOT_FOUND('ajv')`. Fixed by `fixServerAjv()`: vendors the
-   already-resolved `ajv` package from this repo's own pnpm store into
-   the deploy's `node_modules` — not `pnpm add`-ed, nothing added to the
-   lockfile. **Orchestrator TODO**: move `ajv` to `dependencies` in
-   `apps/server/package.json` — a one-line fix once someone with lockfile
-   access can land it; this vendoring step becomes a harmless no-op after
-   that (still safe to leave in place).
+1. **`ajv` (apps/server)** — RESOLVED UPSTREAM since: `ajv` is now a
+   real `apps/server` `dependencies` entry — exactly the one-line fix
+   the Orchestrator TODO here originally asked for. As found: it was
+   listed under `devDependencies` while imported at runtime by
+   `device-profile-validator.ts`; `--prod` correctly stripped it, so the
+   deployed server crashed at boot with `ERR_MODULE_NOT_FOUND('ajv')`.
+   `fixServerAjv()` vendored the already-resolved `ajv` package from
+   this repo's own pnpm store into the deploy's `node_modules` (not
+   `pnpm add`-ed, nothing added to the lockfile); that step still runs
+   and is now the harmless no-op its own doc comment predicted — safe to
+   leave in place, per that comment.
 2. **`sharp` (apps/worker)** — depends on a platform-specific native
    binary package (`@img/sharp-<platform>-<arch>`) that `pnpm deploy`
    can only ever materialize for the CURRENT BUILD HOST (confirmed:
@@ -96,22 +97,22 @@ story:
    download's sha512 against that same lockfile's own recorded integrity
    before trusting it. No lockfile edit — the version fetched is READ
    from the lockfile, not chosen here.
-3. **`@loombre/release-manifest` relative import (apps/server)** — a
-   DELIBERATE, DOCUMENTED workaround by the release lane (their own wave
-   was also lockfile-frozen): `release-manifest-import.ts` reaches
+3. **`@loombre/release-manifest` relative import (apps/server)** —
+   RESOLVED UPSTREAM since: the lockfile freeze lifted,
+   `"@loombre/release-manifest": "workspace:*"` is a real `apps/server`
+   `dependencies` entry, and the interim `release-manifest-import.ts`
+   shim was deleted — precisely the follow-up the Orchestrator TODO here
+   originally named. As found: that shim (a deliberate, documented
+   workaround from a lockfile-frozen wave) reached
    `packages/release-manifest/dist/index.js` via a relative path assuming
-   apps/server/dist sits inside the full monorepo layout, which breaks
-   once `pnpm deploy` isolates apps/server into its own tree. Fixed by
-   `bundleReleaseManifestForServer()`: copies that package's own
-   already-built `dist/` (built as an `apps/server` "prebuild" step,
-   zero runtime dependencies of its own) to the equivalent relative depth
-   under the tarball's own root. `install.sh` copies this `packages/` dir
-   alongside `bin/`/`lib/`/etc. — see its `for entry in ...` payload list.
-   **Orchestrator TODO**: once the lockfile freeze lifts, add
-   `"@loombre/release-manifest": "workspace:*"` to
-   `apps/server/package.json`, delete `release-manifest-import.ts`, and
-   this step becomes unnecessary (the file's own header comment says the
-   same).
+   `apps/server/dist` sat inside the full monorepo layout, which broke
+   once `pnpm deploy` isolated apps/server into its own tree.
+   `bundleReleaseManifestForServer()` — copying that package's own
+   already-built `dist/` to the equivalent relative depth under the
+   tarball's root, which `install.sh` copies alongside `bin/`/`lib/`/etc.
+   (see its `for entry in ...` payload list) — still runs; with the real
+   dependency in place it is redundant but harmless, and retiring it is
+   the build-script owner's call.
 
 ## Why `pnpm deploy` alone is not enough
 
@@ -134,26 +135,31 @@ the same inode still reference) with the precompiled result.
 
 ## Why `@loombre/db`/`@loombre/jobs` are compiled to plain JS for this tarball
 
-`packages/db` and `packages/jobs` ship TypeScript source only, by design —
-every other in-repo consumer (dev server, the perf-t0 harness, vitest)
-bridges this at import time via `tsx`'s esbuild-backed loader. `tsx` is a
-devDependency (correctly excluded by `--prod`), and even vendoring it by
-hand runs into `esbuild`'s per-platform native binary, which resolves for
-the **build host** — wrong when cross-building the Linux tarball from a
-developer's macOS machine. This build compiles `@loombre/db` and
-`@loombre/jobs` to plain ESM JavaScript instead, once, as a
-packaging-time-only step (packages/db's/packages/jobs' own source is
-never touched — see above), so the shipped `bin/loombre-server` and
-`bin/loombre-worker` need nothing beyond the bundled Node binary itself:
-no `tsx`, no `esbuild`, no native binary of any kind for this part of the
-stack. Proven end-to-end: a compiled `apps/worker` `dist/index.js`
-booting through `@loombre/jobs` → `@loombre/db` → `kysely` → `pg`,
-reaching a real `pg-boss` connection attempt against an intentionally
-unreachable address (`ECONNREFUSED`) — i.e. the entire module graph
-resolves and executes for real; only the final network hop was pointed
-at a dead port on purpose, to prove this without touching any real
-database (including, deliberately, without ever defaulting to the shared
-dev Postgres database other Phase-4 lanes are using concurrently).
+HISTORICAL PREMISE, SINCE FIXED UPSTREAM (Phase 4 Wave 3, lane STRUCT):
+when this was written, `packages/db` and `packages/jobs` shipped
+TypeScript source only (`exports` pointing at `./src/index.ts`), and
+every in-repo consumer bridged that at import time via `tsx`'s
+esbuild-backed loader. `tsx` is a devDependency (correctly excluded by
+`--prod`), and even vendoring it by hand runs into `esbuild`'s
+per-platform native binary, which resolves for the **build host** —
+wrong when cross-building the Linux tarball from a developer's macOS
+machine. Hence this build compiled `@loombre/db` and `@loombre/jobs` to
+plain ESM JavaScript itself, once, as a packaging-time-only step. Both
+packages now ship real compiled `dist/` builds with dist-pointing
+`exports` at the source, so the premise is gone; the packaging-time
+compile step still runs (the packages' own source is never touched — see
+above) and is now redundant but harmless. Either way the shipped
+`bin/loombre-server` and `bin/loombre-worker` need nothing beyond the
+bundled Node binary itself: no `tsx`, no `esbuild`, no native binary of
+any kind for this part of the stack. Proven end-to-end: a compiled
+`apps/worker` `dist/index.js` booting through `@loombre/jobs` →
+`@loombre/db` → `kysely` → `pg`, reaching a real `pg-boss` connection
+attempt against an intentionally unreachable address (`ECONNREFUSED`) —
+i.e. the entire module graph resolves and executes for real; only the
+final network hop was pointed at a dead port on purpose, to prove this
+without touching any real database (including, deliberately, without
+ever defaulting to the shared dev Postgres database other Phase-4 lanes
+were using concurrently).
 
 ## Bundled Node runtime
 

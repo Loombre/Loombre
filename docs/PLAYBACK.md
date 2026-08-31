@@ -1,9 +1,10 @@
 # LOOMBRE — PLAYBACK ENGINE SPECIFICATION
-### Authoritative annex to TECHNICAL_DEVELOPMENT_PLAN.md (v1.1) — governs plan §7
+### Authoritative annex to `docs/PLAN.md` (v1.1, amended in place) — governs plan §7
 
-> **Status:** v1.0 approved-pending-owner-review. Place as `docs/PLAYBACK.md` in
-> the repo beside `docs/PLAN.md`. The Phase 3 orchestration prompt is generated
-> from this document. Where this spec and implementation convenience conflict,
+> **Status:** v1.0 approved-pending-owner-review; amended in place since
+> approval (each amendment dated in-body). Phase 3 delivered against this
+> document (its orchestration prompt was generated from it).
+> Where this spec and implementation convenience conflict,
 > the spec wins; proposed spec changes are PRs against this file, never silent
 > code divergence.
 
@@ -39,15 +40,18 @@ export interface PlanInput {
   network: NetworkConditions;
   policy: ServerPolicy;              // instance + per-user knobs, resolved by caller
   caps: VerifiedCapabilities;        // hardware self-test results snapshot
-  selection: TrackSelection;         // resolved BEFORE plan() (see §3.0)
+  selection: TrackSelection;         // resolved BEFORE plan() (see §2.6)
   mode: 'stream' | 'download';       // download reserved: may emit 'remux'
 }
 ```
 Internal layout (each stage a pure module with its own matrix cases):
-`select/` (track resolution helpers used by caller), `stages/container.ts`,
-`stages/video.ts`, `stages/hdr.ts`, `stages/audio.ts`, `stages/subtitle.ts`,
-`stages/ladder.ts`, `stages/hardware.ts`, `args/builder.ts`, `reasons.ts`,
-`types.ts`. No file imports NestJS, node:fs, node:os, or Date.
+`plan.ts`, `stages/container.ts`, `stages/video.ts`, `stages/hdr.ts`,
+`stages/audio.ts`, `stages/subtitle.ts`, `stages/ladder.ts`,
+`stages/hardware.ts`, `stages/types.ts`, `args/builder.ts`, `av1.ts`,
+`dv.ts`, `reasons.ts`, `types.ts`. Track selection is resolved by the
+caller BEFORE plan() (`apps/server/src/playback/resolve-selection.ts` —
+see §2.6); no `select/` module exists inside the engine package.
+No file imports NestJS, node:fs, node:os, or Date.
 
 ## 2. Input type contracts (complete)
 
@@ -440,6 +444,21 @@ LD-7-authorized `VideoAction` touch).
 5. Mapping: `-map 0:v:{n}` `-map 0:a:{n}` (+ sub map for embed)
 6. Filtergraph (single `-filter_complex` when any of: deinterlace → scale →
    tonemap → subtitle overlay; fixed filter order exactly as listed)
+   **OPEN VERIFICATION ITEM — TEXT-subtitle burn-in is unproven against
+   real ffmpeg (root STATE.md, Phase 3 Step 7 "HONEST GAPS" record,
+   2026-07-24; still open at HEAD).** The builder emits one uniform
+   `overlay` graph for every burn-in, with no TEXT/IMAGE branch, and
+   burn-in is a reachable Stage-E outcome for TEXT codecs
+   (`subtitle-format-requires-burn-in`; `ass` under
+   `policy.preserveAssStyling`) — but whether `overlay` can consume a
+   subrip/ass stream has never been executed against real ffmpeg: no
+   subtitle-burn-in integration spec exists (contrast av1-encode-args /
+   vt-tonemap-args / dv-strip-args), and golden 19 pins the emitted
+   external-SRT shape as the recorded expectation, not as proof it runs.
+   Resolution is an engineering decision — the `subtitles=`/libass filter
+   design or PGS-only scoping — and any graph change is a spec + golden
+   change in the same PR. Until then this section specifies the emitted
+   tokens only; it does not assert that the TEXT burn-in graph executes.
 7. Video encode block (codec, preset/quality per backend table, level, GOP:
    `-g {2×fps}` keyframe-aligned to `-force_key_frames expr:gte(t,n_forced*{SEG_DUR})`).
    Video-COPY branch only, added 2026-08-10 (ffmpeg-verified): when
@@ -2109,7 +2128,8 @@ rung demoted on each `cause` (device-no-av1, no-av1-encoder,
 tier0-no-hw-av1); T0 `'hw'`-eligibility mixed-target set falling to rule
 (iii) → Stage-G demotion; ts-hls-only device → no av1 swap; av1 SOURCE
 copy/direct-play cases unchanged (the §7.1 regression pin).
-**Golden args:** 25 canonical scenarios snapshot full token-form ffmpegArgs
+**Golden args:** ≥ 25 canonical scenarios (the Phase-3 floor; the live set
+is defined by `test/goldens/scenarios.ts`) snapshot full token-form ffmpegArgs
 (count grows with each landed interpretation; C1 adds at minimum: hw-av1
 transcode (`av1_nvenc`), software-av1 T1 transcode (`libsvtav1 -preset
 10`, no `-level`, no `-tag:v`), and a demoted-ladder scenario).

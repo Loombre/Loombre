@@ -47,7 +47,12 @@ subset) → `builder` (full install + build) → `prod-deps` (a **separate**
 from-scratch production-only install, not a mutated copy of the build
 stage's tree) → `ffmpeg-fetch` (vendors pinned static ffmpeg/ffprobe
 binaries) → `runtime` (the actual shipped image, assembled from the
-previous stages' outputs). `server` and `worker` run from this same image
+previous stages' outputs). One stage sits outside that chain:
+`wg-native-build` (a `golang` stage, the only one not derived from
+`base`) compiles `packages/wg-native`'s embedded WireGuard c-shared
+library natively per target architecture and feeds its `.so` directly
+into `runtime`, independent of the pruner/builder/prod-deps/ffmpeg-fetch
+chain. `server` and `worker` run from this same image
 with different startup commands. Three further stages — `web-pruner` →
 `web-builder` → `web` — build apps/web's Next.js standalone server as a
 **second, independently shipped image** (`ghcr.io/loombre/loombre-web`,

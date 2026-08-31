@@ -40,94 +40,50 @@ Two build-time-only findings from wiring this in:
   regardless of how that pin was originally sourced, and the arm64 image
   build (§3 below) exercised that path for real, under QEMU, and passed.
 
-## 2. Real packaging-friction findings (this lane's actual purpose)
+## 2. Real packaging-friction findings — SUPERSEDED (Phase 4 Wave 3, lane STRUCT fixed both at the source)
 
-Found by trying to run the **compiled** `apps/server/dist/main.js` /
-`apps/worker/dist/index.js` directly with plain `node`, the way a
-straightforward Dockerfile would default to, and watching it fail three
-different ways in sequence. Reported here VERBATIM per this lane's brief.
+**Everything in §2/2a/2b/2c is a Wave-1 finding that has since been fixed
+upstream, and the Dockerfile mechanism it produced is DELETED.** Current
+state (see the Dockerfile's own builder-stage comments): `packages/db`
+and `packages/jobs` ship real compiled `dist/` builds with `exports`
+pointing at `dist/`, so the runtime loads plain compiled JS with zero
+loaders (`node dist/main.js` just works); the
+`ENV NODE_OPTIONS="--import tsx"` runtime shim and its tsx/esbuild/ajv
+`cp -RL` snapshot-and-restore mechanism no longer exist; and `ajv` is a
+real `apps/server` `dependencies` entry, so the `--prod` install simply
+includes it. Condensed historical record of what the first real container
+smoke run found:
 
-### 2a. `@loombre/db` and `@loombre/jobs` ship raw TypeScript at runtime, not compiled dist — despite `jobs` HAVING a working build script
+### 2a. (historical) `@loombre/db`/`@loombre/jobs` shipped raw TypeScript at runtime
 
-Both packages' `package.json` `"exports"` map `"."` straight to
-`"./src/index.ts"`. `@loombre/db` has no `build` script at all (consistent
-— nothing to point at instead). `@loombre/jobs` **does** have a working
-`"build": "tsc -p tsconfig.json"` script that produces a perfectly good
-`dist/` — but its `exports` field was never updated to point at it, so
-that `dist/` is silently dead weight nobody loads. Confirmed by testing:
-copying only `packages/jobs/dist` into an assembled runtime tree makes
-`apps/server/dist/main.js` fail with
-`Cannot find module '.../apps/server/node_modules/@loombre/jobs/src/index.ts'`
-— copying `packages/jobs/src` instead (and dropping the unused `dist`
-copy) fixes it.
+Both packages' `exports` mapped `"."` straight to `"./src/index.ts"`
+(`@loombre/jobs` even had a working `build` script whose `dist/` output
+nothing loaded). Running the compiled apps with plain `node` failed with
+`Cannot find module '.../@loombre/jobs/src/index.ts'`; this Dockerfile
+bridged it the way `scripts/perf-t0.mjs` then did, by registering `tsx`
+as a runtime loader (`ENV NODE_OPTIONS="--import tsx"`). The root-cause
+fix this section proposed — dist-pointing `exports` matching
+`@loombre/playback-engine`/`@loombre/shared` — is exactly what lane
+STRUCT later shipped, and the loader shim is gone.
 
-This repo's own `scripts/perf-t0.mjs` already documents the `@loombre/db`
-half of this exactly (see its `spawnServer()` comment: *"node dist/main.js
-404s inside @loombre/db before /healthz ever answers"*) and works around it
-by registering `tsx` as a loader via `NODE_OPTIONS=--import tsx` for the
-child process it spawns. This Dockerfile's runtime image does the same
-(`ENV NODE_OPTIONS="--import tsx"`) — same precedent, now load-bearing for
-a real deployment artifact, not just a perf-harness child process.
+### 2b. (historical) `apps/server` imported `ajv` at request time while listing it as a devDependency only
 
-**Discovery for lane I1** (Linux tarball): a tarball install running
-`node apps/server/dist/main.js` directly will hit the identical failure
-unless it also ships `tsx` and sets `NODE_OPTIONS`, or the systemd unit's
-`ExecStart` is written accordingly. Worth confirming I1 either already
-does this or picks it up from this note.
+`common/device-profile-validator.ts` runs Ajv on every `POST /auth/login`
+(P2.3 DeviceProfile schema validation), but `ajv` sat under
+`devDependencies`, so a `--prod` install correctly stripped it and login
+failed at runtime with `Cannot find package 'ajv'`. A sweep of the rest
+of the pruned dependency graph found no other instance of the pattern.
+The single-line classification fix this section called for — `ajv` into
+`dependencies` — has landed.
 
-**Root-cause fix (out of this lane's scope — `apps/`/`packages/` frozen
-for I2):** either give `@loombre/jobs`'s `exports` field the same treatment
-as `@loombre/playback-engine`/`@loombre/shared` (point at `dist/index.js`,
-delete the dead-weight-avoidance question entirely), or — if raw-TS-at-
-runtime for `@loombre/db`/`@loombre/jobs` is an intentional simplicity
-choice — drop `@loombre/jobs`'s unused `build` script and document the
-`tsx`-loader requirement as an explicit, first-class runtime dependency
-rather than a devDependency-in-name-only.
+### 2c. (historical) How the runtime image resolved both without touching `apps/`/`packages/`
 
-### 2b. `apps/server` imports `ajv` at real request time; `apps/server/package.json` lists it as a devDependency ONLY
-
-`apps/server/src/common/device-profile-validator.ts` does
-`import { Ajv } from "ajv"` and runs it on every `POST /auth/login` (P2.3
-DeviceProfile schema validation, 422 on malformed). `apps/server/package.json`
-lists `ajv` under `devDependencies` exclusively. A `pnpm install --prod`
-correctly (per that classification) removes it — and login then fails at
-runtime with `Cannot find package 'ajv'`. Confirmed by reproducing the
-exact failure, then fixing it by restoring `ajv` (+ its own dependency
-group: `fast-deep-equal`, `fast-uri`, `json-schema-traverse`,
-`require-from-string`) alongside the `tsx` shim below.
-
-Swept the rest of the pruned dependency graph (`apps/worker`,
-`packages/db`, `packages/jobs`, `packages/playback-engine`,
-`packages/shared`) for the same pattern — grepped every devDependency name
-against each package's own `src/` (excluding `.spec.ts`/`test/`) — and
-found no other instance. This is an isolated, single-line classification
-bug: `ajv` belongs in `apps/server/package.json`'s `dependencies`, not
-`devDependencies`.
-
-### 2c. How the runtime image resolves both without touching `apps/`/`packages/`
-
-`pnpm install --prod` is correct given the package.jsons as they stand
-today — the fix belongs in those files (out of scope this lane), not in
-working around a correct prune. The Dockerfile's `builder` stage instead
-snapshots `tsx` and `ajv`'s real resolved directories (each package's own
-`.pnpm/<name>@<version>/node_modules/` sibling group — dereferenced with
-`cp -RL`, not just the top-level symlink, since `tsx` needs `esbuild`
-+ `esbuild`'s own platform-specific `@esbuild/<os-arch>`
-optionalDependency, and `ajv` needs its four listed siblings) into
-`/tmp/runtime-shims` **before** the separate `prod-deps` stage's
-`--prod` install runs, then restores them into that stage's `node_modules`
-afterward. Path resolution uses `readlink -f`, not a hardcoded
-`@<version>` string, so a future lockfile bump doesn't silently break it.
-
-Two resolution-location gotchas worth recording since they weren't
-obvious going in:
-
-- `tsx` resolves at the **root** `node_modules/tsx` (multiple pruned
-  workspace members declare it as a devDependency, so pnpm links it
-  there).
-- `ajv` resolves **only** at `apps/server/node_modules/ajv` — it is not
-  hoisted to root (only `apps/server` declares it at all). The restore
-  logic in the Dockerfile reads from that path specifically, not root.
+The `builder` stage snapshotted `tsx` and `ajv`'s real resolved `.pnpm`
+sibling groups (dereferenced via `cp -RL`, paths via `readlink -f` so a
+lockfile bump could not silently break it) into `/tmp/runtime-shims`
+before the `prod-deps` stage's from-scratch `--prod` install, then
+restored them into that stage's `node_modules`. That whole mechanism was
+deleted along with its reason to exist.
 
 ## 3. `pnpm install --prod` mutating an existing install does NOT shrink the store the way it looks like it should
 
@@ -166,43 +122,23 @@ hour to if you don't know to look for it — recording it since lane I's
 release-pipeline Docker builds (and any future Dockerfile changes here)
 will hit the same thing if this pattern is copied elsewhere.
 
-## 4b. `apps/server`'s `prebuild`/`pretypecheck`/`pretest` hooks reference a sibling package by relative path, invisible to `turbo prune`'s graph
+## 4b. `apps/server`'s relative-path lifecycle hooks — SUPERSEDED (hooks removed; real dependency landed)
 
-Found live, mid-lane-I's-own-work (this landed on disk during this lane's
-session, after the §4 finding above was already written): `apps/server/
-package.json` runs `../../node_modules/.bin/tsc -p
-../../packages/release-manifest/tsconfig.json` as its `prebuild`/
-`pretypecheck`/`pretest` step — type-checking `@loombre/release-manifest`
-as a bare relative-path npm lifecycle hook, NOT as a `dependencies`/
-`devDependencies` graph edge. `turbo prune`'s scope resolution walks the
-package.json dependency graph only, so with a prune scope of just
-`@loombre/server @loombre/worker`, `@loombre/release-manifest` is silently
-absent from `out/full/` and the `prebuild` hook fails with `TS5058: The
-specified path does not exist: '../../packages/release-manifest/
-tsconfig.json'` — a full build failure, not a warning.
-
-Fixed by adding `@loombre/release-manifest` as an explicit third scope to
-the `pruner` stage's `turbo prune` invocation (`turbo prune @loombre/server
-@loombre/worker @loombre/release-manifest --docker`) — turbo prune accepts
-multiple explicit workspace scopes, not just one root; this pulls the
-package's source + `package.json` into `out/full/`/`out/json/` the same
-as any real dependency would, with no other Dockerfile change needed
-(its own `tsconfig.json` extends the same root `tsconfig.base.json`
-already being copied in for the §4 fix, so no second config-file gap).
-
-**Discovery for lane I / whoever owns this hook long-term:** a relative-
-path npm lifecycle script that reaches outside its own package directory
-is invisible to every monorepo tool that reasons about the dependency
-graph structurally (`turbo prune` here; likely also affects `turbo`'s own
-task-graph caching/invalidation for `@loombre/server`'s `build`/
-`typecheck`/`test` tasks, which won't know to invalidate their cache when
-`@loombre/release-manifest`'s source changes, since that's not a declared
-`dependsOn` edge either). If this pre-build type-check is meant to stay
-long-term, making `@loombre/release-manifest` a real `dependencies` (or at
-least `devDependencies`) entry of `@loombre/server` would fix both this
-Dockerfile's need for a manual extra prune scope AND give turbo's own
-cache the dependency edge it's currently blind to — a smaller, more
-standard change than the relative-path hook it would replace.
+**Superseded:** `apps/server/package.json` no longer carries `prebuild`/
+`pretypecheck`/`pretest` hooks at all, and `@loombre/release-manifest` is
+now a real `apps/server` `dependencies` entry — the exact "smaller, more
+standard change" this section recommended — so `turbo prune`'s ordinary
+graph walk resolves the package as a first-class edge. (The Dockerfile
+still passes `@loombre/release-manifest` as an explicit third prune
+scope; per its own comment that is now belt-and-braces, not
+load-bearing.) As found at the time: the hooks ran
+`../../node_modules/.bin/tsc -p ../../packages/release-manifest/tsconfig.json`
+as a bare relative-path npm lifecycle step — not a package.json graph
+edge, so with a prune scope of just `@loombre/server @loombre/worker` the
+package was silently absent from `out/full/` and the build failed
+outright with `TS5058: The specified path does not exist`. The interim
+fix was the explicit third `turbo prune` scope, which carried the package
+until the real dependency edge landed.
 
 ## 4c. Two more workspace packages landed as real runtime imports mid-lane, needed their `dist/` added to the explicit COPY list
 
@@ -228,22 +164,19 @@ actual runtime import graph:
   is the only mode this Docker distribution supports — see this
   Dockerfile's own header), but the module still has to **resolve** at
   import time regardless of which path executes at runtime.
-- `apps/server/src/common/update-check/release-manifest-import.ts` imports
-  `@loombre/release-manifest` directly at runtime (P4.16) — but, unlike the
-  two above, `apps/server/package.json` does **not** list it under
-  `dependencies` anywhere (checked directly). It only resolves at all in
-  this image because §4b's fix already added `@loombre/release-manifest`
-  as an explicit third `turbo prune` scope for the unrelated `prebuild`-
-  hook reason — meaning that fix's side effect papered over a second,
-  independent gap (this package needed its `dist/` in the explicit COPY
-  list too). Had §4b's fix not already existed, this would have been a
-  full `turbo prune` scope miss on top of a missing-`dist`-copy miss.
-  **Discovery for lane I**: `@loombre/release-manifest` should be a real
-  `dependencies` entry of `@loombre/server`, the same conclusion §4b
-  reaches for the unrelated `prebuild` hook — two separate call sites in
-  the same app importing/type-checking the same package with NEITHER
-  going through a declared dependency edge is worth fixing once, properly,
-  rather than this Dockerfile continuing to compensate for it.
+- `apps/server`'s update-check code imports `@loombre/release-manifest`
+  directly at runtime (P4.16). SUPERSEDED HALF of this bullet: at the
+  time, that import went through an interim relative-path shim
+  (`release-manifest-import.ts`) and `apps/server/package.json` did
+  **not** list the package under `dependencies` at all — it only
+  resolved because §4b's explicit third `turbo prune` scope happened to
+  carry it. Both defects are since fixed at the source: the shim is
+  deleted, `apps/server/src/common/update-check/` imports the bare
+  specifier, and `"@loombre/release-manifest": "workspace:*"` is a real
+  `dependencies` entry — the "fix once, properly" this bullet's
+  Discovery asked lane I for. STILL-CURRENT HALF: the package's `dist/`
+  had to be added to this Dockerfile's explicit per-package `dist/` COPY
+  list, same as the two packages above.
 
 Both fixed with one `COPY --from=builder .../dist ./packages/<name>/dist`
 line each, same pattern as every other dist-shipping package. Recorded

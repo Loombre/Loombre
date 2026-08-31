@@ -26,7 +26,7 @@ certificate to not-buy.
 
 ```bash
 git clone https://github.com/Loombre/Loombre.git   # or your own release checkout
-cd loombre
+cd Loombre
 
 cp installers/docker/loombre.env.example installers/docker/loombre.env
 $EDITOR installers/docker/loombre.env   # set POSTGRES_PASSWORD and LOOMBRE_JWT_SECRET at minimum
@@ -76,11 +76,13 @@ Both are documented in full — including the unset/empty/set distinction
 each one carries — in `installers/docker/loombre.env.example`.
 
 **Pulling a published image** (once a tagged release publishes images —
-none has been published yet as of this writing):
+none has been published yet as of this writing). Note the tag form: git
+tags carry a leading `v` (`v0.9.0`), but the published image tags are the
+bare semver (the release pipeline strips the `v`):
 
 ```bash
-export LOOMBRE_IMAGE=ghcr.io/loombre/loombre:v0.9.0
-export LOOMBRE_WEB_IMAGE=ghcr.io/loombre/loombre-web:v0.9.0
+export LOOMBRE_IMAGE=ghcr.io/loombre/loombre:0.9.0
+export LOOMBRE_WEB_IMAGE=ghcr.io/loombre/loombre-web:0.9.0
 docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env pull
 ```
 
@@ -281,8 +283,9 @@ effect, that was why, and it works now.
 is not the recommended posture for anything beyond local/LAN use. The documented v1 remote-access
 path is plain HTTP behind a reverse proxy you already run and trust (nginx,
 Caddy, Traefik) that terminates TLS, with `LOOMBRE_TRUST_PROXY` set so the
-auth rate limiter and anomaly log see real client IPs (README.md's "Remote
-access" section has a working nginx snippet and explains exactly what
+auth rate limiter and anomaly log see real client IPs
+(`docs/ops/remote-access/reverse-proxy.md` has a working nginx snippet,
+and its "Trust-proxy configuration" section explains exactly what
 `LOOMBRE_TRUST_PROXY` does and why it's off by default).
 
 A full reverse-proxy + ACME/TLS operations guide lives in **docs/ops**
@@ -311,7 +314,7 @@ Loombre Docker images are cosign-signed using GitHub's OIDC identity:
 cosign verify \
   --certificate-identity-regexp "^https://github.com/Loombre/Loombre/" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  ghcr.io/loombre/loombre:v0.9.0
+  ghcr.io/loombre/loombre:0.9.0
 ```
 
 This proves the image was built by Loombre's own CI from the exact commit

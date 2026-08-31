@@ -53,13 +53,13 @@ export interface paths {
         };
         /**
          * Resolve an invite token's presets, without claiming it
-         * @description Public (M12). Invalid, expired, already-claimed, or revoked tokens all resolve to the shared not-found problem (see the `NotFound` response): BYTE-IDENTICAL across the four cases, and BYTE-IDENTICAL to what an unknown route answers at this same path — `instance` is this route's TEMPLATE, never the submitted token, so nothing in the body varies with what was probed. Same "invisible == nonexistent" posture as POST /setup/first-admin once configured; the four cases are deliberately indistinguishable from the outside.
+         * @description Public. Invalid, expired, already-claimed, or revoked tokens all resolve to the shared not-found problem (see the `NotFound` response): BYTE-IDENTICAL across the four cases, and BYTE-IDENTICAL to what an unknown route answers at this same path — `instance` is this route's TEMPLATE, never the submitted token, so nothing in the body varies with what was probed. Same "invisible == nonexistent" posture as POST /setup/first-admin once configured; the four cases are deliberately indistinguishable from the outside.
          */
         get: operations["getClaimState"];
         put?: never;
         /**
          * Claim an invite, creating an account and signing in
-         * @description Public (M12). Same byte-identical-404 posture as getClaimState for an invalid/expired/claimed/revoked token — a username collision against an OTHERWISE valid token is a distinct 422 (the token itself was fine). Auto-logs in on success (M13): the response is a real TokenPair, same composition as POST /setup/first-admin's own token minting, additively carrying `emailApplied` (LD-13c — see TokenPair's own property description).
+         * @description Public. Same byte-identical-404 posture as getClaimState for an invalid/expired/claimed/revoked token — a username collision against an OTHERWISE valid token is a distinct 422 (the token itself was fine). Auto-logs in on success: the response is a real TokenPair, same composition as POST /setup/first-admin's own token minting, additively carrying `emailApplied` (see TokenPair's own property description).
          */
         post: operations["claimInvite"];
         delete?: never;
@@ -129,7 +129,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Request a self-service password-reset email (E3b)
+         * Request a self-service password-reset email
          * @description PUBLIC, unauthenticated, and deliberately unenumerable: the response is the SAME 202 with the SAME body whether or not `identifier` resolves to a real account, whether or not that account has an email on file, and whether or not mail is configured on this instance — a caller can never distinguish any of those cases from the response alone. When `identifier` does resolve to a real account with an email on file, a single-use, 30-minute reset token is minted (invalidating that account's previously-issued unused tokens) and a `password-reset` mail is dispatched through the mail seam (`MailDispatchService.trySend`, non-fatal — a dead/unconfigured mail system never changes this response). Rate-limited per `rateLimit.passwordReset` (shared with `authResetPassword`).
          */
         post: operations["authForgotPassword"];
@@ -149,8 +149,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Complete a self-service password reset with a mailed token (E3b)
-         * @description PUBLIC, unauthenticated. Atomically consumes `token` (single-use; a concurrent second consume of the same token loses the race) and, on success, sets `password`, revokes every refresh token the account holds, and clears `mustChangePassword` if it was set — one transaction. An invalid, expired, already-used, or well-formed-but- unknown token all produce the IDENTICAL 404 this operation shares with an unknown route at this same path (the shared not-found problem — a fixed generic `detail` and an `instance` that is the request path and nothing else; M12/E8: none of those cases may be distinguishable from one another or from a malformed request to a nonexistent path). Rate-limited per `rateLimit.passwordReset` (shared with `authForgotPassword`).
+         * Complete a self-service password reset with a mailed token
+         * @description PUBLIC, unauthenticated. Atomically consumes `token` (single-use; a concurrent second consume of the same token loses the race) and, on success, sets `password`, revokes every refresh token the account holds, and clears `mustChangePassword` if it was set — one transaction. An invalid, expired, already-used, or well-formed-but- unknown token all produce the IDENTICAL 404 this operation shares with an unknown route at this same path (the shared not-found problem — a fixed generic `detail` and an `instance` that is the request path and nothing else; none of those cases may be distinguishable from one another or from a malformed request to a nonexistent path). Rate-limited per `rateLimit.passwordReset` (shared with `authForgotPassword`).
          */
         post: operations["authResetPassword"];
         delete?: never;
@@ -171,7 +171,7 @@ export interface paths {
         };
         /**
          * Resolve whether a password-reset token is still usable, without consuming it
-         * @description PUBLIC, unauthenticated (LD-15). A read-only liveness probe for the token in a mailed reset link: a 200 means the token is currently unused and unexpired, and NOTHING is consumed — the caller must still POST /auth/reset-password to complete the reset, and that operation re-checks the token itself (a token consumed between the two requests 404s there, same as it would here). Invalid, expired, already-used, and well-formed-but-unknown tokens ALL resolve to the shared not-found problem (see the `NotFound` response): BYTE-IDENTICAL across the four cases, and BYTE-IDENTICAL to what an unknown route answers at this same path — `instance` is this route's TEMPLATE, never the submitted token, so nothing in the body varies with what was probed. Same "invisible == nonexistent" posture as GET /invites/claim/{token} and POST /auth/reset-password. Rate-limited per `rateLimit.passwordReset` (shared with `authForgotPassword` and `authResetPassword`) — the policy that already governs this flow, not a new one.
+         * @description PUBLIC, unauthenticated. A read-only liveness probe for the token in a mailed reset link: a 200 means the token is currently unused and unexpired, and NOTHING is consumed — the caller must still POST /auth/reset-password to complete the reset, and that operation re-checks the token itself (a token consumed between the two requests 404s there, same as it would here). Invalid, expired, already-used, and well-formed-but-unknown tokens ALL resolve to the shared not-found problem (see the `NotFound` response): BYTE-IDENTICAL across the four cases, and BYTE-IDENTICAL to what an unknown route answers at this same path — `instance` is this route's TEMPLATE, never the submitted token, so nothing in the body varies with what was probed. Same "invisible == nonexistent" posture as GET /invites/claim/{token} and POST /auth/reset-password. Rate-limited per `rateLimit.passwordReset` (shared with `authForgotPassword` and `authResetPassword`) — the policy that already governs this flow, not a new one.
          */
         get: operations["getPasswordResetState"];
         put?: never;
@@ -428,8 +428,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Admin/CLI password recovery, tier (a) (E3a/M14)
-         * @description Generates a random temporary password, argon2id-hashes and stores it, sets `mustChangePassword` on the target user, and revokes EVERY refresh token they hold (every existing session ends). The temporary password is returned ONCE in this response and is never retrievable again — the server keeps only its hash. Self-reset (an admin resetting their own account) is permitted — they know the consequence — but requires `currentPassword` (R-F3, opus adversarial review fix wave: a bearer token alone must never mint a permanent account takeover, same F1 reasoning as `PATCH /users/me`/`PUT /users/me/restricted`). Resetting ANOTHER user's password needs no `currentPassword` — that path is already live-admin-verified and audited. When the mail tier is active and the target user has an email on file, a non-fatal `security-notice` mail is also dispatched. The CLI twin of this action, `loombre admin reset-password <username>`, performs the identical semantics with `actor: "cli"` instead of `actor: "admin"` on the resulting `user.password-reset` event.
+         * Admin/CLI password recovery, tier (a)
+         * @description Generates a random temporary password, argon2id-hashes and stores it, sets `mustChangePassword` on the target user, and revokes EVERY refresh token they hold (every existing session ends). The temporary password is returned ONCE in this response and is never retrievable again — the server keeps only its hash. Self-reset (an admin resetting their own account) is permitted — they know the consequence — but requires `currentPassword`: a bearer token alone must never mint a permanent account takeover, the same reasoning as `PATCH /users/me`/`PUT /users/me/restricted`. Resetting ANOTHER user's password needs no `currentPassword` — that path is already live-admin-verified and audited. When the mail tier is active and the target user has an email on file, a non-fatal `security-notice` mail is also dispatched. The CLI twin of this action, `loombre admin reset-password <username>`, performs the identical semantics with `actor: "cli"` instead of `actor: "admin"` on the resulting `user.password-reset` event.
          */
         post: operations["adminResetUserPassword"];
         delete?: never;
@@ -454,7 +454,7 @@ export interface paths {
         head?: never;
         /**
          * Update the current user's own profile
-         * @description G3 (STATE.md "Current-password re-auth on self-changes"): a body containing `password` and/or `email` (any value, `null` included) requires `currentPassword` — see UpdateMeRequest's own `dependentRequired`. A missing/wrong currentPassword when required 403s/422s; a bodyless or displayName/birthDate-only body needs no re-auth.
+         * @description A body containing `password` and/or `email` (any value, `null` included) requires `currentPassword` — see UpdateMeRequest's own `dependentRequired`. A missing/wrong currentPassword when required 403s/422s; a bodyless or displayName/birthDate-only body needs no re-auth.
          */
         patch: operations["updateMe"];
         trace?: never;
@@ -510,7 +510,7 @@ export interface paths {
         put?: never;
         /**
          * Create a one-time, expiring invite link (admin)
-         * @description Rejects 422 on any restricted-class or unknown library id (M4) — invites can never grant restricted-library access or admin role (no such field exists on this request at all). The raw claim token is returned exactly once, in this response only.
+         * @description Rejects 422 on any restricted-class or unknown library id — invites can never grant restricted-library access or admin role (no such field exists on this request at all). The raw claim token is returned exactly once, in this response only.
          */
         post: operations["createInvite"];
         delete?: never;
@@ -762,7 +762,7 @@ export interface paths {
         };
         /**
          * Chapter markers for an item's timeline
-         * @description Generic and content-agnostic (`chapter_markers`, migrations/0019 — item_type 'movie' rows today, i.e. Stash scene markers, S7/K9; the schema does not restrict this to any one item type). Visibility rides the owning item: byte-identical 401/404 to what a direct GET on the item itself would return for the same viewer, including for a restricted item to an uncleared viewer (house pattern — see GET /movies/{id}). An item with zero chapter markers returns 200 with an empty `items` array, never a 404 — "no chapters" and "item not visible" are deliberately distinguishable states. Ordered by `startMs` ascending. GET /restricted/scenes/{id} embeds the SAME rows inline as `chapters` for the zone's own scene-detail page; this operation is the generic twin the player itself consumes (works for any item id, not only zone scenes).
+         * @description Generic and content-agnostic (`chapter_markers`, migrations/0019 — item_type 'movie' rows today, i.e. Stash scene markers; the schema does not restrict this to any one item type). Visibility rides the owning item: byte-identical 401/404 to what a direct GET on the item itself would return for the same viewer, including for a restricted item to an uncleared viewer (house pattern — see GET /movies/{id}). An item with zero chapter markers returns 200 with an empty `items` array, never a 404 — "no chapters" and "item not visible" are deliberately distinguishable states. Ordered by `startMs` ascending. GET /restricted/scenes/{id} embeds the SAME rows inline as `chapters` for the zone's own scene-detail page; this operation is the generic twin the player itself consumes (works for any item id, not only zone scenes).
          */
         get: operations["getItemChapters"];
         put?: never;
@@ -986,7 +986,7 @@ export interface paths {
         };
         /**
          * In-progress items for the current user (computed per-viewer-context; never cached across users with different restricted-content clearance)
-         * @description Pages over the types `ContinueWatchingEntry.item` admits (movie/episode/track) — the eligibility filter is applied BEFORE the page is cut, so `limit` means "up to N entries you can render" and an empty page never ships with a non-null `nextCursor` (d3-b9; same rule as `getRecentlyAdded`/`search` after adi-F2). A progress row against any other item type — a container written before `putProgress` began refusing them — is skipped by the query, never by the response. A GENERAL surface (§6.4 surface scoping): a restricted in-progress row never appears here, cleared or not — the zone home's continueWatchingInZone rail is where restricted resume lives.
+         * @description Pages over the types `ContinueWatchingEntry.item` admits (movie/episode/track) — the eligibility filter is applied BEFORE the page is cut, so `limit` means "up to N entries you can render" and an empty page never ships with a non-null `nextCursor` (same rule as `getRecentlyAdded`/`search`). A progress row against any other item type — a container written before `putProgress` began refusing them — is skipped by the query, never by the response. A GENERAL surface (§6.4 surface scoping): a restricted in-progress row never appears here, cleared or not — the zone home's continueWatchingInZone rail is where restricted resume lives.
          */
         get: operations["getContinueWatching"];
         put?: never;
@@ -1028,7 +1028,7 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** Fetch a pre-scaled managed image (poster/backdrop/logo/disc/thumb). One endpoint for all image kinds and entity types (anti-pattern P4: no per-kind endpoint proliferation). */
+        /** Fetch a pre-scaled managed image (poster/backdrop/logo/disc/thumb). One endpoint for all image kinds and entity types — deliberately not one endpoint per kind. */
         get: operations["getImage"];
         put?: never;
         post?: never;
@@ -1121,7 +1121,7 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** Serve one HLS variant playlist/init segment/media segment for a session. Updates the session's `requested_segment` (parsed from `file`) on every call — the transcoder's pacing input. A `v{K}` prefix naming a rung other than the session's active one additionally records a rung-switch request (`requestRungSwitch`); the worker hands the session's existing admission slot to that rung at its next poll tick and never starts a second pipeline (LD-16). A request for a segment index outside the currently-produced window (before the current run's start, or more than 3 segments ahead of `produced_segment`) triggers a seek request (`requestSeek`) and responds 503 (hls.js-compatible retry behavior) instead of 404 while the worker restarts the pipeline. Also accepts `?token=` for media elements that cannot send Authorization headers. */
+        /** Serve one HLS variant playlist/init segment/media segment for a session. Updates the session's `requested_segment` (parsed from `file`) on every call — the transcoder's pacing input. A `v{K}` prefix naming a rung other than the session's active one additionally records a rung-switch request (`requestRungSwitch`); the worker hands the session's existing admission slot to that rung at its next poll tick and never starts a second pipeline. A request for a segment index outside the currently-produced window (before the current run's start, or more than 3 segments ahead of `produced_segment`) triggers a seek request (`requestSeek`) and responds 503 (hls.js-compatible retry behavior) instead of 404 while the worker restarts the pipeline. Also accepts `?token=` for media elements that cannot send Authorization headers. */
         get: operations["getPlaybackHlsFile"];
         put?: never;
         post?: never;
@@ -1202,7 +1202,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Record a hard-seek intent for a transcode session (docs/PLAYBACK.md §9, owner-decision V8). A thin, contract-visible alias of the segment-GET side effect: writes the same `seek_target_ms` column with the same last-write-wins absorption, and — when `rungIndex` rides along — the same single-statement coincident-pair write (§9.1.7). The worker kills the live pipeline and restarts at the clamped target; the new run appears at the served playlist's tail under the next `runN/` prefix with `EXT-X-PROGRAM-DATE-TIME` carrying its source position, which is what the client's landing watch keys on. Clients seek locally ("soft") for any target the playlist still lists; this call is for targets OUTSIDE that window, which hls.js can never request on its own. */
+        /** Record a hard-seek intent for a transcode session (docs/PLAYBACK.md §9). A thin, contract-visible alias of the segment-GET side effect: writes the same `seek_target_ms` column with the same last-write-wins absorption, and — when `rungIndex` rides along — the same single-statement coincident-pair write (§9.1.7). The worker kills the live pipeline and restarts at the clamped target; the new run appears at the served playlist's tail under the next `runN/` prefix with `EXT-X-PROGRAM-DATE-TIME` carrying its source position, which is what the client's landing watch keys on. Clients seek locally ("soft") for any target the playlist still lists; this call is for targets OUTSIDE that window, which hls.js can never request on its own. */
         post: operations["requestPlaybackSeek"];
         delete?: never;
         options?: never;
@@ -1380,7 +1380,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * DEPRECATED — superseded by GET /restricted/browse (STATE.md Stash run, K4). Kept per the additive-only evolution policy (removed operations are deprecated for two minor releases minimum, never hard-deleted mid-major).
+         * DEPRECATED — superseded by GET /restricted/browse. Kept per the additive-only evolution policy (removed operations are deprecated for two minor releases minimum, never hard-deleted mid-major).
          * @deprecated
          * @description Same 404-for-not-entitled / empty-while-locked posture as GET /restricted/browse, which this now thinly delegates to (unsorted- filter, `added`-sorted, server-side) — kept working, not stubbed, for the deprecation window. New clients should call GET /restricted/browse directly; this operation carries a `Sunset` response header and will be removed after that window closes.
          */
@@ -1402,7 +1402,7 @@ export interface paths {
         };
         /**
          * Restricted zone home rails (continue watching, watchlist, recently added, studios, performers)
-         * @description 404 for a viewer with NO restricted-library entitlement at all — same posture as every other zone read (GET /restricted/count). For an entitled-but-LOCKED viewer (gate 5 not currently passed) ALL FIVE rails come back empty — continueWatchingInZone, watchlistInZone (RZI-D2a: the only surface a watchlisted restricted title ever renders on), recentlyAddedInZone, studios and performers alike — guard-consistent with GET /restricted/browse. The zone's U10 aggregate disclosure (that a zone exists, and how many items are in it) is made by GET /restricted/count and by that endpoint ALONE; a locked viewer never learns a studio or performer NAME from this endpoint, because a studio/performer roster is zone content, not an aggregate. (R1 review lane: this paragraph previously said studios/performers "still resolve" while locked — the implementation has always returned them empty, and empty is the correct, safer reading of docs/PLAN.md §6.4. Corrected here so nobody "conforms" the code to the description and opens the leak. Pinned by packages/db/test/leak.spec.ts 12f/12h and the HTTP twin in apps/server/test/libraries.e2e.spec.ts.)
+         * @description 404 for a viewer with NO restricted-library entitlement at all — same posture as every other zone read (GET /restricted/count). For an entitled-but-LOCKED viewer (gate 5 not currently passed) ALL FIVE rails come back empty — continueWatchingInZone, watchlistInZone (the only surface a watchlisted restricted title ever renders on), recentlyAddedInZone, studios and performers alike — guard-consistent with GET /restricted/browse. The zone's aggregate disclosure (that a zone exists, and how many items are in it) is made by GET /restricted/count and by that endpoint ALONE; a locked viewer never learns a studio or performer NAME from this endpoint, because a studio/performer roster is zone content, not an aggregate.
          */
         get: operations["getRestrictedHome"];
         put?: never;
@@ -1422,7 +1422,7 @@ export interface paths {
         };
         /**
          * Keyset browse of the restricted zone with combinable filters
-         * @description SUPERSEDES the old full-fetch GET /restricted/items design (STATE.md K4): real guarded server-side keyset pagination, proven at 33k-scene scale (S10) rather than the client fetching the whole zone and filtering locally. 404 for a viewer with NO restricted-library entitlement at all; an entitled-but-locked viewer gets 200 with an EMPTY page (gate 5 — same posture the old endpoint documented). A malformed performerIds/studioTagIds/tagIds uuid entry answers with an EMPTY page, never a dropped filter (house rule — packages/db/src/ query/catalog-detail.ts's own convention for list filters).
+         * @description SUPERSEDES the old full-fetch GET /restricted/items design: real guarded server-side keyset pagination, proven at 33k-scene scale rather than the client fetching the whole zone and filtering locally. 404 for a viewer with NO restricted-library entitlement at all; an entitled-but-locked viewer gets 200 with an EMPTY page (gate 5 — same posture the old endpoint documented). A malformed performerIds/studioTagIds/tagIds uuid entry answers with an EMPTY page, never a dropped filter (house rule — packages/db/src/ query/catalog-detail.ts's own convention for list filters).
          */
         get: operations["listRestrictedBrowse"];
         put?: never;
@@ -1444,7 +1444,7 @@ export interface paths {
         };
         /**
          * Restricted-zone scene detail
-         * @description Byte-identical 404 to an uncleared viewer, a nonexistent id, and a general-catalog id (house pattern — see GET /movies/{id}). Markers are embedded here (chapter_markers rows for this item) — GET /items/{id}/chapters (Lane E) is the generic, content-agnostic twin the player itself consumes.
+         * @description Byte-identical 404 to an uncleared viewer, a nonexistent id, and a general-catalog id (house pattern — see GET /movies/{id}). Markers are embedded here (chapter_markers rows for this item) — GET /items/{id}/chapters is the generic, content-agnostic twin the player itself consumes.
          */
         get: operations["getRestrictedScene"];
         put?: never;
@@ -1594,13 +1594,13 @@ export interface paths {
         get: operations["getAdminLibraryStashConnection"];
         /**
          * Configure (or reconfigure) a library's Stash SQLite connection (admin)
-         * @description Writes sqlitePath/enabled, plus genreTagNames (K15 — see PutAdminStashConnectionRequest.genreTagNames for its omit/null/ array tri-state). Enqueues a `stash-inventory` job on every successful save so the path-mapping preview has fresh data without a separate button. 404 if the library itself does not exist (checked before body validation).
+         * @description Writes sqlitePath/enabled, plus genreTagNames (see PutAdminStashConnectionRequest.genreTagNames for its omit/null/ array tri-state). Enqueues a `stash-inventory` job on every successful save so the path-mapping preview has fresh data without a separate button. 404 if the library itself does not exist (checked before body validation).
          */
         put: operations["putAdminLibraryStashConnection"];
         post?: never;
         /**
          * Forget a library's Stash SQLite connection entirely (admin)
-         * @description Stash OPEN ledger item 6 ("forget this connection entirely" — the prior surface was disable-only via PUT enabled:false). Deletes the library_stash_connections row (sqlite_path, enabled, status, and every other connection-config/outcome column) — there is no keyring-held secret to clear alongside it (S1: Stash is a first-party read-only SQLite-file provider, never an HTTP API with a credential). NEVER destructive to catalog content: previously synced metadata, matched catalog items, and stash_scene_links rows are untouched (S8's staleness law — synced facts are KEPT, never deleted, even when their source connection itself is forgotten), as are this library's stash-path-mappings (a future re-attach does not require re-entering them). A pending/scheduled sync is not separately cancelled: the periodic schedule loop and any in-flight `stash-sync` job both re-resolve the connection row fresh and treat its absence as an ordinary "unreachable" outcome (ends the job with a failed report; the schedule loop simply stops picking this library as due) — no zombie schedule, no code needed to reach into the job queue. 404s both when the library itself does not exist and when the library exists but has no Stash connection configured (nothing to forget). Emits `stash.provider.disconnected` (admin-only) in the same transaction as the delete.
+         * @description Deletes the library_stash_connections row (sqlite_path, enabled, status, and every other connection-config/outcome column) — there is no keyring-held secret to clear alongside it (Stash is a first-party read-only SQLite-file provider, never an HTTP API with a credential). NEVER destructive to catalog content: previously synced metadata, matched catalog items, and stash_scene_links rows are untouched (synced facts are KEPT, never deleted, even when their source connection itself is forgotten), as are this library's stash-path-mappings (a future re-attach does not require re-entering them). A pending/scheduled sync is not separately cancelled: the periodic schedule loop and any in-flight `stash-sync` job both re-resolve the connection row fresh and treat its absence as an ordinary "unreachable" outcome (ends the job with a failed report; the schedule loop simply stops picking this library as due) — no zombie schedule, no code needed to reach into the job queue. 404s both when the library itself does not exist and when the library exists but has no Stash connection configured (nothing to forget). Emits `stash.provider.disconnected` (admin-only) in the same transaction as the delete.
          */
         delete: operations["deleteAdminLibraryStashConnection"];
         options?: never;
@@ -1621,7 +1621,7 @@ export interface paths {
         get: operations["getAdminLibraryStashPathMappings"];
         /**
          * Replace a library's Stash path-mapping table wholesale (admin)
-         * @description `mappings` is the FULL replacement list — `position` is the array index, not supplied explicitly. An empty array clears every mapping (S4's oshash tier becomes the only match path). 404 if the library itself does not exist (checked before body validation).
+         * @description `mappings` is the FULL replacement list — `position` is the array index, not supplied explicitly. An empty array clears every mapping (the oshash matching tier becomes the only match path). 404 if the library itself does not exist (checked before body validation).
          */
         put: operations["putAdminLibraryStashPathMappings"];
         post?: never;
@@ -1644,7 +1644,7 @@ export interface paths {
         put?: never;
         /**
          * Preview match counts for a CANDIDATE (unsaved) mapping set (admin)
-         * @description Pure SQL over the last inventory/sync snapshot's stored Stash paths (K10) — never opens the Stash SQLite file itself, so this works as soon as one `stash-inventory` job has run. Reflects `mappings` AS SUBMITTED, not what is currently saved, so an admin can try a mapping before committing it via PUT. 404 if the library itself does not exist (checked before body validation).
+         * @description Pure SQL over the last inventory/sync snapshot's stored Stash paths — never opens the Stash SQLite file itself, so this works as soon as one `stash-inventory` job has run. Reflects `mappings` AS SUBMITTED, not what is currently saved, so an admin can try a mapping before committing it via PUT. 404 if the library itself does not exist (checked before body validation).
          */
         post: operations["previewAdminLibraryStashPathMappings"];
         delete?: never;
@@ -1666,7 +1666,7 @@ export interface paths {
         put?: never;
         /**
          * Enqueue a full or incremental Stash sync for a library (admin)
-         * @description Enqueues a `stash-sync` job (S8) and returns its id honestly — this endpoint does not wait for the sync to complete. 404 if the library itself does not exist (checked before body validation).
+         * @description Enqueues a `stash-sync` job and returns its id honestly — this endpoint does not wait for the sync to complete. 404 if the library itself does not exist (checked before body validation).
          */
         post: operations["postAdminLibraryStashSync"];
         delete?: never;
@@ -1877,7 +1877,7 @@ export interface paths {
         };
         /**
          * Effective settings + provider-key statuses (admin)
-         * @description Every registered setting's CURRENT effective value (env-pin > database > registry default precedence), independent of scope — env-only entries are included read-only alongside ui-editable ones, so an operator can always see what's actually governing the running instance. `restartPendingKeys` lists requiresRestart:true keys whose effective value has changed since this server instance booted; non-empty means a restart is needed for those changes to fully take effect. `providerKeys` (A9) carries TMDB/TVDB key status only — the key value itself is never returned by any endpoint.
+         * @description Every registered setting's CURRENT effective value (env-pin > database > registry default precedence), independent of scope — env-only entries are included read-only alongside ui-editable ones, so an operator can always see what's actually governing the running instance. `restartPendingKeys` lists requiresRestart:true keys whose effective value has changed since this server instance booted; non-empty means a restart is needed for those changes to fully take effect. `providerKeys` carries TMDB/TVDB key status only — the key value itself is never returned by any endpoint.
          */
         get: operations["getAdminSettings"];
         put?: never;
@@ -1940,13 +1940,13 @@ export interface paths {
         get?: never;
         /**
          * Set (or replace) a provider API key (admin, write-only)
-         * @description A9: write-only — the submitted key is never echoed back, logged, or otherwise readable again through this API (status reads — GET /admin/settings — report set/source/lastSetMs only, never the value). Stored via the platform secret keyring (packages/secrets), never in server_settings (no encryption-at-rest story there). A10 live-admin re-verify gates this exactly like updateAdminSetting.
+         * @description Write-only — the submitted key is never echoed back, logged, or otherwise readable again through this API (status reads — GET /admin/settings — report set/source/lastSetMs only, never the value). Stored via the platform secret keyring (packages/secrets), never in server_settings (no encryption-at-rest story there). A live-admin re-verify gates this exactly like updateAdminSetting.
          */
         put: operations["setAdminProviderKey"];
         post?: never;
         /**
          * Clear a provider API key (admin)
-         * @description Removes the stored keyring entry. A real env var for this provider (LOOMBRE_TMDB_API_KEY / LOOMBRE_TVDB_API_KEY), if set, still wins on the next status read regardless (A8 precedence) — this only clears the keyring-stored fallback.
+         * @description Removes the stored keyring entry. A real env var for this provider (LOOMBRE_TMDB_API_KEY / LOOMBRE_TVDB_API_KEY), if set, still wins on the next status read regardless (env always takes precedence) — this only clears the keyring-stored fallback.
          */
         delete: operations["clearAdminProviderKey"];
         options?: never;
@@ -1964,7 +1964,7 @@ export interface paths {
         get?: never;
         /**
          * Set (or replace) the SMTP username/password (admin, write-only)
-         * @description Write-only, same posture as setAdminProviderKey: the submitted credentials are never echoed back, logged, or otherwise readable again through this API — status reads (GET /admin/settings's `mailCredentials`) report configured/setAtMs/source only, never the values. Stored as one keyring entry (packages/secrets), never in server_settings. Credentials are OPTIONAL overall — unauthenticated SMTP (a private-network relay) is a legal configuration; this endpoint exists for the common case of a real mail provider that requires them. A10 live-admin re-verify gates this exactly like setAdminProviderKey.
+         * @description Write-only, same posture as setAdminProviderKey: the submitted credentials are never echoed back, logged, or otherwise readable again through this API — status reads (GET /admin/settings's `mailCredentials`) report configured/setAtMs/source only, never the values. Stored as one keyring entry (packages/secrets), never in server_settings. Credentials are OPTIONAL overall — unauthenticated SMTP (a private-network relay) is a legal configuration; this endpoint exists for the common case of a real mail provider that requires them. A live-admin re-verify gates this exactly like setAdminProviderKey.
          */
         put: operations["setAdminMailCredentials"];
         post?: never;
@@ -2009,7 +2009,7 @@ export interface paths {
         put?: never;
         /**
          * Fetch and validate a plugin's manifest without registering it (admin)
-         * @description C4's confirmation-screen data source: fetches GET <url>/lpp/manifest through the same SSRF-guarded transport registration itself uses, runs it through the staged manifest parser, and returns a summary — every declared capability with its scope, the full configSchema, and the union of requested event types. Nothing is persisted; calling this twice for the same URL never conflicts with anything, and nothing here mints a secret. An unknown capability type in the manifest fails with 422 whose `detail` states plainly that this Loombre does not support that capability type yet (C2); a SSRF-rejected URL (private/loopback/disallowed address, unless `lanAllowlist` covers it) also fails 422.
+         * @description The registration confirmation screen's data source: fetches GET <url>/lpp/manifest through the same SSRF-guarded transport registration itself uses, runs it through the staged manifest parser, and returns a summary — every declared capability with its scope, the full configSchema, and the union of requested event types. Nothing is persisted; calling this twice for the same URL never conflicts with anything, and nothing here mints a secret. An unknown capability type in the manifest fails with 422 whose `detail` states plainly that this Loombre does not support that capability type yet; a SSRF-rejected URL (private/loopback/disallowed address, unless `lanAllowlist` covers it) also fails 422.
          */
         post: operations["previewAdminPlugin"];
         delete?: never;
@@ -2033,7 +2033,7 @@ export interface paths {
         put?: never;
         /**
          * Register a plugin (admin)
-         * @description LD6's registration state machine: re-fetches and re-validates the manifest at `url` (never trusts a client-supplied preview payload), validates the submitted grants against it, validates `config` against the manifest's configSchema (secret fields route to the keyring, never to the stored plugin row), mints the delivery-signing HMAC, runs a health check, and commits the plugin enabled with the granted scope. `hmacSecret` in the response is shown EXACTLY ONCE — it is never retrievable again through any endpoint. A failed health check does NOT block registration: the row still commits, with `healthState: unhealthy`; the admin UI is expected to surface this and offer enable-anyway vs cancel (the plugin already exists at that point — cancel means the UI immediately calling removeAdminPlugin).
+         * @description The registration state machine: re-fetches and re-validates the manifest at `url` (never trusts a client-supplied preview payload), validates the submitted grants against it, validates `config` against the manifest's configSchema (secret fields route to the keyring, never to the stored plugin row), mints the delivery-signing HMAC, runs a health check, and commits the plugin enabled with the granted scope. `hmacSecret` in the response is shown EXACTLY ONCE — it is never retrievable again through any endpoint. A failed health check does NOT block registration: the row still commits, with `healthState: unhealthy`; the admin UI is expected to surface this and offer enable-anyway vs cancel (the plugin already exists at that point — cancel means the UI immediately calling removeAdminPlugin).
          */
         post: operations["registerAdminPlugin"];
         delete?: never;
@@ -2057,7 +2057,7 @@ export interface paths {
         post?: never;
         /**
          * Remove a plugin (admin)
-         * @description LD9: deletes the plugin row (plugin_event_grants CASCADE) and every keyring entry it owns — the HMAC and every secret config field. Nothing keyring-side survives.
+         * @description Deletes the plugin row (plugin_event_grants CASCADE) and every keyring entry it owns — the HMAC and every secret config field. Nothing keyring-side survives.
          */
         delete: operations["removeAdminPlugin"];
         options?: never;
@@ -2121,7 +2121,7 @@ export interface paths {
         get?: never;
         /**
          * Toggle whether this plugin receives pseudonymous or real actor ids (admin)
-         * @description LPP v1 mission §3.2 (Lane W5b): plugins.pseudonymize_actor_ids (migrations/0016_plugin_delivery_cursors.sql), default TRUE — every user-id-bearing field the outbox delivery loop's actor-field map names for a delivered event is replaced with a per-(plugin,user) stable pseudonym before signing and delivery. Setting `enabled: false` sends real account ids to this plugin instead, effective immediately for every batch delivered from that point on (already- delivered batches are unaffected — this is not retroactive). Requires this plugin to currently hold the event-subscriber capability grant (409 otherwise, same guard as updateAdminPluginEventGrants) — the setting has nothing to act on for a plugin that never receives the activity feed.
+         * @description plugins.pseudonymize_actor_ids (migrations/0016_plugin_delivery_cursors.sql), default TRUE — every user-id-bearing field the outbox delivery loop's actor-field map names for a delivered event is replaced with a per-(plugin,user) stable pseudonym before signing and delivery. Setting `enabled: false` sends real account ids to this plugin instead, effective immediately for every batch delivered from that point on (already- delivered batches are unaffected — this is not retroactive). Requires this plugin to currently hold the event-subscriber capability grant (409 otherwise, same guard as updateAdminPluginEventGrants) — the setting has nothing to act on for a plugin that never receives the activity feed.
          */
         put: operations["updateAdminPluginPseudonymization"];
         post?: never;
@@ -2249,12 +2249,12 @@ export interface paths {
         };
         /**
          * Read a library's metadata-provider fallback chain (admin)
-         * @description LPP v1, Lane W3/W5b (migrations/0015_library_provider_chains.sql). `isDefault: true` means this library has ZERO library_provider_entries rows — `entries` then reflects the legacy hardcoded per-mediaKind default chain (apps/worker/src/metadata/provider-chain-defaults.ts), shown READ-ONLY for reference; putAdminLibraryProviderChain is the only way to customize it. `eligiblePlugins` is every registered plugin whose `contentClass` strictly EQUALS this library's `contentClass` (LPP C5 STRICT, apps/server/src/plugins/scope.ts) — the admin add-entry picker's plugin choice list. `builtinProviderNames` is the closed set of built-in provider names, always eligible regardless of `contentClass`.
+         * @description `isDefault: true` (migrations/0015_library_provider_chains.sql) means this library has ZERO library_provider_entries rows — `entries` then reflects the legacy hardcoded per-mediaKind default chain (apps/worker/src/metadata/provider-chain-defaults.ts), shown READ-ONLY for reference; putAdminLibraryProviderChain is the only way to customize it. `eligiblePlugins` is every registered plugin whose `contentClass` strictly EQUALS this library's `contentClass` (apps/server/src/plugins/scope.ts) — the admin add-entry picker's plugin choice list. `builtinProviderNames` is the closed set of built-in provider names, always eligible regardless of `contentClass`.
          */
         get: operations["getAdminLibraryProviderChain"];
         /**
          * Replace a library's metadata-provider fallback chain wholesale (admin)
-         * @description `entries` is the FULL replacement chain — `position` is the array index, not supplied explicitly. An empty `entries` array clears the chain, reverting the library to the inherited legacy default (isDefault flips back to true). Rejects the WHOLE call (no partial write) on: a malformed entry (wrong shape for its `providerKind`), an unrecognized `builtinName`, a `pluginId` that does not resolve to a registered plugin, or a `pluginId` whose plugin.contentClass does not EQUAL this library's contentClass exactly (422, LPP C5 STRICT — the error names both content classes involved). 404 if the library itself does not exist.
+         * @description `entries` is the FULL replacement chain — `position` is the array index, not supplied explicitly. An empty `entries` array clears the chain, reverting the library to the inherited legacy default (isDefault flips back to true). Rejects the WHOLE call (no partial write) on: a malformed entry (wrong shape for its `providerKind`), an unrecognized `builtinName`, a `pluginId` that does not resolve to a registered plugin, or a `pluginId` whose plugin.contentClass does not EQUAL this library's contentClass exactly (422 — the error names both content classes involved). 404 if the library itself does not exist.
          */
         put: operations["putAdminLibraryProviderChain"];
         post?: never;
@@ -2275,7 +2275,7 @@ export interface paths {
         };
         /**
          * The latest Stash metadata-sync report for a library (admin)
-         * @description STATE.md S8/K14 (Stash SQLite metadata sync, Lane C sync engine). `report` is the most recently STARTED `stash-sync` job's counts (matched/updated/unmatched/stale/skipped) and status — null when no sync has ever run for this library yet, same honest-empty-shape precedent as GET /admin/capabilities's `{report: null}` before the first hwprobe. `unmatchedScenes`/`staleScenes` are NOT a frozen snapshot from the report row — both are LIVE, keyset-paginated queries over the current stash_scene_links table (K10/S4/S8), so they reflect fixes (a corrected path mapping, a scene reappearing in Stash) immediately, without waiting for the next sync run. `unmatchedLoombreFiles` (FX3 fix wave) is the Loombre-side twin — S4/S8 document BOTH unmatched sides as the report's job; this is also a live query, over media_files/catalog_items, never a report snapshot.
+         * @description `report` is the most recently STARTED `stash-sync` job's counts (matched/updated/unmatched/stale/skipped) and status — null when no sync has ever run for this library yet, same honest-empty-shape precedent as GET /admin/capabilities's `{report: null}` before the first hwprobe. `unmatchedScenes`/`staleScenes` are NOT a frozen snapshot from the report row — both are LIVE, keyset-paginated queries over the current stash_scene_links table, so they reflect fixes (a corrected path mapping, a scene reappearing in Stash) immediately, without waiting for the next sync run. `unmatchedLoombreFiles` is the Loombre-side twin — BOTH unmatched sides are the report's job; this is also a live query, over media_files/catalog_items, never a report snapshot.
          */
         get: operations["getAdminStashSyncReport"];
         put?: never;
@@ -2361,7 +2361,7 @@ export interface paths {
         };
         /**
          * Wizard re-entry read — derived active path + per-path status (admin)
-         * @description `activePath` is DERIVED, never stored (RG15/RG5 refinement — there is no `remote.activePath` setting): computed from the three subsystems' own enabled state, at most one of which can be enabled at a time (the staged enable flows below 409 rather than allowing two paths live together). Lets the wizard re-enter mid-flow or land on the posture handoff without the client tracking step state itself (RG10 — the server persists only outcomes).
+         * @description `activePath` is DERIVED, never stored (there is no `remote.activePath` setting): computed from the three subsystems' own enabled state, at most one of which can be enabled at a time (the staged enable flows below 409 rather than allowing two paths live together). Lets the wizard re-enter mid-flow or land on the posture handoff without the client tracking step state itself — the server persists only outcomes.
          */
         get: operations["getRemoteState"];
         put?: never;
@@ -2383,7 +2383,7 @@ export interface paths {
         put?: never;
         /**
          * Enable Loombre Remote — embedded userspace WireGuard (admin)
-         * @description R1: generates the server WG keypair (private key in the KEYRING, never server_settings) and opens the in-process userspace listener (wireguard-go + netstack, RG1/RG2) — no kernel module, no root, no routing-table changes, LAN never exposed. Staged validate→stage→ commit (RG10, plugin-registration shape); 409 when a DIFFERENT path is already active (at most one active path, RG5/RG15).
+         * @description Generates the server WG keypair (private key in the KEYRING, never server_settings) and opens the in-process userspace listener (wireguard-go + netstack) — no kernel module, no root, no routing-table changes, LAN never exposed. Staged validate→stage→ commit; 409 when a DIFFERENT path is already active (at most one active path).
          */
         post: operations["enableRemoteWireguard"];
         delete?: never;
@@ -2403,7 +2403,7 @@ export interface paths {
         put?: never;
         /**
          * Disable Loombre Remote — verified teardown (admin)
-         * @description R8: revokes every enrolled peer and drops the listener, verified — not merely a flag flip. Idempotent: disabling an already-disabled listener still returns 200 with the (already-disabled) status.
+         * @description Revokes every enrolled peer and drops the listener, verified — not merely a flag flip. Idempotent: disabling an already-disabled listener still returns 200 with the (already-disabled) status.
          */
         post: operations["disableRemoteWireguard"];
         delete?: never;
@@ -2438,13 +2438,13 @@ export interface paths {
         };
         /**
          * List enrolled Remote (WireGuard) devices (admin)
-         * @description R2: these ARE rows in the existing devices list (kind: remote) — this is the WireGuard-scoped view of that same population (tunnel IP, enrollment/handshake timestamps) rather than a separate entity.
+         * @description These ARE rows in the existing devices list (kind: remote) — this is the WireGuard-scoped view of that same population (tunnel IP, enrollment/handshake timestamps) rather than a separate entity.
          */
         get: operations["listRemoteWireguardDevices"];
         put?: never;
         /**
          * Enroll a device — one-time provisioning payload (admin)
-         * @description R2/R3: generates a fresh peer keypair server-side, allocates the next free tunnel IP (RG9, subnet default 10.82.146.0/24, server =.1, devices from .2), and returns the FULL wg-quick config text ONCE — the private key is not retained after this response (same posture as invite links). The config is split-tunnel ONLY (AllowedIPs scoped to the Loombre tunnel address, R3) and APP-AGNOSTIC standard WireGuard semantics (packages/shared/src/ remote/provisioning.ts — today's official WireGuard app and tomorrow's native Loombre clients enroll through this identical shape). 409 when Wireguard is not enabled.
+         * @description Generates a fresh peer keypair server-side, allocates the next free tunnel IP (subnet default 10.82.146.0/24, server =.1, devices from .2), and returns the FULL wg-quick config text ONCE — the private key is not retained after this response (same posture as invite links). The config is split-tunnel ONLY (AllowedIPs scoped to the Loombre tunnel address) and APP-AGNOSTIC standard WireGuard semantics (packages/shared/src/ remote/provisioning.ts — today's official WireGuard app and tomorrow's native Loombre clients enroll through this identical shape). 409 when Wireguard is not enabled.
          */
         post: operations["enrollRemoteWireguardDevice"];
         delete?: never;
@@ -2467,7 +2467,7 @@ export interface paths {
         post?: never;
         /**
          * Revoke an enrolled Remote device — removes the peer live (admin)
-         * @description R2/RG3: removes the live WG peer (handshake fails immediately after) AND revokes the underlying device row's refresh tokens (RG3's pre-existing-gap closure — WG2 wires this; this Wave-0 shell only reserves the operation's shape). Distinct from the self-service DELETE /devices/{id}: this is an ADMIN-scoped revoke of ANY user's enrolled device, not only the caller's own.
+         * @description Removes the live WG peer (handshake fails immediately after) AND revokes the underlying device row's refresh tokens. Distinct from the self-service DELETE /devices/{id}: this is an ADMIN-scoped revoke of ANY user's enrolled device, not only the caller's own.
          */
         delete: operations["revokeRemoteWireguardDevice"];
         options?: never;
@@ -2486,7 +2486,7 @@ export interface paths {
         put?: never;
         /**
          * Set the BYO Cloudflare API token — write-only (admin)
-         * @description R4/R9: write-only, same posture as setAdminProviderKey/ setAdminMailCredentials — the submitted token is never echoed back, logged, or otherwise readable again through this API; stored in the platform KEYRING (packages/secrets), never server_settings. Returns a VALIDATION RESULT (a real, bounded Cloudflare API call proving the token's scope is usable), not the token itself.
+         * @description Write-only, same posture as setAdminProviderKey/ setAdminMailCredentials — the submitted token is never echoed back, logged, or otherwise readable again through this API; stored in the platform KEYRING (packages/secrets), never server_settings. Returns a VALIDATION RESULT (a real, bounded Cloudflare API call proving the token's scope is usable), not the token itself.
          */
         post: operations["setRemoteTunnelToken"];
         /**
@@ -2510,7 +2510,7 @@ export interface paths {
         put?: never;
         /**
          * Enable the Tunnel path — creates the tunnel + DNS route, starts the connector (admin)
-         * @description R4: creates a Cloudflare tunnel + DNS route via the stored token, then runs cloudflared as a managed, supervised child process (RG7 — EmbeddedPostgres supervisor / spawnFfmpegRun shape: SIGTERM→timeout→ SIGKILL, stderr ring buffer, full-jitter backoff). Staged validate→stage→commit (RG10); 409 when a different path is already active, or when no valid token is stored.
+         * @description Creates a Cloudflare tunnel + DNS route via the stored token, then runs cloudflared as a managed, supervised child process (the EmbeddedPostgres supervisor / spawnFfmpegRun shape: SIGTERM→timeout→ SIGKILL, stderr ring buffer, full-jitter backoff). Staged validate→stage→commit; 409 when a different path is already active, or when no valid token is stored.
          */
         post: operations["enableRemoteTunnel"];
         delete?: never;
@@ -2530,7 +2530,7 @@ export interface paths {
         put?: never;
         /**
          * Disable the Tunnel path — verified connector teardown (admin)
-         * @description R8 — tears down the tunnel + DNS route and stops the connector process, verified. Idempotent.
+         * @description Tears down the tunnel + DNS route and stops the connector process, verified. Idempotent.
          */
         post: operations["disableRemoteTunnel"];
         delete?: never;
@@ -2565,7 +2565,7 @@ export interface paths {
         };
         /**
          * Bounded tail of the connector's stderr ring buffer (admin)
-         * @description RG7 — the supervised cloudflared child's in-memory stderr ring buffer, not a file (no LOOMBRE_LOG_FILE dependency).
+         * @description The supervised cloudflared child's in-memory stderr ring buffer, not a file (no LOOMBRE_LOG_FILE dependency).
          */
         get: operations["getRemoteTunnelLogs"];
         put?: never;
@@ -2587,7 +2587,7 @@ export interface paths {
         put?: never;
         /**
          * Staged test certificate issuance before committing Direct/ACME (admin)
-         * @description RG12: runs a real STAGED test issuance through the existing issue-certificate.ts module BEFORE tls.mode is ever flipped (lockout-risk mitigation) — proves issuance is feasible for the given domain without touching live TLS config.
+         * @description Runs a real STAGED test issuance through the existing issue-certificate.ts module BEFORE tls.mode is ever flipped (lockout-risk mitigation) — proves issuance is feasible for the given domain without touching live TLS config.
          */
         post: operations["testRemoteDirectAcme"];
         delete?: never;
@@ -2607,7 +2607,7 @@ export interface paths {
         put?: never;
         /**
          * Enable the Direct path — ACME issuance or reverse-proxy mode (admin)
-         * @description R5: `mode: acme` commits tls.mode via the existing restart machinery (server-power UI) after a passing acme-test; `mode: reverse-proxy` records the trust-proxy configuration instead — the wizard never touches the router itself (HARD LINE: detect, instruct, verify, never auto-configure the network — no UPnP, ever). Staged validate→stage→commit (RG10); 409 when a different path is already active.
+         * @description `mode: acme` commits tls.mode via the existing restart machinery (server-power UI) after a passing acme-test; `mode: reverse-proxy` records the trust-proxy configuration instead — the wizard never touches the router itself (HARD LINE: detect, instruct, verify, never auto-configure the network — no UPnP, ever). Staged validate→stage→commit; 409 when a different path is already active.
          */
         post: operations["enableRemoteDirect"];
         delete?: never;
@@ -2627,7 +2627,7 @@ export interface paths {
         put?: never;
         /**
          * Disable the Direct path (admin)
-         * @description R8 — verified disable. Idempotent.
+         * @description Verified disable. Idempotent.
          */
         post: operations["disableRemoteDirect"];
         delete?: never;
@@ -2647,7 +2647,7 @@ export interface paths {
         put?: never;
         /**
          * Classify a failed reachability proof (admin)
-         * @description R5/R6/RG11 — pure WAN-classification decision function (packages/shared/src/remote/diagnosis.ts): RFC 6598 (100.64/10) WAN -> definite CGNAT; RFC1918 WAN -> double-NAT; WAN matches the DNS-resolved public endpoint but the probe never arrived -> a port/firewall block; WAN differs from the resolved endpoint -> CGNAT/dynamic-IP mismatch, routes the wizard to Tunnel. No third-party echo service and no router APIs — `wanAddress` is admin-supplied via a guided router-status-page instruction card.
+         * @description Pure WAN-classification decision function (packages/shared/src/remote/diagnosis.ts): RFC 6598 (100.64/10) WAN -> definite CGNAT; RFC1918 WAN -> double-NAT; WAN matches the DNS-resolved public endpoint but the probe never arrived -> a port/firewall block; WAN differs from the resolved endpoint -> CGNAT/dynamic-IP mismatch, routes the wizard to Tunnel. No third-party echo service and no router APIs — `wanAddress` is admin-supplied via a guided router-status-page instruction card.
          */
         post: operations["diagnoseRemote"];
         delete?: never;
@@ -2667,7 +2667,7 @@ export interface paths {
         put?: never;
         /**
          * Mint a one-time reachability-proof probe token (admin)
-         * @description R6: hashed at rest (SHA-256, house pattern M3/RG6 — constant-time by construction, argon2id deliberately NOT used on this unauth-reached token), 15-minute expiry, single-use, bound to `expectedEndpoint`. The raw token appears ONLY in THIS response, embedded in `probeUrl` (https://&lt;endpoint&gt;/probe/&lt;token&gt;) and `qrPayload` — never retrievable again. Scan `qrPayload` with a phone ON CELLULAR (the phone IS the external vantage; no third-party check service).
+         * @description Hashed at rest (SHA-256 — constant-time by construction, argon2id deliberately NOT used on this unauth-reached token), 15-minute expiry, single-use, bound to `expectedEndpoint`. The raw token appears ONLY in THIS response, embedded in `probeUrl` (https://&lt;endpoint&gt;/probe/&lt;token&gt;) and `qrPayload` — never retrievable again. Scan `qrPayload` with a phone ON CELLULAR (the phone IS the external vantage; no third-party check service).
          */
         post: operations["createRemoteProbe"];
         delete?: never;
@@ -2687,7 +2687,7 @@ export interface paths {
         };
         /**
          * Poll a probe's arrival state (admin)
-         * @description The wizard watches this to light the reachability proof green end-to-end. `diagnosis` is populated once the probe has definitively failed to arrive (RG11's decision function) — never speculative while still `pending`.
+         * @description The wizard watches this to light the reachability proof green end-to-end. `diagnosis` is populated once the probe has definitively failed to arrive — never speculative while still `pending`.
          */
         get: operations["getRemoteProbe"];
         put?: never;
@@ -2707,7 +2707,7 @@ export interface paths {
         };
         /**
          * Exposure-aware security posture card (admin)
-         * @description R7: evaluates every posture check applicable to the currently active remote-access path (packages/shared/src/remote/ posture-model.ts's frozen POSTURE_CHECK_KEYS/applicableChecks — `checks` is empty when no path is enabled, since every active path always yields at least one check). Grades link to fix actions. Regressions/recoveries are separately reported via the admin-only outbox (`posture.regressed`/`posture.recovered`, RG4) by a background sweep — this endpoint itself is a stateless "evaluate now" read with no side effects.
+         * @description Evaluates every posture check applicable to the currently active remote-access path (packages/shared/src/remote/ posture-model.ts's frozen POSTURE_CHECK_KEYS/applicableChecks — `checks` is empty when no path is enabled, since every active path always yields at least one check). Grades link to fix actions. Regressions/recoveries are separately reported via the admin-only outbox (`posture.regressed`/`posture.recovered`) by a background sweep — this endpoint itself is a stateless "evaluate now" read with no side effects.
          */
         get: operations["getRemotePosture"];
         put?: never;
@@ -2729,8 +2729,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Reachability-proof arrival page — PUBLIC by necessity (R6/R9)
-         * @description R6/R9: one of only THREE new unauthenticated surfaces this subsystem introduces (alongside the WireGuard UDP listener itself and the tunnel connector's own inbound edge) — necessarily public because the whole point is an external phone-on-cellular request with no prior credentials. Rate-limited (`rateLimit.probe`, per-IP), token-gated, constant-time lookup (RG6's SHA-256 hash equality — same posture as invite-claim), and returns a STATIC success page with ZERO server info (no version, no instance name, nothing an unauthenticated prober could use for reconnaissance). Invalid, expired, already-consumed, or well-formed-but-unknown tokens ALL resolve to the SAME byte-identical 404 this operation shares with an unknown route at this same path (the shared not-found problem — a fixed generic `detail`, and an `instance` that is this route's TEMPLATE, never the submitted token — the same "invisible == nonexistent" posture as POST /setup/first-admin once configured and GET/POST /invites/claim/{token}) — the four cases are deliberately indistinguishable from the outside (enumeration-resistant). Wave 0: this shell IS the final behavior for every case except a genuinely-arrived probe (no probe tokens exist yet, so every request legitimately 404s); a later lane adds the real single-use lookup + arrival-marking without changing this response shape.
+         * Reachability-proof arrival page — PUBLIC by necessity
+         * @description One of only THREE new unauthenticated surfaces this subsystem introduces (alongside the WireGuard UDP listener itself and the tunnel connector's own inbound edge) — necessarily public because the whole point is an external phone-on-cellular request with no prior credentials. Rate-limited (`rateLimit.probe`, per-IP), token-gated, constant-time lookup (SHA-256 hash equality — same posture as invite-claim), and returns a STATIC success page with ZERO server info (no version, no instance name, nothing an unauthenticated prober could use for reconnaissance). Invalid, expired, already-consumed, or well-formed-but-unknown tokens ALL resolve to the SAME byte-identical 404 this operation shares with an unknown route at this same path (the shared not-found problem — a fixed generic `detail`, and an `instance` that is this route's TEMPLATE, never the submitted token — the same "invisible == nonexistent" posture as POST /setup/first-admin once configured and GET/POST /invites/claim/{token}) — the four cases are deliberately indistinguishable from the outside (enumeration-resistant).
          */
         get: operations["getProbePage"];
         put?: never;
@@ -2772,7 +2772,7 @@ export interface components {
         /** @enum {string} */
         MediaKind: "movie" | "tv" | "music";
         /**
-         * @description Entity types a managed image can belong to. `person` images are guarded by the SAME leak rule listPeople/getPersonById use (content_class isolation AND credited-on->=1-visible-item), so a person invisible to the caller has no reachable images either. This value plus the server-side mapping fix close that gap so a Person page portrait (GET /images/person/{id}/thumb) can be served. `tag` (S9 — studio logos: studios are kind=studio tags, S6) is guarded the same way, via applyGuardToTags + applied-to->=1-visible-item.
+         * @description Entity types a managed image can belong to. `person` images are guarded by the SAME leak rule listPeople/getPersonById use (content_class isolation AND credited-on->=1-visible-item), so a person invisible to the caller has no reachable images either. This value plus the server-side mapping fix close that gap so a Person page portrait (GET /images/person/{id}/thumb) can be served. `tag` (studio logos — studios are kind=studio tags) is guarded the same way, via applyGuardToTags + applied-to->=1-visible-item.
          * @enum {string}
          */
         ImageEntityType: "movie" | "series" | "season" | "episode" | "artist" | "album" | "track" | "person" | "tag";
@@ -2826,25 +2826,25 @@ export interface components {
             accessTokenExpiresAtMs: number;
             /** Format: uuid */
             deviceId: string;
-            /** @description E3a/M14 — true iff an admin/CLI temporary-password reset is still pending a real password change. Additive; always sent by authLogin and authRefresh (never omitted, even when false) so older clients that ignore it are unaffected. While true, the server restricts this account to auth login/refresh/logout, GET /users/me, and PATCH /users/me (403 on everything else) — enforced server-side, not merely advisory. */
+            /** @description True iff an admin/CLI temporary-password reset is still pending a real password change. Additive; always sent by authLogin and authRefresh (never omitted, even when false) so older clients that ignore it are unaffected. While true, the server restricts this account to auth login/refresh/logout, GET /users/me, and PATCH /users/me (403 on everything else) — enforced server-side, not merely advisory. */
             mustChangePassword?: boolean;
-            /** @description LD-13c (STATE.md "Mail posture trio"): additive; sent ONLY by claimInvite (never authLogin/authRefresh/first-admin — a fresh claim is the only TokenPair-returning op where an email can silently fail to apply). `false` iff the claim's intended email (submitted or preset-inherited) collided with another account's and was therefore silently dropped (F3/G6's existing E8-safe silent-no-op — this field is the honest signal that behavior already existed without). `true` whenever the email ended up applied as intended, INCLUDING when no email was ever submitted/preset (nothing to drop) and when the claimant explicitly opted out via ClaimInviteRequest's `email: null` (LD-13b — intent achieved, not a drop). Deliberately POST-AUTH ONLY (never surfaced pre-account-creation, e.g. GET /invites/claim/{token} or any pre-creation error path): a caller can only read this field by completing a real, rate- limited account creation, not by a free repeatable probe — see docs/PLAN.md/STATE.md for the enumeration-safety reasoning. */
+            /** @description Additive; sent ONLY by claimInvite (never authLogin/authRefresh/first-admin — a fresh claim is the only TokenPair-returning op where an email can silently fail to apply). `false` iff the claim's intended email (submitted or preset-inherited) collided with another account's and was therefore silently dropped (the pre-existing, enumeration-safe silent no-op — this field is the honest signal that behavior already existed without). `true` whenever the email ended up applied as intended, INCLUDING when no email was ever submitted/preset (nothing to drop) and when the claimant explicitly opted out via ClaimInviteRequest's `email: null` (intent achieved, not a drop). Deliberately POST-AUTH ONLY (never surfaced pre-account-creation, e.g. GET /invites/claim/{token} or any pre-creation error path): a caller can only read this field by completing a real, rate- limited account creation, not by a free repeatable probe — see docs/PLAN.md/STATE.md for the enumeration-safety reasoning. */
             emailApplied?: boolean;
         };
         ForgotPasswordRequest: {
             /** @description Username or email — resolved the same way authLogin resolves either. */
             identifier: string;
         };
-        /** @description Deliberately empty — the fixed, content-free 202 body every call returns regardless of outcome (E3b/E8 anti-enumeration). */
+        /** @description Deliberately empty — the fixed, content-free 202 body every call returns regardless of outcome (anti-enumeration). */
         ForgotPasswordResponse: Record<string, never>;
         ResetPasswordRequest: {
             token: string;
             /** Format: password */
             password: string;
         };
-        /** @description Deliberately empty, exactly like ForgotPasswordResponse above: the 200 ITSELF is the entire signal (this token is live). Carrying any member — the account's username, the expiry instant, which of the four failure cases applied — would hand an unauthenticated caller precisely what the byte-identical-404 posture (E8/M12) exists to withhold. ClaimState carries presets only because a claimant must SEE them to fill the claim form; the reset form has no field to prefill, so there is nothing legitimate to put here. */
+        /** @description Deliberately empty, exactly like ForgotPasswordResponse above: the 200 ITSELF is the entire signal (this token is live). Carrying any member — the account's username, the expiry instant, which of the four failure cases applied — would hand an unauthenticated caller precisely what the byte-identical-404 posture exists to withhold. ClaimState carries presets only because a claimant must SEE them to fill the claim form; the reset form has no field to prefill, so there is nothing legitimate to put here. */
         PasswordResetState: Record<string, never>;
-        /** @description R-F3 (opus adversarial review, fix wave): `currentPassword` is required ONLY when the path `id` equals the caller's own userId — a condition the schema itself cannot express (there is no same-as-caller relational operator in JSON Schema), so it is an optional property here and enforced server-side by the same requireCurrentPassword helper UpdateMeRequest/ RestrictedSettingsUpdate use (target-agnostic 422/403, the shared per-user rate limiter). Ignored entirely when resetting ANOTHER user's password. */
+        /** @description `currentPassword` is required ONLY when the path `id` equals the caller's own userId — a condition the schema itself cannot express (there is no same-as-caller relational operator in JSON Schema), so it is an optional property here and enforced server-side by the same requireCurrentPassword helper UpdateMeRequest/ RestrictedSettingsUpdate use (target-agnostic 422/403, the shared per-user rate limiter). Ignored entirely when resetting ANOTHER user's password. */
         AdminResetPasswordRequest: {
             /**
              * Format: password
@@ -2898,7 +2898,7 @@ export interface components {
             maxStreamBitrateBps: number | null;
         };
         /**
-         * @description STATE.md "Loombre Remote", lane WG2, R2/RG3: 'app' (default — every login-created device) or 'remote' (admin-initiated WireGuard enrollment ONLY, POST /admin/remote/wireguard/devices — never the login path). ADDITIVE field on the devices-list Device schema (R2's "enrolled devices appear in the existing devices list (kind: remote)").
+         * @description 'app' (default — every login-created device) or 'remote' (admin-initiated WireGuard enrollment ONLY, POST /admin/remote/wireguard/devices — never the login path). ADDITIVE field on the devices-list Device schema: enrolled devices appear in the existing devices list.
          * @enum {string}
          */
         DeviceKind: "app" | "remote";
@@ -2933,7 +2933,7 @@ export interface components {
             details: {
                 [key: string]: components["schemas"]["CapabilityDetail"];
             };
-            /** @description M8 — true iff self-service "forgot password" (authForgotPassword/ authResetPassword) is usable on this instance: mail is configured (a generic SMTP transport with host/from-address/ public-URL all set — credentials optional). Additive; always sent (never omitted). The login screen shows a "forgot password" affordance only when this is true. */
+            /** @description True iff self-service "forgot password" (authForgotPassword/ authResetPassword) is usable on this instance: mail is configured (a generic SMTP transport with host/from-address/ public-URL all set — credentials optional). Additive; always sent (never omitted). The login screen shows a "forgot password" affordance only when this is true. */
             passwordResetAvailable?: boolean;
         };
         ServerPowerActionResponse: {
@@ -3084,7 +3084,7 @@ export interface components {
             username: string;
             /**
              * Format: email
-             * @description M1: optional login identifier — an additive LOOSENING (the column was CITEXT NOT NULL UNIQUE before; still CITEXT UNIQUE, just nullable now). Null = no email on file; the user authenticates by username only.
+             * @description Optional login identifier. Null = no email on file; the user authenticates by username only.
              */
             email: string | null;
             displayName?: string | null;
@@ -3100,7 +3100,7 @@ export interface components {
             createdAtMs: number;
             /** Format: int64 */
             updatedAtMs: number;
-            /** @description E3a/M14, admin visibility — true iff an admin/CLI temporary- password reset is pending a real password change. Additive; always sent (never omitted). */
+            /** @description Admin visibility — true iff an admin/CLI temporary- password reset is pending a real password change. Additive; always sent (never omitted). */
             mustChangePassword?: boolean;
         };
         UserPage: {
@@ -3111,7 +3111,7 @@ export interface components {
             username: string;
             /**
              * Format: email
-             * @description M1: optional (was required) — an admin may create an email-less user.
+             * @description Optional (was required) — an admin may create an email-less user.
              */
             email?: string | null;
             /** Format: password */
@@ -3125,7 +3125,7 @@ export interface components {
         UpdateUserRequest: {
             /**
              * Format: email
-             * @description M1: null clears the email, matching displayName's own null-to-clear shape below.
+             * @description Null clears the email, matching displayName's own null-to-clear shape below.
              */
             email?: string | null;
             displayName?: string | null;
@@ -3137,7 +3137,7 @@ export interface components {
             displayName?: string | null;
             /**
              * Format: email
-             * @description M1: null-to-clear (birthDate precedent below).
+             * @description Null-to-clear (birthDate precedent below).
              */
             email?: string | null;
             /** Format: date */
@@ -3146,7 +3146,7 @@ export interface components {
             password?: string;
             /**
              * Format: password
-             * @description Current-password re-authentication (G2/G3, STATE.md "Current-password re-auth on self-changes"). Required (`dependentRequired` below) whenever this request's body contains `password` and/or `email` — ANY value, including an explicit `null` to clear email — since both are account- critical self-service changes; a bare displayName/birthDate- only profile save needs no re-auth. Deliberately UNCONSTRAINED, same reasoning as RestrictedSettingsUpdate.currentPin below: it proves an ALREADY-STORED secret and is only ever compared against a stored hash, never itself stored, so a shape constraint would add nothing. A wrong value 403s with the same fixed detail regardless of which field (password or email) was being changed (F2: never confirms which target value was the problem).
+             * @description Current-password re-authentication. Required (`dependentRequired` below) whenever this request's body contains `password` and/or `email` — ANY value, including an explicit `null` to clear email — since both are account- critical self-service changes; a bare displayName/birthDate- only profile save needs no re-auth. Deliberately UNCONSTRAINED, same reasoning as RestrictedSettingsUpdate.currentPin below: it proves an ALREADY-STORED secret and is only ever compared against a stored hash, never itself stored, so a shape constraint would add nothing. A wrong value 403s with the same fixed detail regardless of which field (password or email) was being changed (never confirming which target value was the problem).
              */
             currentPassword?: string;
         };
@@ -3211,14 +3211,14 @@ export interface components {
              * @default 259200000
              */
             expiresInMs: number;
-            /** @description General-class libraries only (M4) — a restricted-class or unknown library id 422s the whole request; may be empty. */
+            /** @description General-class libraries only — a restricted-class or unknown library id 422s the whole request; may be empty. */
             libraryIds: string[];
         };
-        /** @description claimToken is returned EXACTLY ONCE — never retrievable again, never logged, never in any event payload (M3). */
+        /** @description claimToken is returned EXACTLY ONCE — never retrievable again, never logged, never in any event payload. */
         CreateInviteResponse: {
             invite: components["schemas"]["Invite"];
             claimToken: string;
-            /** @description publicUrl-derived claim link, or null when the public URL setting is unset (M9) — the web composes a browser-origin fallback in that case. */
+            /** @description publicUrl-derived claim link, or null when the public URL setting is unset — the web composes a browser-origin fallback in that case. */
             claimUrl: string | null;
         };
         ClaimState: {
@@ -3233,7 +3233,7 @@ export interface components {
             password: string;
             /**
              * Format: email
-             * @description Defaults to the invite's own emailPreset when this member is ABSENT. LD-13b (STATE.md "Mail posture trio"): an explicit `null` opts OUT of the preset outright — the new account gets no email at all, even when the invite carries a preset — distinct from omitting the member. A submitted string is used verbatim (trimmed, then format-validated).
+             * @description Defaults to the invite's own emailPreset when this member is ABSENT. An explicit `null` opts OUT of the preset outright — the new account gets no email at all, even when the invite carries a preset — distinct from omitting the member. A submitted string is used verbatim (trimmed, then format-validated).
              */
             email?: string | null;
             /** @description Defaults to the invite's own displayNamePreset when omitted. */
@@ -3249,7 +3249,7 @@ export interface components {
             currentPin?: string;
             /**
              * Format: password
-             * @description Current-password re-authentication (G2/G3, STATE.md "Current-password re-auth on self-changes"). ALWAYS required — every call to this endpoint is account-critical (PIN set/change AND opt-in/out are one operation, F1). Deliberately UNCONSTRAINED, same reasoning as currentPin above: it proves an already-stored secret and is only ever compared against a stored hash, never itself stored. Distinct from currentPin — proving the account password does not replace proving the PIN where the PIN itself is also required (F4: "currentPassword is additional, not a PIN replacement").
+             * @description Current-password re-authentication. ALWAYS required — every call to this endpoint is account-critical (PIN set/change AND opt-in/out are one operation). Deliberately UNCONSTRAINED, same reasoning as currentPin above: it proves an already-stored secret and is only ever compared against a stored hash, never itself stored. Distinct from currentPin — proving the account password does not replace proving the PIN where the PIN itself is also required; it is additional, not a PIN replacement.
              */
             currentPassword: string;
         };
@@ -3444,7 +3444,7 @@ export interface components {
             videoCodec?: components["schemas"]["VideoCodec"] | null;
             /** @enum {integer|null} */
             bitDepth?: 8 | 10 | 12 | null;
-            /** @description Null in THREE cases, not two (d3-b10). The first two are videoCodec/bitDepth's: an audio-only file, and a file not yet probed. The third is browser-items-F6's — a file that HAS a probed video stream whose HDR verdict is genuinely UNKNOWN: the stored `hdr` column is null and `color_transfer` carries no HDR signal either (only smpte2084 -> hdr10 and arib-std-b67 -> hlg are derivable; Dolby Vision never is, since a DV profile-8 stream carries the same HDR10-compatible transfer). Such a file reports null rather than `none`, so an unknown verdict is never mistaken for a confident SDR claim — clients should omit the HDR row instead of rendering "SDR". `hdr: null` therefore does NOT imply `videoCodec: null`. */
+            /** @description Null in THREE cases, not two. The first two are videoCodec/bitDepth's: an audio-only file, and a file not yet probed. The third is a file that HAS a probed video stream whose HDR verdict is genuinely UNKNOWN: the stored `hdr` column is null and `color_transfer` carries no HDR signal either (only smpte2084 -> hdr10 and arib-std-b67 -> hlg are derivable; Dolby Vision never is, since a DV profile-8 stream carries the same HDR10-compatible transfer). Such a file reports null rather than `none`, so an unknown verdict is never mistaken for a confident SDR claim — clients should omit the HDR row instead of rendering "SDR". `hdr: null` therefore does NOT imply `videoCodec: null`. */
             hdr?: components["schemas"]["HdrType"] | null;
             audioTracks?: components["schemas"]["MediaFileAudioTrack"][];
             subtitleTracks?: components["schemas"]["MediaFileSubtitleTrack"][];
@@ -3542,7 +3542,7 @@ export interface components {
             items: components["schemas"]["Episode"][];
             nextCursor: string | null;
         };
-        /** @description One chapter_markers row (migrations/0019, S7/K9) — GET /items/{id}/chapters and RestrictedSceneDetail.chapters both use this exact shape. */
+        /** @description One chapter_markers row (migrations/0019) — GET /items/{id}/chapters and RestrictedSceneDetail.chapters both use this exact shape. */
         ChapterMarker: {
             title: string;
             /** Format: int64 */
@@ -3869,7 +3869,7 @@ export interface components {
             streamIndex?: number;
         };
         /**
-         * @description The closed set of codecs a ladder rung may ENCODE to (docs/PLAYBACK.md §7/§7.1) — deliberately narrower than VideoCodec, which is the SOURCE-fact union. av1 landed with LD-7 (Wave C1).
+         * @description The closed set of codecs a ladder rung may ENCODE to (docs/PLAYBACK.md §7/§7.1) — deliberately narrower than VideoCodec, which is the SOURCE-fact union.
          * @enum {string}
          */
         LadderCodec: "h264" | "hevc" | "av1";
@@ -3910,7 +3910,7 @@ export interface components {
             media?: components["schemas"]["MediaInfo"];
             status: components["schemas"]["PlaybackSessionStatus"];
             errorCode: string | null;
-            /** @description Relative URL to GET .../hls/master.m3u8 — the MULTI-VARIANT master playlist (docs/PLAYBACK.md §9.1, owner-decision V5), for EVERY HLS session including ladder-empty ones, which render a single-variant master so the client has ONE path and no branch. Its variant URIs are `v{K}/media.m3u8`, K being the rung's index in `plan.ladder`; every variant serves the same playlist bytes, and the `v{K}` prefix is how a client's ABR switch reaches the server (§9.1.1). Still null for direct-play sessions (docs/PLAYBACK.md §9 — direct-play bypasses HLS packaging entirely). */
+            /** @description Relative URL to GET .../hls/master.m3u8 — the MULTI-VARIANT master playlist (docs/PLAYBACK.md §9.1), for EVERY HLS session including ladder-empty ones, which render a single-variant master so the client has ONE path and no branch. Its variant URIs are `v{K}/media.m3u8`, K being the rung's index in `plan.ladder`; every variant serves the same playlist bytes, and the `v{K}` prefix is how a client's ABR switch reaches the server (§9.1.1). Still null for direct-play sessions (docs/PLAYBACK.md §9 — direct-play bypasses HLS packaging entirely). */
             manifestUrl?: string | null;
             /** Format: int64 */
             createdAtMs: number;
@@ -3937,16 +3937,16 @@ export interface components {
             /** @description Primary video stream >= 3840x2160 on any non-missing media file. */
             is4k: boolean;
             hdr: components["schemas"]["HdrType"];
-            /** @description Derived from the primary probed video stream's height (S5's technical authority) — null when no video stream has been probed yet. */
+            /** @description Derived from the primary probed video stream's height — null when no video stream has been probed yet. */
             resolution: components["schemas"]["RestrictedResolutionBand"] | null;
         };
         /**
-         * @description SD < 720p <= HD < 1080p <= FHD < 2160p <= UHD, by primary video stream height (S9/S10).
+         * @description SD < 720p <= HD < 1080p <= FHD < 2160p <= UHD, by primary video stream height.
          * @enum {string}
          */
         RestrictedResolutionBand: "SD" | "HD" | "FHD" | "UHD";
         /**
-         * @description `added` (catalog_items.added_at_ms), `date` (movie_details. premiere_at_ms, falling back to catalog_items.year — K1), `title`, `rating` (community_rating), `duration` (probed media_files. duration_ms).
+         * @description `added` (catalog_items.added_at_ms), `date` (movie_details. premiere_at_ms, falling back to catalog_items.year), `title`, `rating` (community_rating), `duration` (probed media_files. duration_ms).
          * @enum {string}
          */
         RestrictedBrowseSort: "added" | "date" | "title" | "rating" | "duration";
@@ -3965,13 +3965,13 @@ export interface components {
             id: string;
             name: string;
         };
-        /** @description One restricted-zone scene row (GET /restricted/browse, GET /restricted/search, GET /restricted/performers/{id}/scenes) — itemType is always `movie` (K1: scenes are item_type='movie' rows in restricted libraries). */
+        /** @description One restricted-zone scene row (GET /restricted/browse, GET /restricted/search, GET /restricted/performers/{id}/scenes) — itemType is always `movie` (a scene is an item_type='movie' row in a restricted library). */
         RestrictedBrowseItem: components["schemas"]["CatalogItemBase"] & {
             /** @constant */
             itemType: "movie";
             /**
              * Format: int64
-             * @description K1 editorial premiere date; null falls back to `year`.
+             * @description Editorial premiere date; null falls back to `year`.
              */
             premiereAtMs: number | null;
             /**
@@ -3988,7 +3988,7 @@ export interface components {
             items: components["schemas"]["RestrictedBrowseItem"][];
             nextCursor: string | null;
         };
-        /** @description One chapter_markers row (migrations/0019, K9/S7) for this scene. */
+        /** @description One chapter_markers row (migrations/0019) for this scene. */
         RestrictedSceneMarker: {
             /** Format: uuid */
             id: string;
@@ -4011,22 +4011,22 @@ export interface components {
         RestrictedScene: components["schemas"]["CatalogItemBase"] & {
             /** @constant */
             itemType: "movie";
-            /** @description Whether the CALLER has this scene watchlisted (RZI-D2a). Carried on the scene detail because the general watchlist surfaces never see restricted rows under §6.4 surface scoping — the zone answers membership itself, and the zone home's watchlistInZone rail is where the rows render. */
+            /** @description Whether the CALLER has this scene watchlisted. Carried on the scene detail because the general watchlist surfaces never see restricted rows under §6.4 surface scoping — the zone answers membership itself, and the zone home's watchlistInZone rail is where the rows render. */
             watchlisted: boolean;
             /**
              * Format: int64
-             * @description K1 editorial premiere date (movie_details.premiere_at_ms); null falls back to `year`.
+             * @description Editorial premiere date (movie_details.premiere_at_ms); null falls back to `year`.
              */
             premiereAtMs: number | null;
             contentRating: string | null;
             /**
              * Format: int64
-             * @description Editorial runtime (movie_details.runtime_ms) — provider/ admin-set, not necessarily populated for Stash-sourced scenes (S5: Stash supplies editorial facts, never technical ones). Prefer `durationMs` (the PROBED primary-file duration) for display; this is kept for parity with Movie/Episode/Track's own `runtimeMs` field.
+             * @description Editorial runtime (movie_details.runtime_ms) — provider/ admin-set, not necessarily populated for Stash-sourced scenes. Prefer `durationMs` (the PROBED primary-file duration) for display; this is kept for parity with Movie/Episode/Track's own `runtimeMs` field.
              */
             runtimeMs: number | null;
             /**
              * Format: int64
-             * @description Probed primary-file duration (S5 "Loombre ffprobe authoritative for technical facts") — the same field RestrictedBrowseItem carries; null until the file is probed.
+             * @description Probed primary-file duration — the same field RestrictedBrowseItem carries; null until the file is probed.
              */
             durationMs: number | null;
             overview: string | null;
@@ -4042,7 +4042,7 @@ export interface components {
             progress: components["schemas"]["RestrictedSceneProgress"] | null;
             quality: components["schemas"]["RestrictedZoneItemQuality"];
         };
-        /** @description GET /restricted/performers row/detail — role=performer people credited on >=1 scene visible within the zone. Mirrors Person's shape (packages/db/src/query/people.ts's guard model) with a zone-scoped `sceneCount` in place of Person's general `creditCount`. FX2 fix wave: `images` mirrors RestrictedStudio's own field exactly (same shape, same guard posture) — B ingests performer portraits (images entity_type='person', kind='thumb') but this field was missing here until now. */
+        /** @description GET /restricted/performers row/detail — role=performer people credited on >=1 scene visible within the zone. Mirrors Person's shape (packages/db/src/query/people.ts's guard model) with a zone-scoped `sceneCount` in place of Person's general `creditCount`. `images` mirrors RestrictedStudio's own field exactly (same shape, same guard posture) — performer portraits are ingested as images entity_type='person', kind='thumb'. */
         RestrictedPerformer: {
             /** Format: uuid */
             id: string;
@@ -4056,7 +4056,7 @@ export interface components {
             items: components["schemas"]["RestrictedPerformer"][];
             nextCursor: string | null;
         };
-        /** @description GET /restricted/studios row/detail — kind=studio tags (S6: studios are first-class VIA tags, no dedicated entity table). */
+        /** @description GET /restricted/studios row/detail — kind=studio tags (studios are first-class VIA tags, no dedicated entity table). */
         RestrictedStudio: {
             /** Format: uuid */
             id: string;
@@ -4074,7 +4074,7 @@ export interface components {
             item: components["schemas"]["RestrictedBrowseItem"];
             progress: components["schemas"]["Progress"];
         };
-        /** @description One watchlisted zone scene (RZI-D2a). The zone's watchlist rail is the ONLY surface a watchlisted restricted title ever renders on — GET /watchlist excludes restricted rows unconditionally (its own description's law, guard-enforced since the 2026-08-30 §6.4 surface-scoping amendment). */
+        /** @description One watchlisted zone scene. The zone's watchlist rail is the ONLY surface a watchlisted restricted title ever renders on — GET /watchlist excludes restricted rows unconditionally (its own description's law, guard-enforced since the 2026-08-30 §6.4 surface-scoping amendment). */
         RestrictedHomeWatchlistEntry: {
             item: components["schemas"]["RestrictedBrowseItem"];
             /**
@@ -4083,7 +4083,7 @@ export interface components {
              */
             addedAtMs: number;
         };
-        /** @description GET /restricted/home — zone home rails (S9; watchlistInZone added by the RZI surface-scoping amendment, RZI-D2a). */
+        /** @description GET /restricted/home — zone home rails; watchlistInZone was added by the 2026-08-30 §6.4 surface-scoping amendment. */
         RestrictedHome: {
             continueWatchingInZone: components["schemas"]["RestrictedHomeContinueWatchingEntry"][];
             /** @description The viewer's watchlisted zone scenes, newest-added first. */
@@ -4096,7 +4096,7 @@ export interface components {
         };
         /** @enum {string} */
         AdminStashConnectionStatus: "never_connected" | "ok" | "unsupported_schema" | "unreachable";
-        /** @description GET/PUT /admin/libraries/{id}/stash-connection — packages/db's library_stash_connections row (migrations/0018 + 0019's additive genre_tag_names), config fields admin-written, status fields worker-written at connect time (S2/S3). */
+        /** @description GET/PUT /admin/libraries/{id}/stash-connection — packages/db's library_stash_connections row (migrations/0018 + 0019's additive genre_tag_names), config fields admin-written, status fields worker-written at connect time. */
         AdminStashConnection: {
             /** Format: uuid */
             libraryId: string;
@@ -4104,12 +4104,12 @@ export interface components {
             configured: boolean;
             sqlitePath: string | null;
             enabled: boolean;
-            /** @description S6/K15: which Stash tag names map to Loombre genre rather than general tags. `null` (the default, including before any connection has ever been saved) means the mapper's documented heuristic applies — a Stash tag with NO parent tag maps to genre, a child tag maps to a plain tag; explicit tag names here override that heuristic wholesale, case-insensitively. */
+            /** @description Which Stash tag names map to Loombre genre rather than general tags. `null` (the default, including before any connection has ever been saved) means the mapper's documented heuristic applies — a Stash tag with NO parent tag maps to genre, a child tag maps to a plain tag; explicit tag names here override that heuristic wholesale, case-insensitively. */
             genreTagNames: string[] | null;
             /** @description Filesystem path to Stash's on-disk blob store, when Stash uses Filesystem (not Database) blob storage. `null` (the default) means art is read only from database-stored blobs — a Filesystem-mode Stash then syncs no covers. A path opts into reading cover/portrait/logo bytes from Stash's sharded on-disk store. Worker-side path; the server never opens it. */
             blobsPath: string | null;
             status: components["schemas"]["AdminStashConnectionStatus"];
-            /** @description The exact S3 admin notice when status=unsupported_schema; null otherwise. */
+            /** @description The exact admin notice when status=unsupported_schema; null otherwise. */
             statusDetail: string | null;
             lastSeenSchemaVersion: number | null;
             /** Format: int64 */
@@ -4157,17 +4157,17 @@ export interface components {
             /** @enum {string} */
             mode: "full" | "incremental";
         };
-        /** @description A user record sans secrets (no password hash, no PIN hash, no tokens). This schema is reused BOTH as GET /export's response shape AND (nested under Archive) as POST /import's request shape — `displayName` is deliberately NOT in `required` despite always being present on export, so an archive written before M2 (which never had this key at all) still validates as an import request; the import path treats a missing key exactly like an explicit null (apps/worker/src/import/validate.ts). */
+        /** @description A user record sans secrets (no password hash, no PIN hash, no tokens). This schema is reused BOTH as GET /export's response shape AND (nested under Archive) as POST /import's request shape — `displayName` is deliberately NOT in `required` despite always being present on export, so an archive written before the field existed (and so never had this key at all) still validates as an import request; the import path treats a missing key exactly like an explicit null (apps/worker/src/import/validate.ts). */
         ExportUser: {
             /** Format: uuid */
             id: string;
             username: string;
             /**
              * Format: email
-             * @description M1: nullable, an email-less user exports/imports as null.
+             * @description Nullable — an email-less user exports/imports as null.
              */
             email: string | null;
-            /** @description M2 (E4 archive check). Optional key: absent on a pre-M2 archive. */
+            /** @description Optional key: absent on an archive written before this field existed. */
             displayName?: string | null;
             isAdmin: boolean;
             /** Format: int64 */
@@ -4183,7 +4183,7 @@ export interface components {
             /** Format: int64 */
             createdAtMs: number;
         };
-        /** @description Open JSON archive per docs/PLAN.md §8.4 (P12) — data freedom without API compatibility. Import accepts the same shape. */
+        /** @description Open JSON archive per docs/PLAN.md §8.4 — data freedom without API compatibility. Import accepts the same shape. */
         ExportArchive: {
             /** Format: int64 */
             exportedAtMs: number;
@@ -4263,7 +4263,7 @@ export interface components {
             items: components["schemas"]["AdminSession"][];
             nextCursor: string | null;
         };
-        /** @description GET /admin/libraries/{id}/unmatched row. Derived, never stored (U9): an enrichable-type catalog item (movie/series/artist/album) with zero provider_ids rows for it. Standard guarded-read posture (docs/PLAN.md §6.4, packages/db/src/query/guard.ts's applyGuard) — admins are NOT exempt from restricted-content gating or from needing their own library_permissions grant; an item this admin's own ViewerContext does not currently clear is simply absent from the page, the same as every other viewer-scoped catalog list in this API (unlike GET /admin/sessions' redact-in-place posture, which exists specifically to prove a restricted PLAYBACK SESSION is happening at all — there is no equivalent "something is happening" fact to preserve here). */
+        /** @description GET /admin/libraries/{id}/unmatched row. Derived, never stored: an enrichable-type catalog item (movie/series/artist/album) with zero provider_ids rows for it. Standard guarded-read posture (docs/PLAN.md §6.4, packages/db/src/query/guard.ts's applyGuard) — admins are NOT exempt from restricted-content gating or from needing their own library_permissions grant; an item this admin's own ViewerContext does not currently clear is simply absent from the page, the same as every other viewer-scoped catalog list in this API (unlike GET /admin/sessions' redact-in-place posture, which exists specifically to prove a restricted PLAYBACK SESSION is happening at all — there is no equivalent "something is happening" fact to preserve here). */
         UnmatchedLibraryItem: {
             /** Format: uuid */
             itemId: string;
@@ -4271,7 +4271,7 @@ export interface components {
             title: string;
             /** @description Null when the item genuinely has no known year. */
             year: number | null;
-            /** @description A representative on-disk path for this item (the movie's own file, or one file discovered beneath a series/artist/album's hierarchy). Null when this item type has no resolvable file yet — never fabricated (U9). */
+            /** @description A representative on-disk path for this item (the movie's own file, or one file discovered beneath a series/artist/album's hierarchy). Null when this item type has no resolvable file yet — never fabricated. */
             filePath: string | null;
         };
         UnmatchedLibraryItemPage: {
@@ -4279,13 +4279,13 @@ export interface components {
             nextCursor: string | null;
         };
         ApplyMatchRequest: {
-            /** @description A metadata-provider name this server can actually resolve, in one of exactly two forms (matched EXACTLY, case-sensitively — the worker's ProviderRegistry lookup is a case-sensitive map, so `TMDB` is a miss): a built-in provider name (`tmdb`, `tvdb`, `musicbrainz`, `stash` — the names registered in apps/worker/src/metadata/registry.ts; GET /admin/libraries/{id}/provider-chain reports the same closed set as `builtinProviderNames`), or the stable `lpp:<pluginId>` LPP adapter id of a plugin that is REGISTERED on this server and currently ENABLED (apps/worker/src/metadata/plugin-provider.ts). Anything else is a 422 naming this field — it is deliberately NOT the `ProviderName` enum, which is a different, smaller closed set (the providers with an admin-manageable API key, A9). The name need not appear in this item's own library provider chain: a forced ref bypasses chain resolution by design. */
+            /** @description A metadata-provider name this server can actually resolve, in one of exactly two forms (matched EXACTLY, case-sensitively — the worker's ProviderRegistry lookup is a case-sensitive map, so `TMDB` is a miss): a built-in provider name (`tmdb`, `tvdb`, `musicbrainz`, `stash` — the names registered in apps/worker/src/metadata/registry.ts; GET /admin/libraries/{id}/provider-chain reports the same closed set as `builtinProviderNames`), or the stable `lpp:<pluginId>` LPP adapter id of a plugin that is REGISTERED on this server and currently ENABLED (apps/worker/src/metadata/plugin-provider.ts). Anything else is a 422 naming this field — it is deliberately NOT the `ProviderName` enum, which is a different, smaller closed set (the providers with an admin-manageable API key). The name need not appear in this item's own library provider chain: a forced ref bypasses chain resolution by design. */
             provider: string;
             /** @description That provider's own id for the chosen candidate (ProviderRef.externalId, apps/worker/src/metadata/provider.ts). */
             externalId: string;
         };
         /**
-         * @description Which input actually determined a setting's current effective value (A8 precedence order).
+         * @description Which input actually determined a setting's current effective value (environment > database > default).
          * @enum {string}
          */
         SettingsValueSource: "environment" | "database" | "default";
@@ -4297,7 +4297,7 @@ export interface components {
         /** @enum {string} */
         SettingsCategory: "transcode" | "scanner" | "images" | "restricted" | "sessions" | "updateCheck" | "security" | "rateLimit" | "database" | "network" | "tls" | "paths" | "ffmpeg" | "stash" | "mail" | "remote";
         /**
-         * @description Closed set of metadata providers with an admin-manageable API key (A9).
+         * @description Closed set of metadata providers with an admin-manageable API key.
          * @enum {string}
          */
         ProviderName: "tmdb" | "tvdb";
@@ -4308,17 +4308,17 @@ export interface components {
             source: components["schemas"]["SettingsValueSource"];
             /** @description Whether a change to this key only takes effect at next server boot. */
             requiresRestart: boolean;
-            /** @description True iff an env pin is active RIGHT NOW (A8) — `value` above is always the env value in that case, and any stored database value is preserved but inert. */
+            /** @description True iff an env pin is active RIGHT NOW — `value` above is always the env value in that case, and any stored database value is preserved but inert. */
             locked: boolean;
             /** @description The environment variable currently pinning this key. Present only when `locked` is true. */
             lockedBy?: string;
         };
         AdminSettingsResponse: {
             settings: components["schemas"]["AdminSettingValue"][];
-            /** @description requiresRestart:true keys whose current effective value differs from what it was at this server instance's boot (A5). Non-empty means a restart is needed for those changes to fully apply. */
+            /** @description requiresRestart:true keys whose current effective value differs from what it was at this server instance's boot. Non-empty means a restart is needed for those changes to fully apply. */
             restartPendingKeys: string[];
             providerKeys: components["schemas"]["ProviderKeyStatus"][];
-            /** @description Optional mail transport run (E5/M10) — ADDITIVE field: the SMTP username/password keyring entry's status (never the values themselves; see MailCredentialsStatus). Absent on an older client's cached shape is never load-bearing — mail credentials are optional overall (unauthenticated SMTP relays are legal). */
+            /** @description ADDITIVE field: the SMTP username/password keyring entry's status (never the values themselves; see MailCredentialsStatus). Absent on an older client's cached shape is never load-bearing — mail credentials are optional overall (unauthenticated SMTP relays are legal). */
             mailCredentials?: components["schemas"]["MailCredentialsStatus"];
         };
         /** @description One GET /admin/settings/schema entry — the pure registry projection (no live value): what the admin UI's dynamic widget renderer and the generated operator/admin docs both build from. */
@@ -4328,7 +4328,7 @@ export interface components {
             description: string;
             /** @description Operator-facing caution for a setting whose misconfiguration degrades behavior but never locks the instance out. */
             caution?: string;
-            /** @description ADDITIVE field (W13b, decision D-7's second copy layer): precise technical detail (protocol notes, format specifics, behavioral caveats) `description` deliberately leaves out of its plain-language register. Rendered by the admin settings screen in an on-demand info tooltip beside the key name, alongside that entry's own env-pin name when it has one. Absent on an older cached client shape is never load-bearing — every field this entry needs to render or validate a setting is elsewhere. */
+            /** @description ADDITIVE field: precise technical detail (protocol notes, format specifics, behavioral caveats) `description` deliberately leaves out of its plain-language register. Rendered by the admin settings screen in an on-demand info tooltip beside the key name, alongside that entry's own env-pin name when it has one. Absent on an older cached client shape is never load-bearing — every field this entry needs to render or validate a setting is elsewhere. */
             technicalDetails?: string;
             scope: components["schemas"]["SettingsScope"];
             requiresRestart: boolean;
@@ -4337,7 +4337,7 @@ export interface components {
             default: unknown;
             /** @description The JSON Schema describing this key's value shape. The UI widget renderer's sole input for choosing a control: boolean -> toggle, number (with minimum/maximum) -> numeric input, enum -> segmented/select, string -> text input, array/object -> a structured editor. */
             valueSchema: Record<string, never>;
-            /** @description Mirrors AdminSettingValue.locked for the SAME key (A8), without a second round trip to GET /admin/settings. */
+            /** @description Mirrors AdminSettingValue.locked for the SAME key, without a second round trip to GET /admin/settings. */
             locked: boolean;
             lockedBy?: string;
         };
@@ -4355,7 +4355,7 @@ export interface components {
             /** @description Whether THIS key now appears in restartPendingKeys after this write — lets the UI show "restart required" inline without a second GET. */
             restartPending: boolean;
         };
-        /** @description A9: the ENTIRE shape any provider-key read ever returns — never the key value itself, by construction. */
+        /** @description The ENTIRE shape any provider-key read ever returns — never the key value itself, by construction. */
         ProviderKeyStatus: {
             provider: components["schemas"]["ProviderName"];
             set: boolean;
@@ -4409,12 +4409,12 @@ export interface components {
             jobId: string;
         };
         /**
-         * @description One aggregate health value per plugin (LD7) — envelope reachability plus every GRANTED capability's static check.
+         * @description One aggregate health value per plugin — envelope reachability plus every GRANTED capability's static check.
          * @enum {string}
          */
         PluginHealthState: "unknown" | "healthy" | "unhealthy";
         /**
-         * @description Why an enabled:false plugin is disabled. 'admin' — an admin turned it off. 'breaker' — 5 consecutive failed calls auto-disabled it (LD8). 'scope-change' — a manifest re-fetch found the plugin now asks for more than was approved; only reapproveAdminPlugin re-enables this one.
+         * @description Why an enabled:false plugin is disabled. 'admin' — an admin turned it off. 'breaker' — 5 consecutive failed calls auto-disabled it. 'scope-change' — a manifest re-fetch found the plugin now asks for more than was approved; only reapproveAdminPlugin re-enables this one.
          * @enum {string}
          */
         PluginDisabledReason: "admin" | "breaker" | "scope-change";
@@ -4439,9 +4439,9 @@ export interface components {
             eventTypes: string[];
             contentClass: components["schemas"]["ContentClass"];
         };
-        /** @description One manifest-declared capability, discriminated by `type`. Additive (C8) — a future LPP capability type is a new union member here, never a shape change to the existing ones. */
+        /** @description One manifest-declared capability, discriminated by `type`. Additive — a future LPP capability type is a new union member here, never a shape change to the existing ones. */
         PluginCapability: components["schemas"]["PluginMetadataProviderCapability"] | components["schemas"]["PluginEventSubscriberCapability"];
-        /** @description previewAdminPlugin's result — a validated read of the plugin's manifest for the C4 confirmation screen. Nothing is persisted by that call. */
+        /** @description previewAdminPlugin's result — a validated read of the plugin's manifest for the registration confirmation screen. Nothing is persisted by that call. */
         PluginManifestPreview: {
             name: string;
             /** @description The plugin's own version string — distinct from protocolVersion. */
@@ -4454,7 +4454,7 @@ export interface components {
             configSchema: unknown;
             /** @description Union of every event-subscriber capability's requested eventTypes (empty if the manifest declares none). */
             requestedEventTypes: string[];
-            /** @description C-2 fix wave (adversarial-review): a sha256 hex digest of the EXACT manifest content this preview validated. The client MUST round-trip this value back as `manifestDigest` on registerAdminPlugin / reapproveAdminPlugin — the server re-fetches the manifest at that point (as it always did) and 409s if the fresh fetch's digest no longer matches, closing the TOCTOU where a plugin could serve a broader/differently-scoped manifest to the registration call than the one this preview actually showed the admin. */
+            /** @description A sha256 hex digest of the EXACT manifest content this preview validated. The client MUST round-trip this value back as `manifestDigest` on registerAdminPlugin / reapproveAdminPlugin — the server re-fetches the manifest at that point (as it always did) and 409s if the fresh fetch's digest no longer matches, closing the TOCTOU where a plugin could serve a broader/differently-scoped manifest to the registration call than the one this preview actually showed the admin. */
             manifestDigest: string;
         };
         PreviewPluginRequest: {
@@ -4463,7 +4463,7 @@ export interface components {
              * @description The plugin's base HTTP(S) origin — GET <url>/lpp/manifest is fetched.
              */
             url: string;
-            /** @description Explicit LAN hostnames/IPs to permit for this preview fetch even if they land in a private/loopback address range (LD5). */
+            /** @description Explicit LAN hostnames/IPs to permit for this preview fetch even if they land in a private/loopback address range. */
             lanAllowlist?: string[];
         };
         PluginEventGrant: {
@@ -4471,7 +4471,7 @@ export interface components {
             /** Format: int64 */
             grantedAtMs: number;
         };
-        /** @description A registered LPP plugin's admin-facing state (migrations/0014_plugins.sql). Never carries the HMAC secret or any config secret value (LD1/LD9) — those exist only in the keyring and are returned exactly once, by registerAdminPlugin / rotateAdminPluginHmac. */
+        /** @description A registered LPP plugin's admin-facing state (migrations/0014_plugins.sql). Never carries the HMAC secret or any config secret value — those exist only in the keyring and are returned exactly once, by registerAdminPlugin / rotateAdminPluginHmac. */
         AdminPlugin: {
             /** Format: uuid */
             id: string;
@@ -4481,7 +4481,7 @@ export interface components {
             protocolVersion: number;
             enabled: boolean;
             contentClass: components["schemas"]["ContentClass"];
-            /** @description Subset of the manifest's declared capability `type` values this plugin is approved to use (LD6 "capability set <= declared"). */
+            /** @description Subset of the manifest's declared capability `type` values this plugin is approved to use. */
             grantedCapabilityTypes: string[];
             healthState: components["schemas"]["PluginHealthState"];
             consecutiveFailures: number;
@@ -4490,11 +4490,11 @@ export interface components {
             /** Format: int64 */
             lastOkMs: number | null;
             disabledReason: components["schemas"]["PluginDisabledReason"] | null;
-            /** @description Explicit hostnames/IPs this plugin may target even in a private/loopback address range (LD5) — an admin opts a plugin into a specific address, never a subnet. */
+            /** @description Explicit hostnames/IPs this plugin may target even in a private/loopback address range — an admin opts a plugin into a specific address, never a subnet. */
             lanAllowlist: string[];
             /** @description Verbatim last-fetched manifest snapshot (opaque) — the admin UI derives its capability/config display from this. */
             manifest: unknown;
-            /** @description Non-secret configSchema field values only — secret fields are never included here (LD1); manifest.configSchema's `secret:true` flags tell the UI which field names are keyring-only. */
+            /** @description Non-secret configSchema field values only — secret fields are never included here; manifest.configSchema's `secret:true` flags tell the UI which field names are keyring-only. */
             config: unknown;
             eventGrants: components["schemas"]["PluginEventGrant"][];
             /** Format: int64 */
@@ -4549,18 +4549,18 @@ export interface components {
         RegisterPluginRequest: {
             /** Format: uri */
             url: string;
-            /** @description Subset of the manifest's declared capability `type` values to enable (LD6 "capability set <= declared"). */
+            /** @description Subset of the manifest's declared capability `type` values to enable. */
             grantedCapabilityTypes: string[];
-            /** @description Subset of the union of every event-subscriber capability's requested eventTypes to grant (LD6 "event grants <= requested"). */
+            /** @description Subset of the union of every event-subscriber capability's requested eventTypes to grant. */
             eventTypeGrants: string[];
             /** @description Raw submitted values keyed by configSchema property name — both secret and non-secret fields together (split server-side; secret values are never echoed back). */
             config: unknown;
-            /** @description Explicit LAN hostnames/IPs to permit for this plugin (LD5). Defaults to none. */
+            /** @description Explicit LAN hostnames/IPs to permit for this plugin. Defaults to none. */
             lanAllowlist?: string[];
-            /** @description C-2 fix wave: the `manifestDigest` a prior previewAdminPlugin call returned for this exact plugin. Schema-optional (kept additive), but ENFORCED as required server-side — omitting it is a 422 ("preview this plugin first"), and a value that no longer matches a fresh re-fetch is a 409 (the manifest changed since it was previewed). */
+            /** @description The `manifestDigest` a prior previewAdminPlugin call returned for this exact plugin. Schema-optional (kept additive), but ENFORCED as required server-side — omitting it is a 422 ("preview this plugin first"), and a value that no longer matches a fresh re-fetch is a 409 (the manifest changed since it was previewed). */
             manifestDigest?: string;
         };
-        /** @description hmacSecret is returned EXACTLY ONCE — it is never retrievable again through any endpoint (LD1). The admin UI must surface it immediately with a copy affordance and a "this will not be shown again" notice. */
+        /** @description hmacSecret is returned EXACTLY ONCE — it is never retrievable again through any endpoint. The admin UI must surface it immediately with a copy affordance and a "this will not be shown again" notice. */
         RegisterPluginResponse: {
             plugin: components["schemas"]["AdminPlugin"];
             hmacSecret: string;
@@ -4577,7 +4577,7 @@ export interface components {
             /** @description Subset of the freshly re-fetched manifest's declared capability `type` values to enable, exactly like registration. */
             grantedCapabilityTypes: string[];
             eventTypeGrants: string[];
-            /** @description C-2 fix wave — see RegisterPluginRequest.manifestDigest's description; the identical pin/409 rule applies to the re-approval flow's own preview. */
+            /** @description See RegisterPluginRequest.manifestDigest's description; the identical pin/409 rule applies to the re-approval flow's own preview. */
             manifestDigest?: string;
         };
         RefreshPluginResponse: {
@@ -4629,7 +4629,7 @@ export interface components {
             /** @description True iff this library has zero library_provider_entries rows — `entries` then shows the legacy default chain, read-only. */
             isDefault: boolean;
             entries: components["schemas"]["AdminLibraryProviderChainEntry"][];
-            /** @description Every registered plugin whose contentClass strictly equals this library's contentClass (LPP C5 STRICT) — the add-entry picker's plugin choices. */
+            /** @description Every registered plugin whose contentClass strictly equals this library's contentClass — the add-entry picker's plugin choices. */
             eligiblePlugins: components["schemas"]["AdminLibraryProviderChainPluginRef"][];
             /** @description Known built-in provider names (apps/worker/src/metadata/registry.ts) — always eligible for any library regardless of contentClass. */
             builtinProviderNames: string[];
@@ -4660,7 +4660,7 @@ export interface components {
              * @description Null while status='running'.
              */
             finishedAtMs: number | null;
-            /** @description FX4 fix wave (S2): whether this run's Stash connection had to fall back to a snapshot copy (apps/worker/src/stash/adapter.ts's readingFrom === 'snapshot' — the WAL-locked-past-retry-budget path) rather than reading the source database file directly. Null when unknown — a run finalized by the terminal-failure hook never learns the answer (no access to the failed attempt's connection), and rows written before this field existed are also null, never a false claim of 'read from source'. */
+            /** @description Whether this sync's Stash connection had to fall back to a snapshot copy (apps/worker/src/stash/adapter.ts's readingFrom === 'snapshot' — the WAL-locked-past-retry-budget path) rather than reading the source database file directly. Null when unknown — a sync finalized by the terminal-failure hook never learns the answer (no access to the failed attempt's connection), and rows written before this field existed are also null, never a false claim of 'read from source'. */
             usedSnapshotFallback: boolean | null;
         };
         /** @description One stash_scene_links row, live-read (never a report snapshot) — see getAdminStashSyncReport's own description. */
@@ -4679,7 +4679,7 @@ export interface components {
             items: components["schemas"]["StashSyncSceneRef"][];
             nextCursor: string | null;
         };
-        /** @description FX3 fix wave (S4/S8 "both unmatched sides" law): one media_files row in the connected library with NO stash_scene_links row pointing at its item — the Loombre-side half of S4's matching set-difference (apps/worker/src/stash/matching.ts documents this as the caller's responsibility; nothing computed it until now). Live-read, same posture as StashSyncSceneRef (never a report snapshot). */
+        /** @description One media_files row in the connected library with NO stash_scene_links row pointing at its item — the Loombre-side half of the matching set-difference. Live-read, same posture as StashSyncSceneRef (never a report snapshot). */
         StashSyncLoombreFileRef: {
             /** Format: uuid */
             mediaFileId: string;
@@ -4704,7 +4704,7 @@ export interface components {
             unmatchedLoombreFiles: components["schemas"]["StashSyncLoombreFileRefPage"];
         };
         /**
-         * @description DERIVED, never a stored setting (RG15 — RG5's activePath wording refined at Wave-0 freeze): `none` when no path is enabled; at most one of `remote`/`tunnel`/`direct` can be enabled at a time, enforced by each path's staged enable flow returning 409 against another active path.
+         * @description DERIVED, never a stored setting: `none` when no path is enabled; at most one of `remote`/`tunnel`/`direct` can be enabled at a time, enforced by each path's staged enable flow returning 409 against another active path.
          * @enum {string}
          */
         RemotePathId: "none" | "remote" | "tunnel" | "direct";
@@ -4717,11 +4717,11 @@ export interface components {
         RemoteWireguardStatus: {
             /** @description Configured on (a server keypair exists and enrollment is possible). */
             enabled: boolean;
-            /** @description The in-process userspace UDP listener is actually live right now (RG1/RG2). */
+            /** @description The in-process userspace UDP listener is actually live right now. */
             listening: boolean;
             /** @description remote.wireguardPort effective value. */
             listenPort: number;
-            /** @description remote.subnet effective value, CIDR (RG9). */
+            /** @description remote.subnet effective value, CIDR. */
             subnet: string;
             /** @description remote.wireguardEndpointHost effective value; null when unset. */
             endpointHost: string | null;
@@ -4730,13 +4730,13 @@ export interface components {
         RemoteWireguardDevice: {
             /**
              * Format: uuid
-             * @description Same id as the underlying devices row (kind='remote', R2) — this IS that row, not a separate entity.
+             * @description Same id as the underlying devices row (kind='remote') — this IS that row, not a separate entity.
              */
             id: string;
             /** Format: uuid */
             userId: string;
             name: string;
-            /** @description Stable address from the tunnel subnet (RG9), e.g. 10.82.146.2. */
+            /** @description Stable address from the tunnel subnet, e.g. 10.82.146.2. */
             tunnelIp: string;
             /** Format: int64 */
             createdAtMs: number;
@@ -4756,10 +4756,10 @@ export interface components {
             /** @description Device label, e.g. "Alex's iPhone". */
             name: string;
         };
-        /** @description The one-time provisioning payload (R2/R3) — configText is shown exactly once and never retrievable again through this API (same posture as invite links); the server does not retain the private key after this response. */
+        /** @description The one-time provisioning payload — configText is shown exactly once and never retrievable again through this API (same posture as invite links); the server does not retain the private key after this response. */
         RemoteWireguardEnrollment: {
             device: components["schemas"]["RemoteWireguardDevice"];
-            /** @description Standard wg-quick config text (packages/shared/src/remote/ provisioning.ts, PROVISIONING_FORMAT_VERSION), split-tunnel only (AllowedIPs = the server tunnel IP/32, R3). Render this as a QR for mobile import or offer it as a downloadable .conf for desktop WireGuard clients. */
+            /** @description Standard wg-quick config text (packages/shared/src/remote/ provisioning.ts, PROVISIONING_FORMAT_VERSION), split-tunnel only (AllowedIPs = the server tunnel IP/32). Render this as a QR for mobile import or offer it as a downloadable .conf for desktop WireGuard clients. */
             configText: string;
         };
         SetRemoteTunnelTokenRequest: {
@@ -4772,24 +4772,24 @@ export interface components {
             detail: string | null;
         };
         EnableRemoteTunnelRequest: {
-            /** @description The public hostname to route through the tunnel (a DNS route is created for it, R4). */
+            /** @description The public hostname to route through the tunnel (a DNS route is created for it). */
             hostname: string;
         };
         RemoteTunnelStatus: {
             enabled: boolean;
             /**
-             * @description The supervised cloudflared child process's current lifecycle state (RG7).
+             * @description The supervised cloudflared child process's current lifecycle state.
              * @enum {string}
              */
             connectorState: "stopped" | "starting" | "running" | "degraded" | "error";
             hostname: string | null;
             /**
              * Format: int64
-             * @description Current restart backoff (full jitter, RG7); null when not backing off.
+             * @description Current restart backoff (full jitter); null when not backing off.
              */
             backoffMs: number | null;
             lastErrorMessage: string | null;
-            /** @description Whether a Cloudflare API token is currently stored in the keyring (write-only, R4/R9 — this field NEVER carries the token itself, by construction). ADDITIVE T1 extension to the Wave-0 frozen shape: the 6-op Tunnel surface has no other place a standing "is a token configured" read can live (setRemoteTunnelToken's 200 is an ephemeral validation-at-write-time response, not an ongoing status). */
+            /** @description Whether a Cloudflare API token is currently stored in the keyring (write-only — this field NEVER carries the token itself, by construction). This is the Tunnel surface's one standing "is a token configured" read (setRemoteTunnelToken's 200 is an ephemeral validation-at-write-time response, not an ongoing status). */
             tokenConfigured: boolean;
             /**
              * Format: int64
@@ -4826,40 +4826,40 @@ export interface components {
             certExpiresAtMs: number | null;
         };
         /**
-         * @description packages/shared/src/remote/diagnosis.ts's closed classification union (R5/R6/RG11).
+         * @description packages/shared/src/remote/diagnosis.ts's closed classification union.
          * @enum {string}
          */
         DiagnosisCode: "portBlocked" | "cgnat" | "doubleNat" | "dnsMismatch" | "tunnelDown" | "connectorUnhealthy" | "unknown";
-        /** @description P1 ADJUDICATION (flagged, no R/RG number covers it exactly — logged at integration): `path` was added to this Wave-0-frozen schema (additive, D23-class precedent: F2's currentPassword/R-F3's maximum bound both landed the same way) because the Tunnel-path connector-health short-circuit (the freeze's own diagnosis note) and the per-path guidance mapping (packages/shared/src/remote/ diagnosis-guidance.ts) both need to know which path is being diagnosed, and nothing server-side can safely infer it — RemotePathId's activePath is cross-lane DERIVED state this lane's isolated worktree cannot read. The wizard already knows its own current flow, so it supplies it explicitly. */
+        /** @description `path` is supplied by the caller because the Tunnel-path connector-health short-circuit and the per-path guidance mapping (packages/shared/src/remote/diagnosis-guidance.ts) both need to know which path is being diagnosed, and nothing server-side can safely infer it. The wizard already knows its own current flow, so it supplies it explicitly. */
         DiagnoseRemoteRequest: {
             /** @description The public endpoint the reachability proof was bound to. */
             expectedEndpoint: string;
-            /** @description Admin-supplied WAN address from a guided router-status-page instruction card (RG11 — no third-party echo service, no router APIs). */
+            /** @description Admin-supplied WAN address from a guided router-status-page instruction card — no third-party echo service, no router APIs. */
             wanAddress?: string | null;
-            /** @description Which path is being diagnosed (P1 adjudication, see this schema's own description). Must be remote/tunnel/direct — 'none' is rejected with 422 (there is nothing to diagnose when no path is even being set up). */
+            /** @description Which path is being diagnosed (see this schema's own description). Must be remote/tunnel/direct — 'none' is rejected with 422 (there is nothing to diagnose when no path is even being set up). */
             path: components["schemas"]["RemotePathId"];
         };
         RemoteDiagnosisResult: {
             code: components["schemas"]["DiagnosisCode"];
             detail: string;
         };
-        /** @description P1 ADJUDICATION (flagged — same reasoning as DiagnoseRemoteRequest's own description): `path` was added to this Wave-0-frozen schema so `probe_tokens.path` (migrations/0031_probe_tokens.sql — "which remote path is being proven") has somewhere to come from; a probe is always minted for one specific path's setup flow. */
+        /** @description `path` exists so `probe_tokens.path` (migrations/0031_probe_tokens.sql — "which remote path is being proven") has somewhere to come from; a probe is always minted for one specific path's setup flow. */
         CreateRemoteProbeRequest: {
             expectedEndpoint: string;
             /** @description Which path this probe proves. Must be remote/tunnel/direct — 'none' is rejected with 422. */
             path: components["schemas"]["RemotePathId"];
         };
-        /** @description The raw token appears ONLY here (R6) — embedded in probeUrl/qrPayload, never retrievable again. */
+        /** @description The raw token appears ONLY here — embedded in probeUrl/qrPayload, never retrievable again. */
         RemoteProbeToken: {
             /** Format: uuid */
             id: string;
             /** @description https://<endpoint>/probe/<token> — the exact URL GET /probe/{token} serves. */
             probeUrl: string;
-            /** @description The payload to render as a QR code (probeUrl, R6/RG8). */
+            /** @description The payload to render as a QR code (probeUrl). */
             qrPayload: string;
             /**
              * Format: int64
-             * @description 15-minute expiry from mint time (R6).
+             * @description 15-minute expiry from mint time.
              */
             expiresAtMs: number;
         };
@@ -4874,7 +4874,7 @@ export interface components {
             diagnosis: components["schemas"]["RemoteDiagnosisResult"] | null;
         };
         /**
-         * @description packages/shared/src/remote/posture-model.ts's frozen POSTURE_CHECK_KEYS (R7).
+         * @description packages/shared/src/remote/posture-model.ts's frozen POSTURE_CHECK_KEYS.
          * @enum {string}
          */
         RemotePostureCheckKey: "tlsValidity" | "rateLimitersActive" | "staleAccounts" | "inviteLinksReachable" | "wgPortSilence" | "connectorHealth" | "publicUrlCoherence";
@@ -5213,7 +5213,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Always this exact body, regardless of whether the account/email exists or mail is configured (anti-enumeration, E3b/E8). */
+            /** @description Always this exact body, regardless of whether the account/email exists or mail is configured (anti-enumeration). */
             202: {
                 headers: {
                     [name: string]: unknown;
@@ -5764,7 +5764,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
-            /** @description The supplied `email` already belongs to another account (G9). Compared case-insensitively (CITEXT) after trimming, so a case-only or padded variant of a taken address conflicts too. Only `email` can collide on this operation — `username` is not updatable here. Same admin-only disclosure posture as `createUser`'s 409: admins already enumerate every account via `GET /users`, so a truthful conflict reveals nothing new, and nothing else about the existing account is disclosed. */
+            /** @description The supplied `email` already belongs to another account. Compared case-insensitively (CITEXT) after trimming, so a case-only or padded variant of a taken address conflicts too. Only `email` can collide on this operation — `username` is not updatable here. Same admin-only disclosure posture as `createUser`'s 409: admins already enumerate every account via `GET /users`, so a truthful conflict reveals nothing new, and nothing else about the existing account is disclosed. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -7082,7 +7082,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
-            /** @description The requested segment is outside the produced window; a restart has been requested (V8: the requested URI itself never returns — forward-only numbering — so clients should re-read the playlist for the new run rather than retry this URI indefinitely; Retry-After header set). Secondary/defensive path — the primary seek channel is POST /playback/sessions/{id}/seek. */
+            /** @description The requested segment is outside the produced window; a restart has been requested (the requested URI itself never returns — forward-only numbering — so clients should re-read the playlist for the new run rather than retry this URI indefinitely; Retry-After header set). Secondary/defensive path — the primary seek channel is POST /playback/sessions/{id}/seek. */
             503: {
                 headers: {
                     "Retry-After"?: number;
@@ -7616,7 +7616,7 @@ export interface operations {
                 ratingMax?: number;
                 durationMinMs?: number;
                 durationMaxMs?: number;
-                /** @description Comma-separated RestrictedResolutionBand values — ANY match (e.g. "FHD,UHD"). Derived per-item from the primary probed video stream's height (S5's technical authority); an item with no probed video stream never matches a non-empty filter. */
+                /** @description Comma-separated RestrictedResolutionBand values — ANY match (e.g. "FHD,UHD"). Derived per-item from the primary probed video stream's height; an item with no probed video stream never matches a non-empty filter. */
                 resolution?: string;
                 yearMin?: number;
                 yearMax?: number;
@@ -8379,7 +8379,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
-            /** @description The key is currently pinned by its environment variable (A8) — env always wins; the submitted value cannot take effect while the pin is active, regardless of whether it would otherwise be valid on its own. The DB value underneath, if any, is preserved but left inert. */
+            /** @description The key is currently pinned by its environment variable — env always wins; the submitted value cannot take effect while the pin is active, regardless of whether it would otherwise be valid on its own. The DB value underneath, if any, is preserved but left inert. */
             409: {
                 headers: {
                     [name: string]: unknown;

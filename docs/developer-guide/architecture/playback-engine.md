@@ -1,17 +1,20 @@
 # Architecture: Playback engine & matrix law
 
-<!-- Sourcing: plan() signature — packages/playback-engine/src/plan.ts:227
-     (`export function plan(input: PlanInput): PlaybackPlan`); PlanInput
-     shape — packages/playback-engine/src/types.ts:257-271 (no clock
-     field). Purity language — docs/PLAYBACK.md:14 ("calls no clock") and
-     packages/playback-engine/src/args/builder.ts:5 ("no clock (docs/
-     PLAYBACK.md §0 law 1)"). Reason taxonomy — packages/playback-engine/
-     src/reasons.ts (closed BlockingReasonCode/FixedInformationalReasonCode
-     unions), docs/PLAYBACK.md §4. Matrix — packages/playback-engine/matrix/
-     (512 *.yaml case files, burnup.json manifest, matrix-meta.spec.ts,
-     matrix.spec.ts, properties.spec.ts). See
-     docs/developer-guide/matrix-authoring.md for the full regression-law
-     writeup — not repeated in full here. -->
+<!-- Sourcing: plan() signature — packages/playback-engine/src/plan.ts's
+     `export function plan(input: PlanInput): PlaybackPlan` (at :322 as of
+     2026-08-31; the symbol is the durable citation); PlanInput shape —
+     packages/playback-engine/src/types.ts's `interface PlanInput`
+     (:279-293 as of 2026-08-31; no clock field). Purity language —
+     docs/PLAYBACK.md §0 law 1 ("calls no clock") and
+     packages/playback-engine/src/args/builder.ts's header ("no clock
+     (docs/PLAYBACK.md §0 law 1)"). Reason taxonomy — packages/
+     playback-engine/src/reasons.ts (closed BlockingReasonCode/
+     FixedInformationalReasonCode unions), docs/PLAYBACK.md §4. Matrix —
+     packages/playback-engine/matrix/ (one *.yaml file per case, 500+ per
+     docs/PLAYBACK.md §10's exit bar — burnup.json and the files on disk
+     are the live count; matrix-meta.spec.ts, matrix.spec.ts,
+     properties.spec.ts). See docs/developer-guide/matrix-authoring.md for
+     the full regression-law writeup — not repeated in full here. -->
 
 ## A note on precision, up front
 
@@ -52,15 +55,16 @@ like `video-codec-unsupported`, `hdr-tone-map-required`,
 reason code is a spec change to docs/PLAYBACK.md §4 first, an
 implementation second — never an ad hoc string invented inline. This is
 what makes a playback decision diagnosable rather than a black box: the
-[Capability report](../../admin-guide/capability-report.md) and job records
-surface these same reason codes back to an admin trying to understand why
-a particular file played the way it did.
+admin [Sessions screen](../../admin-guide/sessions.md) surfaces these same
+reason codes back to an admin trying to understand why a particular file
+played the way it did.
 
 ## The matrix
 
-`packages/playback-engine/matrix/` holds 512 individual YAML test cases
-(docs/PLAYBACK.md §10's Phase 3 exit bar was "≥ 500"), each citing the
-spec section it proves. Two specs enforce the regression law described in
+`packages/playback-engine/matrix/` holds one YAML test case per file —
+well past the 500-case floor docs/PLAYBACK.md §10 set as the Phase 3 exit
+bar, with `burnup.json` and the files on disk as the live count — each
+citing the spec section it proves. Two specs enforce the regression law described in
 full in [Authoring a matrix case](../matrix-authoring.md):
 `matrix-meta.spec.ts` keeps the case count and filenames in sync with the
 `burnup.json` manifest, and `matrix.spec.ts` re-runs every case through
@@ -71,8 +75,9 @@ suite directly; CI also runs it as its own "playback matrix burn-up" step.
 
 ## Admission control is process-local
 
-The transcode admission gate (`docs/PLAYBACK.md`:403's
-`maxSimultaneousTranscodes` semaphore) — `TranscodeAdmissionGate` in
+The transcode admission gate (docs/PLAYBACK.md §9's "global semaphore =
+`maxSimultaneousTranscodes`" admission rule; the field itself is declared
+in §2.4's ServerPolicy contract) — `TranscodeAdmissionGate` in
 `apps/server/src/playback/transcode-admission.ts` — is a process-local
 promise-chain mutex, not a `plan()` concern. Correct for v1's
 single-process-per-instance topology

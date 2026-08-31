@@ -1,5 +1,8 @@
 # Loombre Brand Assets
 
+Condensed brand sheet, derived from `../README.md` — edit there; this
+sheet restates, it never decides.
+
 The mark: **Blaze** — a three-tongue flame with the inner flame carved out
 as negative space (shadow/light). Amber phosphor on near-black, from the
 Phosphor UI design language.
@@ -25,8 +28,9 @@ Phosphor UI design language.
 - Minimum mark size 16 px; lockups minimum 120 px wide
 - Clearspace around the mark: the width of the inner core
 - Scanlines/gradient drop below 24 px — use flat
-- Lockup SVGs embed a Google Fonts @import: they render correctly opened
-  in a browser; design tools need Archivo + IBM Plex Mono installed.
+- Lockup SVGs embed no webfont — plain font-family text nodes only, so
+  they render with whatever fonts the viewer has installed; design tools
+  need Archivo + IBM Plex Mono installed.
 
 ## Motion (from the approved boot splash)
 - Entrance: .9s cubic-bezier(.22,1,.36,1), rise + settle, bloom flash 1.4s

@@ -97,7 +97,7 @@ never touch the database you just set up in step 2: each resolves its own
 connection to a separate `<database>_test` database (derived from
 `DATABASE_URL`, or `LOOMBRE_TEST_DATABASE_URL` if you've set one — see
 `packages/db/src/testing.ts`'s `resolveTestDatabaseUrl`), auto-created on
-first use. `scripts/migrate.mjs reset` (the drop-and-recreate-schema step
+first use. `packages/db/scripts/migrate.mjs reset` (the drop-and-recreate-schema step
 every self-sufficient live-DB suite runs in its own `beforeAll`) enforces
 this: it refuses to run against any database whose name doesn't contain
 `_test`, unless `LOOMBRE_ALLOW_RESET=1` is set — which is exactly what lets

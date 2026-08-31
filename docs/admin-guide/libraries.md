@@ -3,12 +3,15 @@
 <!-- Sourcing: library creation fields (name, kind, restricted toggle,
      paths), scan-now action, and the "every library needs an explicit
      permission grant, general included, except the creating admin" rule —
-     apps/web/src/app/admin/libraries/page.tsx header comment. Scanner
+     apps/web/src/components/settings/sections/LibrariesSection.tsx header
+     comment (+ apps/web/src/components/admin/LibrariesPanel.tsx; the old
+     /admin/libraries route is a redirect to /settings/libraries). Scanner
      behavior (incremental, watches folders, filename parsing patterns,
      rename detection via content matching, 72-hour grace period before a
      missing file is removed) — docs/PLAN.md §8.1-8.2, and
      apps/worker/src/scan/scanner.ts's header comment (checkpointing,
-     file.relocated events, MISSING_HARD_CASCADE_GRACE_MS = 72h). Supported
+     file.relocated events) plus its DEFAULT_MISSING_FILE_GRACE_HOURS = 72
+     constant (registry default for scanner.missingFileGraceHours). Supported
      file types + the v1 exclusions (STATE.md H3; .mts admission, owner
      ledger L1) — apps/worker/src/scan/parse/path-utils.ts's
      VIDEO_EXTENSIONS/AUDIO_EXTENSIONS/EXCLUDED_MEDIA_EXTENSIONS; the skip

@@ -177,6 +177,36 @@ verdict on the software itself.
   SmartScreen prompt (same reasoning as above — click **More info → Run
   anyway** again if so).
 
+## Configure
+
+**Database: nothing to do by default.** With `DATABASE_URL` unset, the
+server provisions and supervises its own embedded PostgreSQL at boot (data
+under `%ProgramData%\Loombre\postgres\data\`), including running
+migrations — a fresh install is already using it by the time the setup
+wizard appears.
+
+There is **no environment file on Windows.** Each service reads its
+environment from a registry value the installer writes: the `Environment`
+value (type `REG_MULTI_SZ`, one `NAME=value` per line) under
+`HKLM\SYSTEM\CurrentControlSet\Services\<name>`, for **LoombreServer**,
+**LoombreWorker**, and **LoombreWeb** (`installers/windows/msi/Services.wxs`
+documents the exact defaults, including each service's `PORT` and
+`LOOMBRE_DATA_DIR`).
+
+To change a service's configuration — for example, to use your own
+PostgreSQL 17+ instance instead of the embedded one — edit that value with
+`regedit` (or `Set-ItemProperty` from an elevated PowerShell), e.g. adding
+a `DATABASE_URL=postgres://…` line to **both** the `LoombreServer` and
+`LoombreWorker` values (see `docs/ops/external-postgres.md`), then restart
+the services (`Restart-Service LoombreServer, LoombreWorker` elevated, or
+services.msc). `LOOMBRE_JWT_SECRET` can be pinned the same way; left
+unset, the server generates a secret on first boot and persists it in the
+local secrets store, so restarts keep every session valid either way.
+
+In external-Postgres mode only, run migrations against that database
+yourself — embedded mode migrates automatically at boot; external mode
+never auto-migrates (`docs/ops/external-postgres.md` covers the how).
+
 ## Managing the services
 
 Loombre installs as three standard Windows services, manageable the same

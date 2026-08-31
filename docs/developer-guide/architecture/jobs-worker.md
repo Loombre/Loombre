@@ -31,10 +31,11 @@ reads from this ledger, not from pg-boss's own internal tables directly).
 
 ## Job types
 
-A closed registry (`packages/jobs/src/types.ts`) — 14 types today:
+A closed registry (`packages/jobs/src/types.ts`) — 15 types today:
 `scan`, `probe`, `image`, `metadata`, `metadata-search`, `import`,
-`image-backfill`, `hwprobe`, `transcode`, `subtitle-extract`,
-`pg-upgrade`, `stash-inventory`, `stash-sync`, `mail-send`
+`image-backfill`, `opengop-backfill`, `hwprobe`, `transcode`,
+`subtitle-extract`, `pg-upgrade`, `stash-inventory`, `stash-sync`,
+`mail-send`
 (`metadata-search` is the bounded candidate-search job behind the admin
 "Fix match" flow, distinct from the scan-time `metadata` job; the two
 `stash-*` types are the Stash inventory scan and full/incremental sync

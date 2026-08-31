@@ -17,8 +17,10 @@
      Jobs screen"; STATE.md E1/E5/E6/E7/E9/M8/M9/M10/M11 for the
      no-mail-required law, the provider-neutral generic-SMTP design, and
      the docs register rule for the provider table (source-verified
-     against each provider's own documentation — see this lane's freeze
-     report for the exact URLs and verification date). -->
+     against each provider's own documentation — each provider row in the
+     table below links that provider's own SMTP documentation inline;
+     the verification landing is recorded in root STATE.md's E9 docs
+     entry). -->
 
 Setting up mail is completely optional. Every part of Loombre — inviting
 someone, recovering a forgotten password — works without it, by handing

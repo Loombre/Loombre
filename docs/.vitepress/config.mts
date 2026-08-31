@@ -74,7 +74,11 @@ export default defineConfig({
   // angle-bracket test excerpts in its markdown are rejected by Vue's
   // template parser — and leaked state/*.html into the website merge).
   // Anything internal that must live under docs/ needs an entry here.
-  srcExclude: ["PLAN.md", "PLAYBACK.md", "public/**", "analysis/**"],
+  // reference/** is build-tracking material (the generated
+  // outstanding-screenshots checklist, maintainer-voiced) — internal,
+  // never published; the site's visitor-facing treatment of outstanding
+  // screenshots is the "(screenshot coming soon)" rendering below (F22-2).
+  srcExclude: ["PLAN.md", "PLAYBACK.md", "public/**", "analysis/**", "reference/**"],
   ignoreDeadLinks: false,
 
   head: [["meta", { name: "referrer", content: "no-referrer" }]],
@@ -169,6 +173,7 @@ export default defineConfig({
             { text: "Connecting Stash", link: "/admin-guide/connecting-stash" },
             { text: "Capability report", link: "/admin-guide/capability-report" },
             { text: "Jobs dashboard", link: "/admin-guide/jobs-dashboard" },
+            { text: "Sessions", link: "/admin-guide/sessions" },
             { text: "Restart & shut down", link: "/admin-guide/server-power" },
             { text: "System notices", link: "/admin-guide/system-notices" },
             { text: "Plugins", link: "/admin-guide/plugins" },
@@ -248,13 +253,6 @@ export default defineConfig({
         {
           text: "API Reference",
           items: [{ text: "Overview", link: "/api-reference/" }],
-        },
-      ],
-
-      "/reference/": [
-        {
-          text: "Build reference",
-          items: [{ text: "Outstanding screenshots", link: "/reference/screenshots" }],
         },
       ],
     },

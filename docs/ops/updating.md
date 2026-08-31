@@ -19,6 +19,13 @@ this page is the answer.
 | `LOOMBRE_UPDATE_CHECK` | `off` \| `manual` \| `daily` | `daily` |
 | `LOOMBRE_UPDATE_MANIFEST_URL` | any HTTP(S) base URL | a placeholder GitHub Releases URL (see below) |
 
+One caveat for the shipped Docker Compose distribution: its
+`docker-compose.prod.yml` does not pass either variable into the
+containers (`loombre.env` values are Compose interpolation input, not
+injected environment), so setting them there has no effect — change the
+update-check mode from the admin settings screen instead, or add the
+variables to the compose file's `environment:` blocks yourself.
+
 ### Why the default is `daily`, not `off`
 
 docs/PLAN.md §10 states the feature plainly: "the server checks and

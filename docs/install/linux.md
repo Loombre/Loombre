@@ -152,8 +152,12 @@ this mode — there's no `systemctl start` without systemd.
 
 ## 4. Configure
 
-Edit `/etc/loombre/loombre.env` — at minimum set `LOOMBRE_JWT_SECRET`
-(`openssl rand -base64 48`) so restarts don't log every device out.
+Edit `/etc/loombre/loombre.env` — consider setting `LOOMBRE_JWT_SECRET`
+explicitly (`openssl rand -base64 48`). Not required for correctness: an
+unset secret is generated once at first boot and persisted under the data
+dir (P4.7/P4.17), so restarts keep every device signed in either way — an
+explicit value in the env file survives a wiped data directory and gets
+backed up with the rest of your configuration.
 
 **Database: nothing to do by default.** Leave `DATABASE_URL` unset and the
 server uses the tarball's **bundled embedded PostgreSQL**: on first start
@@ -267,8 +271,8 @@ Loombre UI for it.)
 Code-signing certificates (Windows Authenticode, Apple notarization) cost
 money a project with no telemetry and no revenue doesn't take. Checksum +
 minisign-signature verification is the open-source trust model instead —
-see `docs/PLAN.md` §11/P4.9. This is a deliberate, disclosed tradeoff, not
-an oversight.
+see `docs/PLAN.md` §11 and STATE.md P4.9. This is a deliberate, disclosed
+tradeoff, not an oversight.
 
 ## Uninstalling
 

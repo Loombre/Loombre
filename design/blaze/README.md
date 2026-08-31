@@ -1,5 +1,15 @@
 # Handoff: Loombre Logo & Brand Identity ("Blaze")
 
+> **Status: integrated — now a historical brand-asset reference.** The
+> rollout this handoff describes has shipped in `apps/web` and is
+> recorded as closed in root `STATE.md`'s Blaze exit gate: sidebar
+> lockup, favicon + app-manifest icons, boot splash, and the loading
+> spinner/indeterminate bar are all live. One integration point remains
+> open — the GitHub repo social-preview upload — tracked as an owner
+> action (D12; it is a repo-settings upload, so nothing in-tree can
+> close it). The mark geometry, palette, lockup and token content below
+> is still the cited spec authority for the shipped brand assets.
+
 ## Overview
 Final logo identity for Loombre, the self-hosted media server (repo: `Loombre/Loombre`). The mark — "Blaze" — is a three-tongue flame with the inner flame carved out as **negative space**, in amber phosphor on near-black. It was designed for the in-progress "Phosphor" UI overhaul (amber `#FFB454` accent, CRT/scanline motifs, Archivo expanded caps + IBM Plex Mono) and replaces the placeholder pulsing dot currently in the sidebar.
 
@@ -27,7 +37,7 @@ One path pair, viewBox `0 0 96 96`:
 ## Lockups
 - **Horizontal** (sidebar, docs): flat mark 84px + wordmark. Wordmark: "LOOMBRE", Archivo, weight 800, `font-stretch:125%`, letter-spacing `.22em`, fill `#E9EBEE`. Subline: "SELF-HOSTED MEDIA SERVER", IBM Plex Mono 500, letter-spacing `.16em`, `#61666E`.
 - **Stacked** (splash, packaging): gradient mark, wordmark below at letter-spacing `.24em` (add `padding-left:.24em` to optically center), mono subline under.
-- Sidebar-size reference: mark 18–19px + wordmark 14.5px next to it; version line `MEDIA SERVER · V0.9.2` in mono 8.5px below (matches current sidebar structure).
+- Sidebar-size reference: mark 18–19px + wordmark 14.5px next to it; version line `MEDIA SERVER · Vx.y.z` in mono 8.5px below (matches current sidebar structure; the version digits are a placeholder — the shipped sidebar renders the live app version, never a literal).
 
 ## App Icons & Favicons
 - `loombre-app-icon-dark`: 1024×1024, rounded rect radius 22.4% (229px), bg `#101218`, flat amber mark at 680px centered (x 183, y 193).
@@ -41,7 +51,7 @@ Boot splash sequence (plays once on app load / server connect):
 1. Flame entrance: rise + settle — `translateY(14px) scale(.9) → none`, `.9s cubic-bezier(.22,1,.36,1)`, transform-origin `50% 85%`.
 2. Bloom flash on the whole mark: brightness 1 → 2.1 @35% → 1, plus drop-shadow 0 → `26px rgba(255,180,84,.85)` → settle `13px @ .4`; `1.4s ease`.
 3. Idle burn (infinite, starts after entrance): outer shell "blaze" — scale/rotate wobble (`.94–1.06`, ±2.4°), `1.05s ease-in-out infinite`, origin `50% 84%`. Inner core "flicker" — same idea, smaller amplitude, `.72s`, origin `50% 68%`. The two run **out of phase** — that's what makes it feel alive.
-4. Wordmark + boot log lines fade/rise in staggered (`.4s/.7s/1.0s` delays), log values in amber.
+4. Wordmark + boot log lines fade/rise in staggered delays (wordmark at `.5s`; boot lines at `1.0s`/`1.35s`/`1.7s` — per `assets/loombre-splash.html`, matched by the shipped `BootSplash.module.css`), log values in amber.
 
 Loading states:
 - Spinner: the mark with both idle animations at ~80% duration (`.85s` / `.6s`).
@@ -68,7 +78,7 @@ All in `assets/` (also independently downloadable):
 - `icons/` — packaged platform icons: `loombre.icns` (macOS bundle icon), `loombre.ico` (Windows multi-res icon)
 - `loombre-splash.html` — animated boot splash reference
 - `README.md` — condensed brand sheet
-Fonts via Google Fonts: Archivo (variable width axis) + IBM Plex Mono. Lockup SVGs embed a webfont `@import`; design tools need the fonts installed locally.
+Typefaces: Archivo (variable width axis) + IBM Plex Mono. The lockup SVGs embed **no** webfont — they carry plain `font-family` text nodes, so they render with whatever fonts the viewer has installed (silent fallback if Archivo/IBM Plex Mono are absent); design tools need both installed locally.
 
 ## Files
 - `assets/…` — everything above
@@ -76,9 +86,9 @@ Fonts via Google Fonts: Archivo (variable width axis) + IBM Plex Mono. Lockup SV
   **Known gap:** `02-boot-splash-settled.jpg` is byte-identical to `01-boot-splash-entrance.jpg` — it does not actually show the post-entrance idle/settled frame. Verify idle-loop fidelity against `assets/loombre-splash.html` (the motion reference) instead.
 - Design exploration references, both under `design/phosphor/` (not at the project root): `Loombre Directions.dc.html` (original direction exploration) and `Loombre Phosphor.dc.html` (the Phosphor UI canvas the mark was designed against). The `Brand Assets.dc.html` sheet cited by earlier revisions of this file was never committed to the repo; it survives only as `screenshots/03-brand-assets-sheet.jpg`.
 
-## Suggested integration points in the repo
-- Sidebar header (replace pulse-dot + text with horizontal lockup)
-- Favicon + app manifest icons in `apps/web` public assets (packaged platform icons ready in `assets/icons/`: `loombre.icns` for macOS bundles, `loombre.ico` for Windows)
-- Login / first-connect boot splash (new component from `loombre-splash.html`)
-- Loading spinner + indeterminate bar components
-- GitHub repo social-preview image (`png/loombre-banner-1280x640.png`)
+## Suggested integration points in the repo (four of five shipped — see Status above)
+- Sidebar header (replace pulse-dot + text with horizontal lockup) — SHIPPED
+- Favicon + app manifest icons in `apps/web` public assets (packaged platform icons ready in `assets/icons/`: `loombre.icns` for macOS bundles, `loombre.ico` for Windows) — SHIPPED
+- Login / first-connect boot splash (new component from `loombre-splash.html`) — SHIPPED
+- Loading spinner + indeterminate bar components — SHIPPED
+- GitHub repo social-preview image (`png/loombre-banner-1280x640.png`) — STILL OPEN (owner action D12: a GitHub repo-settings upload, not an in-tree file)

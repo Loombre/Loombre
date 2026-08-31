@@ -99,6 +99,14 @@ installer for your platform) and Loombre finds it on your system
 automatically, or you can point Loombre at its exact location if
 auto-detection doesn't find it.
 
+Enabling Tunnel also writes two settings for you. The tunnel hostname
+setting is auto-managed: written when Tunnel is enabled, cleared when it's
+disabled — you can still edit it afterward. And if the public web address
+setting (the one every emailed link — invitations, password resets — is
+built from) was empty, it's filled in with your tunnel hostname at the
+same time; a value you'd already set yourself is never overwritten, and
+disabling Tunnel never clears it (other things may still depend on it).
+
 [SCREENSHOT: Remote access admin screen showing the connector's status and recent logs]
 
 ## Proving it actually reaches you
