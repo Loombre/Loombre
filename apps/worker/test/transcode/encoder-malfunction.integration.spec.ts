@@ -369,6 +369,19 @@ describe("hardware encode-session death recovery (browser-player-F2)", () => {
     return rows.map((r) => ({ run_index: r.run_index, source_origin_ms: Number(r.source_origin_ms) }));
   }
 
+  /** waitForSpawnCount proves the fake CHILD exists; the runner commits the
+   *  matching transcode_runs row after spawning, so row-level asserts need
+   *  their own wait or they race the insert on a loaded host. */
+  async function waitForRunCount(sessionId: string, n: number, timeoutMs: number): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const runs = await readRuns(sessionId);
+      if (runs.length >= n) return;
+      if (Date.now() > deadline) throw new Error(`timed out waiting for ${n} run row(s); saw ${runs.length}`);
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  }
+
   it(
     "a kVTSessionMalfunctionErr death mid-transcode restarts on a FRESH hardware session instead of failing the watch",
     { timeout: 60_000 * TIME_SCALE },
@@ -389,6 +402,7 @@ describe("hardware encode-session death recovery (browser-player-F2)", () => {
       spawns[0]!.child.crash(VT_MALFUNCTION_STDERR);
 
       await waitForSpawnCount(2, 10_000 * TIME_SCALE);
+      await waitForRunCount(sessionId, 2, 10_000 * TIME_SCALE);
 
       const row = await readRow(sessionId);
       expect(row.status).not.toBe("failed");
@@ -427,7 +441,11 @@ describe("hardware encode-session death recovery (browser-player-F2)", () => {
   // The coincidence is made deterministic by a LONG poll interval: the
   // control column is written and the crash delivered inside one tick's
   // sleep, so the tick that observes the dead run provably observes the
-  // pending request too.
+  // pending request too. The interval must dominate the awaited DB write
+  // between the two acts — a loaded host can stretch that round-trip past
+  // half a second, letting a tick fire mid-window (seek-only restart, then
+  // death restart: the exact double-pay this test exists to forbid, but
+  // manufactured by the harness rather than the runner).
   // ===========================================================================
 
   it(
@@ -437,7 +455,7 @@ describe("hardware encode-session death recovery (browser-player-F2)", () => {
       installFakeProcessTable();
       const sessionId = await createSession();
       const runPromise = runTranscodeSession(
-        { db, stagingRoot, pollIntervalMs: 500, ffmpegPath: "/nonexistent/ffmpeg-never-executed", spawnFn: fakeSpawnFn() },
+        { db, stagingRoot, pollIntervalMs: 2_000, ffmpegPath: "/nonexistent/ffmpeg-never-executed", spawnFn: fakeSpawnFn() },
         sessionId,
       );
 
@@ -452,9 +470,11 @@ describe("hardware encode-session death recovery (browser-player-F2)", () => {
         spawns[0]!.child.crash(VT_MALFUNCTION_STDERR);
 
         await waitForSpawnCount(2, 15_000 * TIME_SCALE);
+        await waitForRunCount(sessionId, 2, 10_000 * TIME_SCALE);
         // Several more ticks: the failure mode is a SECOND restart chasing
-        // the first, one tick later.
-        await new Promise((r) => setTimeout(r, 2_000 * TIME_SCALE));
+        // the first, one tick later — the settle must span at least two
+        // full poll intervals or a chasing restart would land after it.
+        await new Promise((r) => setTimeout(r, 5_000 * TIME_SCALE));
 
         expect(spawns.length, "one death + one seek is ONE restart, not two").toBe(2);
         const runs = await readRuns(sessionId);
@@ -485,7 +505,7 @@ describe("hardware encode-session death recovery (browser-player-F2)", () => {
       installFakeProcessTable();
       const sessionId = await createSession(videotoolboxLadderStoredPlan());
       const runPromise = runTranscodeSession(
-        { db, stagingRoot, pollIntervalMs: 500, ffmpegPath: "/nonexistent/ffmpeg-never-executed", spawnFn: fakeSpawnFn() },
+        { db, stagingRoot, pollIntervalMs: 2_000, ffmpegPath: "/nonexistent/ffmpeg-never-executed", spawnFn: fakeSpawnFn() },
         sessionId,
       );
 
@@ -498,7 +518,10 @@ describe("hardware encode-session death recovery (browser-player-F2)", () => {
         spawns[0]!.child.crash(VT_MALFUNCTION_STDERR);
 
         await waitForSpawnCount(2, 15_000 * TIME_SCALE);
-        await new Promise((r) => setTimeout(r, 2_000 * TIME_SCALE));
+        await waitForRunCount(sessionId, 2, 10_000 * TIME_SCALE);
+        // Settle >= two full poll intervals — same rationale as the seek
+        // variant above.
+        await new Promise((r) => setTimeout(r, 5_000 * TIME_SCALE));
 
         expect(spawns.length, "one death + one switch is ONE restart, not two").toBe(2);
         const { rows } = await raw.query<{ run_index: number; ladder_rung_index: number | null }>(
