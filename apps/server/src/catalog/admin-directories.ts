@@ -23,7 +23,7 @@
 // where every platform-specific installer bug this project has hit would
 // otherwise have hidden.
 
-import { accessSync, constants, readdirSync, statSync, existsSync } from "node:fs";
+import { accessSync, constants, readdirSync, readFileSync, statSync, existsSync } from "node:fs";
 import { userInfo } from "node:os";
 import path from "node:path";
 
@@ -84,15 +84,54 @@ function currentServiceUser(): string {
   }
 }
 
+/** systemd's ProtectHome=true (all three Linux installer units) mounts an
+ *  inaccessible, empty directory over these — the service cannot see
+ *  anything beneath them, and no permission change on the real folders
+ *  can help. */
+const LINUX_PROTECT_HOME_ROOTS = ["/home", "/root", "/run/user"];
+
+function isUnderLinuxProtectedHome(p: string): boolean {
+  return LINUX_PROTECT_HOME_ROOTS.some((root) => p === root || p.startsWith(`${root}/`));
+}
+
+/** Desktop Linux auto-mounts removable drives under /media/<user>, a
+ *  directory private to that user (mode 700 plus an ACL for them alone) —
+ *  the service cannot even pass through it. `/media/<user>` for a path
+ *  inside one, else null. */
+function linuxPerUserMediaRoot(p: string): string | null {
+  const match = /^\/media\/([^/]+)(?:\/|$)/.exec(p);
+  return match?.[1] === undefined ? null : `/media/${match[1]}`;
+}
+
+/** The MSI's three services run as LocalSystem, which userInfo() reports as
+ *  "SYSTEM". A drive letter mapped in the operator's sign-in session does
+ *  not exist for that account, and a share is reached as the computer
+ *  account — both fail in ways that read as "missing" or "forbidden"
+ *  without being either. */
+function isWindowsLocalSystem(serviceUser: string): boolean {
+  return serviceUser.toUpperCase() === "SYSTEM";
+}
+
+/** Trailing separators dropped (never the root itself): a command must
+ *  name the folder, not "the folder, with a slash". */
+function stripTrailingSlash(p: string): string {
+  return p.replace(/(?<=.)\/+$/, "");
+}
+
 /**
  * The 403 detail for a permission-denied browse, tailored to the service
  * account the server is ACTUALLY running as — detected, not assumed, so a
- * dev server running as a normal user never claims to be an installer.
- * The macOS field report behind this: the picker said just "Forbidden"
- * while the real situation ("the _loombre daemon cannot read your home
- * folder, and here is what to do instead") was fully known server-side.
+ * dev server running as a normal user never claims to be an installer —
+ * and to the path, because the reason differs: a macOS home folder, a
+ * Linux folder systemd hides outright (ProtectHome), a desktop's private
+ * /media/<user> mount root, a Windows share the LocalSystem account cannot
+ * reach. The macOS field report behind this: the picker said just
+ * "Forbidden" while the real situation ("the _loombre daemon cannot read
+ * your home folder, and here is what to do instead") was fully known
+ * server-side.
  */
 export function permissionDeniedDetail(
+  requestedPath: string,
   platform: NodeJS.Platform = process.platform,
   serviceUser: string = currentServiceUser(),
   inContainer: boolean = existsSync("/.dockerenv"),
@@ -106,14 +145,85 @@ export function permissionDeniedDetail(
     );
   }
   if (platform === "linux" && serviceUser === "loombre") {
-    return inContainer
-      ? "Loombre's service account (loombre, uid 1000) cannot read this folder — check the " +
-          "bind mount's ownership and permissions on the host."
-      : "Loombre's service account (loombre) cannot read this folder, and home folders are " +
-          "additionally hidden from the service by systemd (ProtectHome). Keep media under " +
-          "/srv, /mnt, or /media, or grant the service account access — see the install guide.";
+    if (inContainer) {
+      return (
+        "Loombre's service account (loombre, uid 1000) cannot read this folder — check the " +
+        "bind mount's ownership and permissions on the host."
+      );
+    }
+    const normalized = path.posix.normalize(requestedPath);
+    if (isUnderLinuxProtectedHome(normalized)) {
+      return (
+        "Loombre's service account (loombre) cannot see this folder: systemd hides /home, /root " +
+        "and /run/user from the service entirely (ProtectHome), so no permission change on the " +
+        "folder itself can help. Keep media under /srv, /mnt, or /media, or bind-mount your media " +
+        "folder to a path outside /home — see the install guide's media-permissions section."
+      );
+    }
+    const mediaRoot = linuxPerUserMediaRoot(normalized);
+    if (mediaRoot !== null) {
+      return (
+        `Loombre's service account (loombre) cannot read this folder: drives auto-mounted under ${mediaRoot} ` +
+        "are private to that user. Grant the service account access with setfacl, or for FAT/exFAT/NTFS " +
+        "drives mount the drive with options that let loombre read it — see the install guide's " +
+        "media-permissions section."
+      );
+    }
+    return (
+      "Loombre's service account (loombre) cannot read this folder. Grant it read access with setfacl " +
+      "(additive and revocable — no need to chown your media) — see the install guide's " +
+      "media-permissions section."
+    );
+  }
+  if (platform === "win32" && isWindowsLocalSystem(serviceUser)) {
+    return (
+      "Loombre's services run as the Windows LocalSystem account: it cannot use drive letters mapped " +
+      "in your sign-in session, and it reaches network shares as this computer's account, not as you. " +
+      "For a share, use its UNC path (\\\\server\\share\\folder) and give this computer's account — or " +
+      "Everyone — read access on the share and the folder, or run the Loombre services as a user " +
+      "that can reach it — see the install guide's network-shares section."
+    );
   }
   return "The server does not have permission to read that directory.";
+}
+
+/**
+ * The 404 detail for a browse whose path the server could not find. Under
+ * the Windows installer that is not always "missing": a drive letter
+ * mapped in the operator's sign-in session does not exist for the
+ * LocalSystem services at all, and a share may simply refuse the computer
+ * account — both surface as ENOENT. `driveRootExists` is the probe for the
+ * former (injectable: the test host has no drive letters).
+ */
+export function notFoundDetail(
+  requestedPath: string,
+  platform: NodeJS.Platform = process.platform,
+  serviceUser: string = currentServiceUser(),
+  driveRootExists: (root: string) => boolean = existsSync,
+): string {
+  const generic = "No such directory on the server.";
+  if (platform !== "win32" || !isWindowsLocalSystem(serviceUser)) return generic;
+
+  const drive = /^([A-Za-z]):[\\/]/.exec(requestedPath);
+  if (drive?.[1] !== undefined) {
+    const letter = drive[1].toUpperCase();
+    if (driveRootExists(`${letter}:\\`)) return generic;
+    return (
+      `Drive ${letter}: is not visible to Loombre's services — they run as LocalSystem, which cannot ` +
+      "see drive letters mapped in your sign-in session. Use the share's UNC path instead " +
+      "(\\\\server\\share\\folder) — see the install guide's network-shares section."
+    );
+  }
+  const unc = /^[\\/]{2}([^\\/]+)[\\/]([^\\/]+)/.exec(requestedPath);
+  if (unc?.[1] !== undefined && unc[2] !== undefined) {
+    return (
+      `\\\\${unc[1]}\\${unc[2]} could not be opened by Loombre's services. They run as LocalSystem and ` +
+      "connect to shares as this computer's account, not as you — give that account (or Everyone) " +
+      "read access on the share, or run the services as a user that can reach it — see the " +
+      "install guide's network-shares section."
+    );
+  }
+  return generic;
 }
 
 /**
@@ -193,69 +303,195 @@ function isTccProtectedHomeFolder(requestedPath: string): boolean {
   return subfolder !== undefined && TCC_PROTECTED_HOME_SUBFOLDERS.has(subfolder.toLowerCase());
 }
 
+/** Filesystems on which setfacl fails with "Operation not supported":
+ *  FAT/exFAT/NTFS (permissions come from mount options), FUSE mounts
+ *  (ntfs-3g appears as fuseblk; sshfs and friends as fuse.*), optical
+ *  media, and network filesystems (CIFS uses server-side ACLs; NFSv4 has
+ *  its own ACL model). */
+const NO_POSIX_ACL_FSTYPES = new Set([
+  "vfat",
+  "msdos",
+  "exfat",
+  "ntfs",
+  "ntfs3",
+  "fuseblk",
+  "iso9660",
+  "udf",
+  "cifs",
+  "smb3",
+  "nfs",
+  "nfs4",
+  "9p",
+  "hfsplus",
+  "squashfs",
+]);
+
+function lacksPosixAcls(fstype: string): boolean {
+  return NO_POSIX_ACL_FSTYPES.has(fstype) || fstype.startsWith("fuse");
+}
+
+/** /proc/self/mounts field unescaping: mount points with spaces are
+ *  written as octal escapes (`\040`). */
+function unescapeMountField(field: string): string {
+  return field.replace(/\\([0-7]{3})/g, (_, oct: string) => String.fromCharCode(parseInt(oct, 8)));
+}
+
+/**
+ * The filesystem type of the deepest mount containing `p`, from the text
+ * of /proc/self/mounts (`<device> <mount point> <type> <options> ...`, one
+ * per line) — or null when nothing matches. Pure so the lookup is testable
+ * off Linux; the default `mountFsType` below reads the real file.
+ */
+export function fsTypeFromMounts(mountsText: string, p: string): string | null {
+  let best: { point: string; type: string } | null = null;
+  for (const line of mountsText.split("\n")) {
+    const fields = line.split(" ");
+    const rawPoint = fields[1];
+    const type = fields[2];
+    if (rawPoint === undefined || type === undefined) continue;
+    const point = unescapeMountField(rawPoint);
+    const contains = point === "/" || p === point || p.startsWith(`${point}/`);
+    if (contains && (best === null || point.length > best.point.length)) {
+      best = { point, type };
+    }
+  }
+  return best?.type ?? null;
+}
+
+function linuxMountFsType(p: string): string | null {
+  try {
+    return fsTypeFromMounts(readFileSync("/proc/self/mounts", "utf8"), p);
+  } catch {
+    return null;
+  }
+}
+
+/** Can this process walk THROUGH the directory — look names up inside it
+ *  (X_OK) without necessarily listing them? Answered as the account the
+ *  server actually runs as, which is the point: once the picker's step-1
+ *  grant on a home folder is in place, the traversal half of the step-2
+ *  recipe already holds and must not be issued again. Injectable for the
+ *  same reason listRoots' callers inject `exists` — the real answer differs
+ *  between a dev host (its own home) and the installed daemon. */
+function canTraverseDirectory(p: string): boolean {
+  try {
+    accessSync(p, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export interface PermissionRemediation {
+  summary: string;
+  commands: string[];
+  verify: string;
+  /** What the commands expose, what they leave private, and — for a
+   *  multi-step flow — what comes next (the contract's optional `note`). */
+  note: string;
+}
+
+/** The read grant for a media folder: read + list now, inherited by
+ *  everything added to it later (the two inherit flags). Identical to the
+ *  ACE docs/install/macos.md's "Media in your home folder" section has the
+ *  operator run by hand. */
+const MEDIA_READ_ACE = "read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit";
+
 /**
  * The actionable counterpart to permissionDeniedDetail: a scripted grant
- * recipe, templated with the REAL requested path, for the one installer
- * this can safely be automated for today (macOS + the `_loombre` service
- * account). Semantically identical to the blessed recipe in
- * docs/install/macos.md's "Media in your home folder" section — command
- * order and ACL flags match what that doc tells an operator to run by
- * hand, with the doc's `~` and `~/Media` spelled out here as the absolute
- * path actually being browsed (finding 17: the doc's shorthand and this
- * function's absolute paths name the same folders, not byte-identical text).
+ * recipe, templated with the REAL requested path, for the installers this
+ * can safely be automated for — macOS (`_loombre`, ACLs via chmod +a) and
+ * Linux (`loombre`, POSIX ACLs via setfacl). Both are additive and
+ * revocable: nothing is chowned, nothing is widened for anyone but the
+ * service account. Null means "no safe scripted fix — render `detail`".
  *
- * Linux and bare dev servers return null on purpose: the Linux installer's
- * fix is chown/setfacl against a HOST-owned directory (ProtectHome,
- * bind-mount ownership) — scripting a chown recipe blindly risks handing
- * out (or clobbering) ownership of a directory the operator does not
- * expect touched. The docs handle that case with guidance, not a button.
+ * The recipes are semantically identical to the blessed ones in the
+ * install guides' media-permissions sections — command order and flags
+ * match what those docs tell an operator to run by hand, with the docs'
+ * example paths spelled out here as the absolute path actually being
+ * browsed (finding 17: the doc's shorthand and this function's absolute
+ * paths name the same folders, not byte-identical text).
  */
 export function permissionRemediation(
   requestedPath: string,
   platform: NodeJS.Platform = process.platform,
   serviceUser: string = currentServiceUser(),
-): { summary: string; commands: string[]; verify: string } | null {
-  if (platform !== "darwin" || serviceUser !== "_loombre") {
-    return null;
-  }
-
+  canTraverse: (p: string) => boolean = canTraverseDirectory,
+  inContainer: boolean = existsSync("/.dockerenv"),
+  mountFsType: (p: string) => string | null = linuxMountFsType,
+): PermissionRemediation | null {
   // Self-defending regardless of caller (finding 8): the controller passes
   // the RAW trimmed query param, while listDirectories() normalizes before
   // ever touching the filesystem. Without this, a `..` segment could make
   // the EMITTED grant target a path other than the one actually browsed —
   // /Users/ozzy/../Shared/Media would browse /Users/Shared/Media but grant
   // access on /Users/ozzy. Explicit posix (not the injectable pathFor():
-  // this function only ever runs when platform === "darwin", so the
-  // separator is always "/" regardless of the HOST running the test).
-  const normalized = path.posix.normalize(requestedPath);
+  // both recipes are POSIX-only, so the separator is always "/" regardless
+  // of the HOST running the test).
+  const normalized = stripTrailingSlash(path.posix.normalize(requestedPath));
 
-  // BLOCKER (code review): a bare personal home has no ancestor left to
-  // traverse into, so the ONLY remaining command would be the read+inherit
-  // grant on the home folder ITSELF — a one-click-copy command handing the
-  // service account recursive read over the operator's ENTIRE home
-  // (~/Library, ~/.ssh included). This is the picker's most likely path:
-  // roots -> /Users -> click your username -> 403 -> this panel. Never
-  // script a whole-home grant — fall back to the detail paragraph, whose
-  // guidance (subfolder / external drive / /Users/Shared) is the right
-  // answer for exactly this case.
+  if (platform === "darwin" && serviceUser === "_loombre") {
+    return macOsRemediation(normalized, canTraverse);
+  }
+  if (platform === "linux" && serviceUser === "loombre" && !inContainer) {
+    return linuxRemediation(normalized, canTraverse, mountFsType);
+  }
+  // Containers (the fix is a bind mount's ownership on the HOST), Windows
+  // (LocalSystem reads every local volume; shares are a share-permission
+  // question — see notFoundDetail/permissionDeniedDetail), and bare dev
+  // servers: guidance, not a button.
+  return null;
+}
+
+/**
+ * macOS: media in a personal home folder is a TWO-STEP flow, because the
+ * picker's most likely path is roots -> /Users -> click your username ->
+ * 403, and listing the home is exactly what is denied — the picker cannot
+ * reach a subfolder to offer a recipe for until the home itself can be
+ * listed:
+ *
+ *   1. bare home (`/Users/<name>`): ONE non-inheriting `list,search` ACE on
+ *      the home folder itself. Reveals only the NAMES of the entries
+ *      directly inside it; everything the OS keeps at 700 (~/Library,
+ *      ~/.ssh, Documents, Desktop, Downloads, Movies, Music, Pictures)
+ *      stays closed, and nothing is inherited. A whole-home read grant is
+ *      never scripted — that would hand the service account ~/.ssh and
+ *      ~/Library with one click. Offering NOTHING for a bare home is not
+ *      an option either: it leaves the flow unreachable in practice
+ *      (FPG-1).
+ *   2. the media folder inside it: the read+inherit grant on just that
+ *      folder, with the home-traversal command omitted whenever the server
+ *      can already walk the home (which, after step 1, it always can — a
+ *      re-issued grant would tell the operator to run a command they have
+ *      already run).
+ */
+function macOsRemediation(normalized: string, canTraverse: (p: string) => boolean): PermissionRemediation | null {
   if (isBarePersonalHome(normalized)) {
-    return null;
+    return {
+      summary: "Loombre's service account (_loombre) can't list this home folder.",
+      commands: [`chmod +a "user:_loombre allow list,search" ${shellQuote(normalized)}`],
+      verify: `sudo -u _loombre ls ${shellQuote(normalized)}`,
+      note:
+        "This reveals only the names of the folders directly inside your home — nothing inside them. " +
+        "Once it can list your home, open your media folder there to get its own read grant as the next step.",
+    };
   }
 
-  // MAJOR (code review): Desktop/Documents/Downloads are additionally
-  // locked down by TCC, which ACLs cannot lift — only a one-time Full Disk
-  // Access grant in System Settings can (see docs/install/macos.md's
-  // media-permissions section). Emitting a recipe here sends an operator
-  // through copy -> run -> Check again -> still 403, with the UI having
-  // asserted this was the fix — scripting a fix that provably fails erodes
-  // trust in the whole panel. Fall back to detail.
+  // Desktop/Documents/Downloads are additionally locked down by TCC, which
+  // ACLs cannot lift — only a one-time Full Disk Access grant in System
+  // Settings can (see docs/install/macos.md's media-permissions section).
+  // Emitting a recipe here would send an operator through copy -> run ->
+  // Check again -> still 403, with the UI having asserted this was the
+  // fix — scripting a fix that provably fails erodes trust in the whole
+  // panel. Fall back to detail.
   if (isTccProtectedHomeFolder(normalized)) {
     return null;
   }
 
   const commands: string[] = [];
   const homeAncestor = macOsPersonalHomeAncestor(normalized);
-  if (homeAncestor !== null) {
+  const needsTraversal = homeAncestor !== null && !canTraverse(homeAncestor);
+  if (needsTraversal) {
     // Traversal only — lets _loombre walk THROUGH the home folder without
     // revealing anything inside it (docs/install/macos.md's "Media in your
     // home folder" section).
@@ -264,14 +500,82 @@ export function permissionRemediation(
   // Read + list on just the requested folder, inherited by everything added
   // to it later (docs/install/macos.md's "Media in your home folder"
   // section).
-  commands.push(
-    `chmod +a "user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit" ${shellQuote(normalized)}`,
-  );
+  commands.push(`chmod +a "user:_loombre allow ${MEDIA_READ_ACE}" ${shellQuote(normalized)}`);
+
+  const note =
+    homeAncestor === null
+      ? "Read access on this folder and everything added to it later."
+      : needsTraversal
+        ? `Read access on this folder and everything added to it later, plus permission to walk through ${homeAncestor} ` +
+          "without revealing what it contains — nothing else in your home folder."
+        : "Read access on this folder and everything added to it later — nothing else in your home folder.";
 
   return {
     summary: "Loombre's service account (_loombre) can't read this folder.",
     commands,
     verify: `sudo -u _loombre ls ${shellQuote(normalized)}`,
+    note,
+  };
+}
+
+/**
+ * Ancestors of `p` (below "/", above `p` itself) from the first one the
+ * service cannot pass through down to p's parent. The probe stops at the
+ * first block: every deeper ancestor is unreachable regardless of its own
+ * permissions, so it is granted traversal too rather than guessed at.
+ */
+function blockedAncestors(p: string, canTraverse: (p: string) => boolean): string[] {
+  const segments = p.split("/").filter((seg) => seg.length > 0);
+  const ancestors: string[] = [];
+  for (let depth = 1; depth < segments.length; depth++) {
+    ancestors.push(`/${segments.slice(0, depth).join("/")}`);
+  }
+  for (let i = 0; i < ancestors.length; i++) {
+    if (!canTraverse(ancestors[i]!)) return ancestors.slice(i);
+  }
+  return [];
+}
+
+/**
+ * Linux: the same shape with POSIX ACLs — traverse-only (`x`) on each
+ * ancestor the service cannot pass through (typically the desktop's
+ * private /media/<user> mount root; reveals nothing else in it), then a
+ * recursive read grant on the folder plus a matching DEFAULT entry so
+ * files added later inherit it. Verified on a real tree with files. Not
+ * scripted: anything under ProtectHome's roots (an inaccessible systemd
+ * mount no ACL can lift — same class as macOS TCC), and filesystems
+ * without POSIX ACLs (setfacl would only fail; the docs cover mount
+ * options). An unknown filesystem type still gets the recipe: the note
+ * says what a failure means.
+ */
+function linuxRemediation(
+  normalized: string,
+  canTraverse: (p: string) => boolean,
+  mountFsType: (p: string) => string | null,
+): PermissionRemediation | null {
+  if (isUnderLinuxProtectedHome(normalized)) return null;
+  const fstype = mountFsType(normalized);
+  if (fstype !== null && lacksPosixAcls(fstype)) return null;
+
+  const blocked = blockedAncestors(normalized, canTraverse);
+  const commands: string[] = [];
+  if (blocked.length > 0) {
+    commands.push(`sudo setfacl -m u:loombre:x ${blocked.map(shellQuote).join(" ")}`);
+  }
+  commands.push(`sudo setfacl -R -m u:loombre:rX,d:u:loombre:rX ${shellQuote(normalized)}`);
+
+  const passThrough =
+    blocked.length > 0
+      ? `, plus permission to pass through ${blocked.join(" and ")} without revealing what else is there`
+      : "";
+  return {
+    summary: "Loombre's service account (loombre) can't read this folder.",
+    commands,
+    verify: `sudo -u loombre ls ${shellQuote(normalized)}`,
+    note:
+      `Read access on this folder and everything added to it later${passThrough}. ` +
+      'If setfacl reports "Operation not supported", this drive\'s filesystem has no ACLs — see the ' +
+      "install guide for mount options.",
   };
 }
 

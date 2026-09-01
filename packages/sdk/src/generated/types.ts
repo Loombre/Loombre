@@ -3068,6 +3068,8 @@ export interface components {
             commands: string[];
             /** @description A single command that proves the grant worked (re-lists the same path as the service account). */
             verify: string;
+            /** @description Optional one- or two-sentence scope note: exactly what the commands expose (and what they leave private), and — when the recipe is one step of a longer flow, such as the names-only listing grant on a macOS home folder that precedes the media folder's own read grant — what the next step is. Clients render it as a muted caption next to the commands; absent means there is nothing to add beyond `summary`. */
+            note?: string;
         };
         CrashFileList: {
             /** @description Newest first; bounded by the crash writer's retention cap. */

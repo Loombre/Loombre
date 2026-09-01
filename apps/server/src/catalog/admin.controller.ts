@@ -71,6 +71,7 @@ import {
   DirectoryBrowseError,
   listDirectories,
   listRoots,
+  notFoundDetail,
   permissionDeniedDetail,
   permissionRemediation,
 } from "./admin-directories.js";
@@ -424,14 +425,17 @@ export class AdminController {
           // to browse.
           const remediation = permissionRemediation(requested);
           throw forbidden(
-            permissionDeniedDetail(),
+            permissionDeniedDetail(requested),
             instance,
             "filesystem-permission-denied",
             remediation !== null ? { remediation } : undefined,
           );
         }
         case "not-found":
-          throw notFound("No such directory on the server.", instance);
+          // Not always "missing" under the Windows installer: a mapped
+          // drive letter does not exist for the LocalSystem services, and
+          // a share may refuse the computer account — both are ENOENT.
+          throw notFound(notFoundDetail(requested), instance);
       }
     }
   }

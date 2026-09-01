@@ -58,13 +58,18 @@ function parseRemediation(err: unknown): FilesystemPermissionRemediation | null 
 
   const remediation = (problem as { remediation?: unknown }).remediation;
   if (remediation === null || typeof remediation !== "object") return null;
-  const { summary, commands, verify } = remediation as Record<string, unknown>;
+  const { summary, commands, verify, note } = remediation as Record<string, unknown>;
   if (typeof summary !== "string" || summary.length === 0) return null;
   if (typeof verify !== "string" || verify.length === 0) return null;
   if (!Array.isArray(commands) || commands.length === 0 || !commands.every((c) => typeof c === "string")) {
     return null;
   }
-  return { summary, commands, verify };
+  // `note` is optional (absent = nothing to add beyond summary), but when
+  // present it must be a string like everything else here — a malformed
+  // member means a malformed body, and the fallback is the whole detail
+  // paragraph, not a panel missing one line.
+  if (note !== undefined && typeof note !== "string") return null;
+  return note === undefined || note.length === 0 ? { summary, commands, verify } : { summary, commands, verify, note };
 }
 
 export interface DirectoryPickerProps {
@@ -157,6 +162,10 @@ export function DirectoryPicker({ open, onClose, onSelect }: DirectoryPickerProp
             // browse in place so the grant/verify loop stays in-app.
             <div className={styles.grantPanel}>
               <p className={styles.error}>{remediation.summary}</p>
+              {/* The server's scope note — what this grant exposes, what it
+                  leaves private, and (for the two-step home-folder flow)
+                  what comes next — read BEFORE the command it describes. */}
+              {remediation.note !== undefined && <p className={styles.grantNote}>{remediation.note}</p>}
               <CommandBlock commands={remediation.commands} ariaLabel="Copy permission grant commands" />
               <p className={styles.grantCaption}>
                 Run this in Terminal, then{" "}
@@ -177,8 +186,8 @@ export function DirectoryPicker({ open, onClose, onSelect }: DirectoryPickerProp
                 Prove it worked: <code>{remediation.verify}</code>
               </p>
               <p className={styles.grantHint}>
-                Or keep media on an external drive (/Volumes) or /Users/Shared — see the install guide's
-                media-permissions section.
+                Prefer not to change permissions? The install guide's media-permissions section lists where media
+                can live without any.
               </p>
             </div>
           ) : (

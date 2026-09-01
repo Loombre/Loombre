@@ -339,18 +339,69 @@ it somewhere else. Common issues:
   Check `DATABASE_URL` in `/etc/loombre/loombre.env`; for embedded PG, confirm
   the data directory exists and is owned by `loombre`: `ls -ld /var/lib/loombre/`
 
-### Permission errors reading library folders
+### Media permissions: the `loombre` account, `ProtectHome`, and `/media/<you>`
 
-The scanner runs as the `loombre` user. If you're bind-mounting library folders
-or using network mounts, the `loombre` user must be able to read them:
+All three services run as the dedicated `loombre` system user — never as
+you, never as root — inside systemd's sandbox (see
+[Systemd hardening](#systemd-hardening-for-reference)). Two consequences
+for where media can live:
+
+**Nothing under `/home`, `/root` or `/run/user` is visible to the services
+at all.** `ProtectHome=true` mounts an empty, inaccessible directory over
+those paths, so no permission change on your actual home folder can help.
+The folder picker marks `/home` **No access**, and browsing into it says
+so. Keep media under `/srv`, `/mnt` or `/media` — or bind-mount your media
+folder to a path outside `/home`:
 
 ```sh
-sudo chown -R loombre:loombre /mnt/media   # or your library path
-sudo chmod -R o+rx /mnt/media             # if using NFO sidecars
+sudo mkdir -p /srv/media
+sudo mount --bind /home/you/Media /srv/media
+# make it permanent — add to /etc/fstab:
+# /home/you/Media  /srv/media  none  bind  0  0
 ```
 
-For network mounts, check that the mount itself is readable by the `loombre` user:
-`sudo -u loombre ls /mnt/media` should list files without errors.
+(Weakening the sandbox instead — a `sudo systemctl edit loombre-server`
+drop-in setting `ProtectHome=read-only`, repeated for `loombre-worker` and
+`loombre-web` — makes `/home` visible but still leaves your home folder's
+own permissions in the way; the bind mount is the simpler answer.)
+
+**Everything else needs ordinary read access for `loombre`.** The folder
+picker offers the exact commands for the folder you clicked: a
+traverse-only grant for each folder above it that the service cannot pass
+through (this reveals nothing else in those folders), then a read grant on
+the media folder itself that files added later inherit. Copy, run in a
+terminal, then click **Check again**:
+
+```sh
+sudo setfacl -m u:loombre:x /media/you                      # pass through only
+sudo setfacl -R -m u:loombre:rX,d:u:loombre:rX /media/you/Drive/Movies
+```
+
+These ACL grants are additive and revocable — unlike `chown -R`, they don't
+take the files away from you. Inspect with `getfacl`; undo with
+`sudo setfacl -R -x u:loombre,d:u:loombre /media/you/Drive/Movies` and
+`sudo setfacl -x u:loombre /media/you`. Verify with
+`sudo -u loombre ls /media/you/Drive/Movies` — it should list files without
+errors. (The picker knows that **`/media/<you>/…`** — where desktop Linux
+auto-mounts removable drives, in a directory private to you — is where the
+traverse grant usually has to start.)
+
+**Drives without ACLs (FAT32, exFAT, NTFS via ntfs-3g).** `setfacl` reports
+`Operation not supported` on these, and the picker offers no command for
+them. Their permissions come from the mount options instead: mount the
+drive yourself with `uid`/`gid`/`umask` values that let `loombre` read it,
+for example in `/etc/fstab` (find `loombre`'s numeric group with
+`id -g loombre`):
+
+```
+UUID=XXXX-XXXX  /mnt/usb  exfat  uid=1000,gid=<loombre gid>,umask=027,nofail  0  0
+```
+
+**Network mounts (NFS, SMB/CIFS).** The mount itself must be readable by
+`loombre`: for CIFS pass `uid=`/`gid=`/`file_mode=`/`dir_mode=` values that
+include it; for NFS the export's ownership and mode govern (map `loombre`'s
+uid on the server, or export with `all_squash` and an `anonuid` the service
+can read). Verify the same way: `sudo -u loombre ls /mnt/nas`.
 
 ### Worker service fails to start / keeps restarting
 

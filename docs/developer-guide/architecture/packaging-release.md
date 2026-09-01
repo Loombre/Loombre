@@ -13,7 +13,7 @@
      signing via GitHub OIDC — confirmed present in that workflow file.
      keys/README.md — three-location minisign public-key consistency
      check (checked in CI by scripts/release/check-pubkey-consistency.mjs).
-     Version 0.9.0-rc.8, no release published yet — root package.json,
+     Version 0.9.0-rc.9, no release published yet — root package.json,
      CHANGELOG.md's "Convention note (pre-v1.0)". -->
 
 Loombre ships as four independent artifact types from one source tree, all

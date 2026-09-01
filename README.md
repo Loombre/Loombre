@@ -14,7 +14,7 @@ organizes and streams your library — locally and remotely — to any device. I
 is not a fork, client, or compatible implementation of any other media server;
 it shares no API surface, schema, or naming with one.
 
-> **Status:** version `0.9.0-rc.8`, pre-release. No published release has shipped yet.
+> **Status:** version `0.9.0-rc.9`, pre-release. No published release has shipped yet.
 
 ## Screenshots
 

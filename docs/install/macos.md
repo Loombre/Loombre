@@ -480,31 +480,48 @@ working as designed, not a broken install.
 - use **`/Users/Shared`**, which every account on the machine can read.
 
 **If your media must stay in your home folder**, grant `_loombre` access to
-just that subtree with a targeted ACL — nothing else in your home folder
-becomes visible:
+just that subtree with targeted ACLs — nothing else in your home folder
+becomes readable. The folder picker walks you through this in two steps,
+each with the exact command pre-filled for the folder you clicked: copy it,
+run it in Terminal, then click **Check again**.
+
+1. **Click your home folder** (marked **No access**). The picker offers a
+   names-only grant so that it can list what's in your home. It reveals only
+   the *names* of the folders directly inside — nothing inside them, nothing
+   inherited; `Library`, `.ssh`, `Documents` and the other private folders
+   stay closed:
+
+   ```sh
+   chmod +a "user:_loombre allow list,search" ~
+   ```
+
+2. **Click your media folder** (now listed, still **No access**). The picker
+   offers the read grant on just that folder, inherited by everything added
+   to it later (the two inherit flags):
+
+   ```sh
+   chmod +a "user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit" ~/Media
+   ```
+
+Doing it by hand instead? Adjust `~/Media` to your actual folder. If you
+don't need the picker to list your home, step 1 can be traversal-only —
+`chmod +a "user:_loombre allow search" ~` — which lets the service walk
+*through* your home without seeing even the names in it. Either way, `chmod
++a` never adds a duplicate of an entry that's already there, so re-running a
+step is harmless. Verify with `sudo -u _loombre ls ~/Media`, and inspect or
+undo at any time:
 
 ```sh
-# 1. Let the service account TRAVERSE your home folder (walk through it —
-#    this alone reveals none of its contents):
-chmod +a "user:_loombre allow search" ~
-
-# 2. Grant read on just your media folder, including everything added later
-#    (the two inherit flags):
-chmod +a "user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit" ~/Media
-```
-
-Adjust `~/Media` to your actual folder. Verify with
-`sudo -u _loombre ls ~/Media`, and inspect or undo at any time:
-
-```sh
-ls -le ~/Media          # view the ACL entries
-chmod -a "user:_loombre allow search" ~   # revoke (repeat per entry added)
+ls -le ~ ~/Media                              # view the ACL entries
+chmod -a "user:_loombre allow list,search" ~  # revoke step 1
+chmod -a "user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit" ~/Media   # revoke step 2
 ```
 
 **A note on Full Disk Access**: it is *not* the fix for the above — Full Disk
 Access lifts macOS's privacy protection (TCC), never POSIX permissions. It
 only matters if your media lives inside a TCC-protected folder (`Desktop`,
-`Documents`, `Downloads`), which daemons cannot read even after an ACL grant.
+`Documents`, `Downloads`), which daemons cannot read even after an ACL grant —
+which is why the picker deliberately offers no command for those three.
 Simplest is to keep media out of those three folders (a `~/Media` folder is
 not TCC-protected, so the ACL above is all it needs). If you genuinely need
 one of them, additionally add Loombre's runtime binary

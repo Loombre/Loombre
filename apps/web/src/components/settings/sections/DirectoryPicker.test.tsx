@@ -55,7 +55,7 @@ const USERS = {
  *  reproduces the Linux/dev 403 (no scripted grant recipe), matching every
  *  pre-existing test in this file; callers that want the macOS grant-flow
  *  case pass it explicitly. */
-function forbiddenError(remediation?: { summary: string; commands: string[]; verify: string }): Error {
+function forbiddenError(remediation?: { summary: string; commands: string[]; verify: string; note?: string }): Error {
   return Object.assign(new Error("Forbidden"), {
     problem: {
       type: "urn:loombre:problem:forbidden",
@@ -72,9 +72,38 @@ const REMEDIATION = {
   summary: "Loombre's service account (_loombre) can't read this folder.",
   commands: [
     'chmod +a "user:_loombre allow search" /Users/ozzy',
-    'chmod +a "user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit" /Users/ozzy',
+    'chmod +a "user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit" /Users/ozzy/Media',
   ],
+  verify: "sudo -u _loombre ls /Users/ozzy/Media",
+};
+
+// The server's step 1 for a bare personal home: a names-only listing grant
+// (admin-directories.ts permissionRemediation) — the case the picker's
+// most likely path (roots -> /Users -> click your username) produces.
+const HOME_STEP_1 = {
+  summary: "Loombre's service account (_loombre) can't list this home folder.",
+  commands: ['chmod +a "user:_loombre allow list,search" /Users/ozzy'],
   verify: "sudo -u _loombre ls /Users/ozzy",
+  note: "This reveals only the names of the folders directly inside your home — nothing inside them.",
+};
+
+// Step 2, once the home is listable: the media folder's own read grant.
+const HOME_STEP_2 = {
+  summary: "Loombre's service account (_loombre) can't read this folder.",
+  commands: [
+    'chmod +a "user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit" /Users/ozzy/Movies',
+  ],
+  verify: "sudo -u _loombre ls /Users/ozzy/Movies",
+  note: "Read access on this folder and everything added to it later — nothing else in your home folder.",
+};
+
+const HOME = {
+  path: "/Users/ozzy",
+  parent: "/Users",
+  entries: [
+    { name: "Media", path: "/Users/ozzy/Media", readable: true },
+    { name: "Movies", path: "/Users/ozzy/Movies", readable: false },
+  ],
 };
 
 describe("DirectoryPicker", () => {
@@ -229,6 +258,63 @@ describe("DirectoryPicker", () => {
         "/admin/filesystem/directories",
         expect.objectContaining({ params: { query: { path: "/Users/ozzy" } } }),
       );
+    });
+
+    it("renders the scope note when the server sends one, and nothing extra when it doesn't", async () => {
+      withDeniedResponse(forbiddenError(HOME_STEP_1));
+      await render();
+      await click(entryButton("/Users"));
+      await click(entryButton("ozzy"));
+
+      const text = view!.container.textContent ?? "";
+      expect(text).toContain(HOME_STEP_1.summary);
+      expect(text).toContain(HOME_STEP_1.note);
+      expect(text).toContain(HOME_STEP_1.commands[0]);
+    });
+
+    // ── The two-step home-folder flow end to end, as the picker sees it:
+    //    step 1's names-only grant is run out of band, "Check again" turns
+    //    the 403 into a real listing of the home (panel gone, entries
+    //    visible, 700 subfolders still marked), and clicking the media
+    //    folder surfaces step 2's targeted grant. ──
+    it("after 'Check again' succeeds, replaces the grant panel with the listing and lets step 2 surface", async () => {
+      let homeGranted = false;
+      apiGetMock.mockImplementation((path: string, options?: { params?: { query?: { path?: string } } }) => {
+        if (path !== "/admin/filesystem/directories") {
+          return Promise.reject(new Error(`unexpected apiGet ${path}`));
+        }
+        const requested = options?.params?.query?.path;
+        if (requested === undefined) return Promise.resolve(ROOTS);
+        if (requested === "/Users") return Promise.resolve(USERS);
+        if (requested === "/Users/ozzy") {
+          return homeGranted ? Promise.resolve(HOME) : Promise.reject(forbiddenError(HOME_STEP_1));
+        }
+        if (requested === "/Users/ozzy/Movies") return Promise.reject(forbiddenError(HOME_STEP_2));
+        return Promise.reject(new Error(`unexpected path ${requested}`));
+      });
+      await render();
+      await click(entryButton("/Users"));
+      await click(entryButton("ozzy"));
+      expect(view!.container.textContent ?? "").toContain(HOME_STEP_1.commands[0]);
+
+      // The operator runs step 1 in Terminal, then clicks "Check again".
+      homeGranted = true;
+      await click(checkAgainButton());
+
+      const afterStep1 = view!.container.textContent ?? "";
+      expect(afterStep1).not.toContain(HOME_STEP_1.commands[0]);
+      expect(afterStep1).not.toContain("Check again");
+      expect(afterStep1).toContain("/Users/ozzy");
+      expect(entryButton("Media").textContent).not.toContain("No access");
+      expect(entryButton("Movies").textContent).toContain("No access");
+
+      await click(entryButton("Movies"));
+      const afterStep2 = view!.container.textContent ?? "";
+      expect(afterStep2).toContain(HOME_STEP_2.commands[0]);
+      expect(afterStep2).toContain(HOME_STEP_2.note);
+      // Step 1's command is not repeated — the home is already traversable.
+      expect(afterStep2).not.toContain("allow search");
+      expect(afterStep2).not.toContain("allow list,search");
     });
 
     it("falls back to the plain detail paragraph when remediation is absent (Linux/dev)", async () => {

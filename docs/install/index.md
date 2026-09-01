@@ -88,7 +88,7 @@ The wizard saves these settings and opens the web client. From there, you can ad
 
 - **The installer won't run** — Gatekeeper (macOS) / SmartScreen (Windows) are blocking it. See your platform's guide for the exact click-through steps.
 - **Loombre starts but I can't access it** — Check `http://127.0.0.1:3000` first (localhost only). If that works, check your firewall. `docs/ops/remote-access/reverse-proxy.md` has working reverse-proxy recipes for external access.
-- **I'm getting permission errors** — On Linux/macOS, Loombre runs as a dedicated system user (`loombre` or `_loombre`). If you're bind-mounting library paths, make sure that user can read them: `sudo chown -R loombre:loombre /path/to/library` (Linux) or check File Sharing system settings (macOS).
+- **I'm getting permission errors / "No access" in the folder picker** — Loombre runs as a dedicated service account (`_loombre` on macOS, `loombre` on Linux, LocalSystem on Windows), not as you. The folder picker says exactly what that account can't read and, on macOS and Linux, offers the exact grant commands (additive ACLs — never `chown`). Details in each platform guide's media-permissions section: [macOS](/install/macos), [Linux](/install/linux), [Windows](/install/windows).
 - **The database won't start** — Embedded PostgreSQL needs the data directory to be writable and owned by the service user. See the platform-specific docs for exact paths and troubleshooting.
 
 For platform-specific issues, see:

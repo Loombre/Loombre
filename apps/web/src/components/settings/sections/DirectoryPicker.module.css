@@ -120,6 +120,15 @@
   gap: var(--space-sm);
 }
 
+/* The optional scope note (FilesystemPermissionRemediation.note): body-size
+   like the summary it follows, but muted — it qualifies the command, it is
+   not a second alarm. */
+.grantNote {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
 .grantCaption {
   margin: 0;
   display: flex;

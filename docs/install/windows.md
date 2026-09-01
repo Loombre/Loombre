@@ -310,6 +310,32 @@ Loombre's own admin UI will notify you when a newer signed release manifest
 is available — it never downloads or applies anything automatically (see
 `packages/release-manifest`).
 
+## Media on a network share or mapped drive
+
+Loombre's three Windows services run as the built-in **LocalSystem**
+account, not as you. That is what lets them keep serving while nobody is
+signed in — and it has two consequences for library paths:
+
+- **Mapped drive letters (`Z:`) are invisible to the services.** A drive
+  mapping belongs to the sign-in session that made it. The folder picker
+  will not list `Z:`, and typing `Z:\Media` reports that the drive is not
+  visible to Loombre. Use the share's UNC path instead:
+  `\\server\share\Media`.
+- **Shares are reached as this computer's account, not as you.** Give read
+  access on the share (and NTFS permissions on the folder) to the computer
+  account (`DOMAIN\PCNAME$` on a domain) or to **Everyone** — or, for a NAS
+  that allows it, enable guest access to that share.
+
+If neither is acceptable, run the services as a user that can reach the
+share: `services.msc` → each of **Loombre Server**, **Loombre Worker** and
+**Loombre Web** → *Log On* tab → *This account*, then restart them. That
+account also needs *Full control* on `%ProgramData%\Loombre` (the
+installer leaves it at Windows' default ACLs: SYSTEM and Administrators
+full control, Users read).
+
+Local disks and USB drives need nothing: LocalSystem reads every local
+volume.
+
 ## Troubleshooting
 
 - **"Windows protected your PC" every time you open the tray, not just on

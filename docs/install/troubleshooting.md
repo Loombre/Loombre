@@ -318,18 +318,55 @@ this by default).
 
 ### macOS: `_loombre` can't read media in your home folder
 
-**Symptom:** The folder picker marks a home-folder path **No access**, or a
-mount under `~` isn't readable by Loombre.
+**Symptom:** The folder picker marks a home-folder path **No access** and
+opening it says the service account "cannot read this folder", or a mount
+under `~` isn't readable by Loombre.
 
 **Why:** macOS keeps personal home folders private (`/Users/you` is mode
 700/750), so the `_loombre` service account cannot traverse them. That is
 the system working as designed, not a broken install.
 
-**Fix:** See the "Media in your home folder" section of
+**Fix:** The picker itself offers the fix in two steps, each a pre-filled
+command to run in Terminal followed by **Check again**: a names-only listing
+grant on your home folder, then a read grant on just the media folder. See
+the "Media in your home folder" section of
 [docs/install/macos.md](/install/macos) — it covers the easy placements
-(`/Volumes`, `/Users/Shared`), the targeted ACL grant for media that must
-stay in your home folder, and when Full Disk Access does (and does not)
-matter.
+(`/Volumes`, `/Users/Shared`), those two ACL grants (and how to revoke
+them), and when Full Disk Access does (and does not) matter.
+
+### Linux: `loombre` can't read media, or `/home` shows **No access**
+
+**Symptom:** The folder picker marks `/home` **No access** (and browsing
+into it says systemd hides it), or a folder under `/media/<you>`, `/mnt` or
+`/srv` says the service account cannot read it.
+
+**Why:** All three services run as the `loombre` system user inside
+systemd's sandbox. `ProtectHome=true` hides `/home`, `/root` and `/run/user`
+from them entirely — no folder permission can change that. Everything else
+needs ordinary read access for `loombre`; removable drives auto-mounted
+under `/media/<you>` are private to you by default.
+
+**Fix:** The picker offers the exact `setfacl` commands for the folder you
+clicked (additive and revocable — never `chown`); for media in your home
+folder, bind-mount it to a path outside `/home`. Drives without ACLs
+(FAT/exFAT/NTFS) and network mounts are governed by their mount options.
+All of it in the "Media permissions" section of
+[docs/install/linux.md](/install/linux).
+
+### Windows: a mapped drive isn't listed, or a share "could not be opened"
+
+**Symptom:** The folder picker shows local drives but not your mapped
+`Z:`; typing the path says the drive is not visible to Loombre's services,
+or a `\\server\share` path could not be opened.
+
+**Why:** The services run as LocalSystem. Drive mappings belong to your
+sign-in session, and shares are reached as this computer's account, not as
+you.
+
+**Fix:** Use the UNC path and grant the computer account (or Everyone) read
+access on the share — or run the services as a user that can reach it. See
+"Media on a network share or mapped drive" in
+[docs/install/windows.md](/install/windows).
 
 ---
 

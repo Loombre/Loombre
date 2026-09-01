@@ -21,6 +21,30 @@ are the version axis.
 
 ## [Unreleased]
 
+### v0.9.0-rc.9 draft (2026-09-01)
+
+- Ninth release candidate — the media-permissions fix wave from the rc.8
+  macOS installer live test. The folder picker's "grant access" flow was
+  unreachable for media in a macOS home folder (it deliberately offered
+  nothing for `/Users/<you>`, and listing the home is exactly what the
+  `_loombre` service account is denied); it is now a two-step flow — a
+  names-only `list,search` ACL on the home folder, then the media folder's
+  own inheriting read grant — with a scope note on every step
+  (`FilesystemPermissionRemediation.note`, additive). Whole-home read
+  grants are still never scripted.
+- Linux gets the same scripted flow with POSIX ACLs (`setfacl`: traverse-
+  only on blocked ancestors, recursive read + default entry on the media
+  folder — additive and revocable), except where it provably cannot work:
+  systemd's `ProtectHome` roots, filesystems without ACLs (FAT/exFAT/NTFS/
+  network), containers. The 403/404 details on Linux and Windows are now
+  path-aware: `ProtectHome` (`/home` is hidden outright — bind-mount
+  guidance), desktop Linux's private `/media/<you>` mount roots, and the
+  Windows services' LocalSystem account (mapped drive letters invisible;
+  shares reached as the computer account — UNC + share-permission
+  guidance). Install guides updated accordingly; the Linux guide's
+  `chown -R loombre:loombre` advice is retired (it took the files away
+  from the operator).
+
 ### v0.9.0-rc.8 draft (2026-08-31)
 
 - Eighth release candidate, drafted from `main` — rolls up everything
