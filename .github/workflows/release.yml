@@ -125,6 +125,10 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.26.5"
+          # Key the default-on Go module cache off the real module file —
+          # there is no root go.mod, and without this the cache-restore
+          # step warns and runs cold every time.
+          cache-dependency-path: packages/wg-native/native/go.sum
 
       - name: Build workspace
         # LOOMBRE_REQUIRE_WG=1: a release artifact must never silently ship
@@ -197,6 +201,10 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.26.5"
+          # Key the default-on Go module cache off the real module file —
+          # there is no root go.mod, and without this the cache-restore
+          # step warns and runs cold every time.
+          cache-dependency-path: packages/wg-native/native/go.sum
 
       - name: Build workspace
         # LOOMBRE_REQUIRE_WG=1 rationale: see build-linux's Build workspace step above.
@@ -302,6 +310,10 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.26.5"
+          # Key the default-on Go module cache off the real module file —
+          # there is no root go.mod, and without this the cache-restore
+          # step warns and runs cold every time.
+          cache-dependency-path: packages/wg-native/native/go.sum
 
       - name: Build workspace
         # LOOMBRE_REQUIRE_WG=1 rationale: see build-linux's Build workspace step above.

@@ -77,6 +77,10 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.26.5"
+          # Key the default-on Go module cache off the real module file —
+          # there is no root go.mod, and without this the cache-restore
+          # step warns and runs cold every time.
+          cache-dependency-path: packages/wg-native/native/go.sum
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -394,6 +398,10 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.26.5"
+          # Key the default-on Go module cache off the real module file —
+          # there is no root go.mod, and without this the cache-restore
+          # step warns and runs cold every time.
+          cache-dependency-path: packages/wg-native/native/go.sum
 
       - name: Install dependencies
         # --engine-strict=false: root engines pins the SHIPPING floor
