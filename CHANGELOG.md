@@ -21,6 +21,20 @@ are the version axis.
 
 ## [Unreleased]
 
+### v0.9.0-rc.8 draft (2026-08-31)
+
+- Eighth release candidate, drafted from `main` — rolls up everything
+  since rc.7 (2026-08-10): the AV1 ladder / adaptive multi-variant
+  delivery / encoder-lifecycle wave, seek model V8, the full-app QA
+  sweep and remediation, the web UI conformance pass, zone-only
+  restricted content, and the verified remote-access + mail fixes
+  (entries below).
+- Documentation corpus audited end-to-end (doc-audit-2026-08-30, 325
+  verified findings) and corrected in the same-day fix run
+  DFX-2026-08-31: specs, install/ops/admin/user/developer guides,
+  API-reference prose, installer and design docs now match the code at
+  HEAD; a sourcing-citation grep-gate now guards doc→code pointers.
+
 ### Remote access & mail: verified as packaged, and fixed (2026-08-30)
 
 A verification pass took the 2026-08-04 Remote-access and mail features
