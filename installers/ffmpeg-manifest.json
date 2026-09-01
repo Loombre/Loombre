@@ -12,100 +12,100 @@
     "repo": "Loombre/Loombre",
     "releaseTag": "ffmpeg-mirror",
     "assetNaming": "<sha256[0:12]>--<url basename>",
-    "note": "Deletion-proofing (Task #16 \u2014 BtbN garbage-collects releases and deleted our pinned autobuild mid-rc.7-draft, repinned in d3a6883d): every archive pinned below is mirrored on this repo's own private 'ffmpeg-mirror' release, and scripts/fetch-ffmpeg.mjs falls back to the derived asset name there on a primary download failure; assets are append-only \u2014 a future repin adds new assets and never replaces or deletes old ones, so every historical pin stays fetchable."
+    "note": "Deletion-proofing (Task #16 \u2014 BtbN garbage-collects releases and deleted our pinned autobuild mid-rc.7-draft, repinned in d3a6883d): every archive pinned below is mirrored on this repo's own 'ffmpeg-mirror' release, and scripts/fetch-ffmpeg.mjs falls back to the derived asset name there on a primary download failure; assets are append-only \u2014 a future repin adds new assets and never replaces or deletes old ones, so every historical pin stays fetchable."
   },
   "platforms": {
     "linux-x64": {
       "source": "BtbN/FFmpeg-Builds",
       "sourceKind": "github-release",
-      "sourceUrl": "https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-08-10-13-17",
+      "sourceUrl": "https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-08-31-13-27",
       "ffmpegVersion": "8.1.2",
-      "buildTag": "autobuild-2026-08-10-13-17",
-      "buildId": "n8.1.2-34-g9b6c8969e0",
+      "buildTag": "autobuild-2026-08-31-13-27",
+      "buildId": "n8.1.2-50-g1a748fe2cd",
       "license": "GPL-3.0-or-later",
       "licenseNote": "Confirmed by the full GNU GPLv3 text bundled as LICENSE.txt inside the archive itself (copied to vendor/ffmpeg/linux-x64/LICENSE.txt by fetch-ffmpeg.mjs); this is BtbN's '-gpl' (non-'-shared') variant, which links libx264/libx265 statically into the ffmpeg/ffprobe executables \u2014 no external .so dependency on either.",
       "components": {
         "ffmpeg": {
-          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-10-13-17/ffmpeg-n8.1.2-34-g9b6c8969e0-linux64-gpl-8.1.tar.xz",
+          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-31-13-27/ffmpeg-n8.1.2-50-g1a748fe2cd-linux64-gpl-8.1.tar.xz",
           "format": "tar.xz",
-          "sha256": "7b0c2ad593860d8bb157e346777ac7d741b5bf25b456382051138aaa8256f92d",
-          "sizeBytes": 125511580,
+          "sha256": "c733b4b2951e5957e15505f788b2c65a7a41b6da4b289e295852cc38079b4d2b",
+          "sizeBytes": 125758156,
           "binaryEntryName": "ffmpeg"
         },
         "ffprobe": {
-          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-10-13-17/ffmpeg-n8.1.2-34-g9b6c8969e0-linux64-gpl-8.1.tar.xz",
+          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-31-13-27/ffmpeg-n8.1.2-50-g1a748fe2cd-linux64-gpl-8.1.tar.xz",
           "format": "tar.xz",
-          "sha256": "7b0c2ad593860d8bb157e346777ac7d741b5bf25b456382051138aaa8256f92d",
-          "sizeBytes": 125511580,
+          "sha256": "c733b4b2951e5957e15505f788b2c65a7a41b6da4b289e295852cc38079b4d2b",
+          "sizeBytes": 125758156,
           "binaryEntryName": "ffprobe"
         }
       },
       "verification": {
         "method": "independently downloaded and hashed",
-        "verifiedAtMs": 1784903400000,
-        "notes": "Downloaded in full (124905944 bytes) and sha256'd locally; matches BtbN's own published checksums.sha256 for this release tag exactly. Also confirmed via `strings`+`file`: PIE ELF x86-64, no libx264.so/libx265.so runtime dependency (only optional dlopen'd hw-accel libs: vaapi/nvenc/vdpau/OpenCL, none required at rest)."
+        "verifiedAtMs": 1788221629202,
+        "notes": "Repin 2026-08-31: BtbN garbage-collected autobuild-2026-08-10-13-17 on 2026-08-30 (caught by vendor-liveness; second occurrence \u2014 see the mirror block). This archive was downloaded in full and sha256'd locally on the repin host; hash matches BtbN's own checksums.sha256 for autobuild-2026-08-31-13-27 byte-for-byte. Mirror asset uploaded under the derived name in the same pass (append-only). (The 2026-07-24 pin's strings/file ELF inspection was not repeated for this repin \u2014 same BtbN build matrix, same -gpl non-shared variant.)"
       }
     },
     "linux-arm64": {
       "source": "BtbN/FFmpeg-Builds",
       "sourceKind": "github-release",
-      "sourceUrl": "https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-08-10-13-17",
+      "sourceUrl": "https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-08-31-13-27",
       "ffmpegVersion": "8.1.2",
-      "buildTag": "autobuild-2026-08-10-13-17",
-      "buildId": "n8.1.2-34-g9b6c8969e0",
+      "buildTag": "autobuild-2026-08-31-13-27",
+      "buildId": "n8.1.2-50-g1a748fe2cd",
       "license": "GPL-3.0-or-later",
       "licenseNote": "Same BtbN build matrix as linux-x64 (see that entry's licenseNote) \u2014 GPLv3 LICENSE.txt bundled in-archive, '-gpl' non-shared variant.",
       "components": {
         "ffmpeg": {
-          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-10-13-17/ffmpeg-n8.1.2-34-g9b6c8969e0-linuxarm64-gpl-8.1.tar.xz",
+          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-31-13-27/ffmpeg-n8.1.2-50-g1a748fe2cd-linuxarm64-gpl-8.1.tar.xz",
           "format": "tar.xz",
-          "sha256": "4de38246590f87a959275ed359d9378acb46295b56851968b239763b4d481f3a",
-          "sizeBytes": 107552608,
+          "sha256": "ae5da4f51b9052390f414005f8ab26c1eed1268f327cce7cb79aa076b29bd66e",
+          "sizeBytes": 107695184,
           "binaryEntryName": "ffmpeg"
         },
         "ffprobe": {
-          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-10-13-17/ffmpeg-n8.1.2-34-g9b6c8969e0-linuxarm64-gpl-8.1.tar.xz",
+          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-31-13-27/ffmpeg-n8.1.2-50-g1a748fe2cd-linuxarm64-gpl-8.1.tar.xz",
           "format": "tar.xz",
-          "sha256": "4de38246590f87a959275ed359d9378acb46295b56851968b239763b4d481f3a",
-          "sizeBytes": 107552608,
+          "sha256": "ae5da4f51b9052390f414005f8ab26c1eed1268f327cce7cb79aa076b29bd66e",
+          "sizeBytes": 107695184,
           "binaryEntryName": "ffprobe"
         }
       },
       "verification": {
-        "method": "publisher-checksums-file",
-        "verifiedAtMs": 1784903400000,
-        "notes": "sha256 taken verbatim from BtbN's own checksums.sha256 for release tag autobuild-2026-07-24-13-32 (fetched over HTTPS from the GitHub release, same trust boundary as the linux-x64 archive this lane DID fully download+re-hash). Not independently re-downloaded here because this lane's own smoke test only exercises linux-x64 (its container/dev host is x86_64) \u2014 arm64 hardware verification is a discovery flagged to lane I owning multi-arch release CI."
+        "method": "independently downloaded and hashed",
+        "verifiedAtMs": 1788221629202,
+        "notes": "Repin 2026-08-31: BtbN garbage-collected autobuild-2026-08-10-13-17 on 2026-08-30 (caught by vendor-liveness; second occurrence \u2014 see the mirror block). This archive was downloaded in full and sha256'd locally on the repin host; hash matches BtbN's own checksums.sha256 for autobuild-2026-08-31-13-27 byte-for-byte. Mirror asset uploaded under the derived name in the same pass (append-only). (Upgraded from publisher-checksums-file: unlike the 2026-07-24 pin, this repin downloaded the arm64 archive itself. arm64 runtime verification still belongs to multi-arch release CI.)"
       }
     },
     "windows-x64": {
       "source": "BtbN/FFmpeg-Builds",
       "sourceKind": "github-release",
-      "sourceUrl": "https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-08-10-13-17",
+      "sourceUrl": "https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-08-31-13-27",
       "ffmpegVersion": "8.1.2",
-      "buildTag": "autobuild-2026-08-10-13-17",
-      "buildId": "n8.1.2-34-g9b6c8969e0",
+      "buildTag": "autobuild-2026-08-31-13-27",
+      "buildId": "n8.1.2-50-g1a748fe2cd",
       "license": "GPL-3.0-or-later",
       "licenseNote": "Same BtbN build matrix (see linux-x64) \u2014 GPLv3, '-gpl' non-shared variant, .exe binaries live at <extracted-root>/bin/ffmpeg.exe and ffprobe.exe (BtbN's win64 layout mirrors its linux layout 1:1; not independently confirmed by this lane's extraction \u2014 see verification.notes).",
       "components": {
         "ffmpeg": {
-          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-10-13-17/ffmpeg-n8.1.2-34-g9b6c8969e0-win64-gpl-8.1.zip",
+          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-31-13-27/ffmpeg-n8.1.2-50-g1a748fe2cd-win64-gpl-8.1.zip",
           "format": "zip",
-          "sha256": "f3306635faa0cb7ac575c2b3781705c1f102249fb7baea24bedeb89d8b21fd0b",
-          "sizeBytes": 167990084,
+          "sha256": "273abb45f3f9f76c303e35ff39f5bb6c23c163ae65f6244a32b7d4a7f6cf0616",
+          "sizeBytes": 168259078,
           "binaryEntryName": "ffmpeg.exe"
         },
         "ffprobe": {
-          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-10-13-17/ffmpeg-n8.1.2-34-g9b6c8969e0-win64-gpl-8.1.zip",
+          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-31-13-27/ffmpeg-n8.1.2-50-g1a748fe2cd-win64-gpl-8.1.zip",
           "format": "zip",
-          "sha256": "f3306635faa0cb7ac575c2b3781705c1f102249fb7baea24bedeb89d8b21fd0b",
-          "sizeBytes": 167990084,
+          "sha256": "273abb45f3f9f76c303e35ff39f5bb6c23c163ae65f6244a32b7d4a7f6cf0616",
+          "sizeBytes": 168259078,
           "binaryEntryName": "ffprobe.exe"
         }
       },
       "verification": {
-        "method": "publisher-checksums-file",
-        "verifiedAtMs": 1784903400000,
-        "notes": "sha256 taken verbatim from BtbN's own checksums.sha256 for this release tag (same file this lane downloaded and cross-checked its linux-x64 entry against, byte-for-byte match there). The 168 MB win64 archive itself was NOT downloaded by this lane (Linux-lane host has no Windows binary to run) \u2014 DISCOVERY for lane I3: fetch-ffmpeg.mjs's recursive binary-locator does not assume the exact internal folder name (it searches for the literal basename ffmpeg.exe/ffprobe.exe under the extraction root), so this pin does not depend on BtbN's folder-naming convention holding \u2014 but lane I3 should do one real end-to-end fetch+extract+run on Windows before shipping, since this entry's bytes are unverified by direct download here."
+        "method": "independently downloaded and hashed",
+        "verifiedAtMs": 1788221629202,
+        "notes": "Repin 2026-08-31: BtbN garbage-collected autobuild-2026-08-10-13-17 on 2026-08-30 (caught by vendor-liveness; second occurrence \u2014 see the mirror block). This archive was downloaded in full and sha256'd locally on the repin host; hash matches BtbN's own checksums.sha256 for autobuild-2026-08-31-13-27 byte-for-byte. Mirror asset uploaded under the derived name in the same pass (append-only). (Upgraded from publisher-checksums-file: this repin downloaded the win64 archive itself. End-to-end Windows fetch+extract+build is exercised by .github/workflows/windows-installer-diag.yml, which triggers on every change to installers/** \u2014 including this manifest.)"
       }
     },
     "macos-x64": {
