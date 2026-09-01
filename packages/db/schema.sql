@@ -694,7 +694,7 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 --   * All timestamps are BIGINT epoch milliseconds, columns suffixed `_ms`.
 --   * Postgres enums for closed enumerations.
 --   * Every foreign key states ON DELETE explicitly.
---   * JSONB stays confined to the plan §6.2 whitelist (0001's comment); none
+--   * JSONB stays confined to the plan §6.3 whitelist (0001's comment); none
 --     of the tables/columns added here introduce a new JSONB use — see each
 --     table's own comment for why (provider_cache.body is deliberately TEXT).
 
@@ -780,7 +780,7 @@ CREATE TABLE provider_cache (
 COMMENT ON TABLE provider_cache IS
   'Raw serialized-JSON response cache for metadata providers (tmdb/tvdb/'
   'musicbrainz), keyed by a hash of the request. `body` is deliberately '
-  'TEXT, not JSONB: the JSONB whitelist (docs/PLAN.md §6.2 / CLAUDE.md '
+  'TEXT, not JSONB: the JSONB whitelist (docs/PLAN.md §6.3 / CLAUDE.md '
   'invariant 3) is closed, and this cache is opaque bytes that are never '
   'queried into — only fetched whole and re-parsed by the caller.';
 
