@@ -51,6 +51,29 @@ final class FolderGrantApplierTests: XCTestCase {
         XCTAssertFalse(listing.contains(" 1: "), listing)
     }
 
+    func testRecursiveReadGrantReachesExistingSubfoldersAndFiles() throws {
+        // The rc.10 field report, pinned: a non-recursive grant left the
+        // folder\u{2019}s existing contents untouched. A recursive op (the read
+        // grant\u{2019}s form) must reach a nested file that predates it.
+        let season = tempDir.appendingPathComponent("Season1", isDirectory: true)
+        try FileManager.default.createDirectory(at: season, withIntermediateDirectories: true)
+        let episode = season.appendingPathComponent("ep1.mkv")
+        try Data("v".utf8).write(to: episode)
+        let ace = "user:\(NSUserName()) allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit"
+
+        // An ACE line (" 0: ") is the signal, NOT the username — `ls -l`
+        // prints the owner name in the listing regardless of any ACL.
+        // Non-recursive first: the nested file stays untouched.
+        XCTAssertEqual(FolderGrantApplier.apply(plan([FolderGrantOperation(path: tempDir.path, ace: ace, recursive: false)])), .success)
+        XCTAssertFalse(try aclEntries(of: episode.path).contains(" 0: "))
+
+        // Recursive: the same nested file now carries the entry.
+        XCTAssertEqual(FolderGrantApplier.apply(plan([FolderGrantOperation(path: tempDir.path, ace: ace, recursive: true)])), .success)
+        XCTAssertTrue(try aclEntries(of: episode.path).contains(" 0: "))
+        XCTAssertTrue(try aclEntries(of: episode.path).contains("readextattr"))
+        XCTAssertTrue(try aclEntries(of: season.path).contains(" 0: "))
+    }
+
     func testStopsAtTheFirstFailureAndReportsChmodsOwnMessage() {
         let missing = tempDir.appendingPathComponent("does-not-exist").path
         let plan = plan([

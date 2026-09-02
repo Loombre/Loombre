@@ -502,12 +502,17 @@ click **Check again**.
    ```
 
 2. **Click your media folder** (now listed, still **No access**). The picker
-   offers the read grant on just that folder, inherited by everything added
-   to it later (the two inherit flags):
+   offers the read grant on just that folder — reaching everything already
+   inside it (`-R`) and everything added later (the two inherit flags):
 
    ```sh
-   chmod +a "user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit" ~/Media
+   chmod -R +a "user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit" ~/Media
    ```
+
+   The `-R` matters: without it only the folder itself is granted and the
+   files already inside it stay unreadable. macOS applies the entry in the
+   right form for each item (directories get the list/traverse form, files
+   the read form) — no need to tailor it yourself.
 
 The menu bar app applies these same entries and nothing else: it refuses a
 read grant on your whole home folder, refuses the `Desktop`/`Documents`/
@@ -526,7 +531,7 @@ undo at any time:
 ```sh
 ls -le ~ ~/Media                              # view the ACL entries
 chmod -a "user:_loombre allow list,search" ~  # revoke step 1
-chmod -a "user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit" ~/Media   # revoke step 2
+chmod -R -a "user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit" ~/Media   # revoke step 2
 ```
 
 **A note on Full Disk Access**: it is *not* the fix for the above — Full Disk

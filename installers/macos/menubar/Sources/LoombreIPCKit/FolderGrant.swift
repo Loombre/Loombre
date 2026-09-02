@@ -37,20 +37,33 @@ public enum FolderGrantScope: String, Equatable, Sendable {
 public struct FolderGrantOperation: Equatable, Sendable {
     public let path: String
     public let ace: String
+    /// `chmod -R`: applies the entry to files and subfolders that already
+    /// exist, not only the named folder. True for the media-folder read
+    /// grant (whose inherit flags otherwise cover only what is added
+    /// later); false for the single-directory traverse and names-only
+    /// grants, which must never recurse into a home folder.
+    public let recursive: Bool
 
-    public init(path: String, ace: String) {
+    public init(path: String, ace: String, recursive: Bool = false) {
         self.path = path
         self.ace = ace
+        self.recursive = recursive
     }
 
-    public var chmodArguments: [String] { ["+a", ace, path] }
+    private var flag: [String] { recursive ? ["-R"] : [] }
+
+    public var chmodArguments: [String] { flag + ["+a", ace, path] }
 
     /// The documented equivalent (docs/install/macos.md), for the failure
     /// dialog's "run this by hand" line.
-    public var shellCommand: String { "chmod +a \"\(ace)\" \(FolderGrant.shellQuote(path))" }
+    public var shellCommand: String {
+        "chmod \(recursive ? "-R " : "")+a \"\(ace)\" \(FolderGrant.shellQuote(path))"
+    }
 
     /// The matching revoke, so the consent dialog can say how to undo.
-    public var undoShellCommand: String { "chmod -a \"\(ace)\" \(FolderGrant.shellQuote(path))" }
+    public var undoShellCommand: String {
+        "chmod \(recursive ? "-R " : "")-a \"\(ace)\" \(FolderGrant.shellQuote(path))"
+    }
 }
 
 public struct FolderGrantPlan: Equatable, Sendable {
@@ -174,10 +187,10 @@ public enum FolderGrant {
                 }
                 operations.append(FolderGrantOperation(path: home, ace: traverseACE))
             }
-            let readOperation = FolderGrantOperation(path: path, ace: readACE)
+            let readOperation = FolderGrantOperation(path: path, ace: readACE, recursive: true)
             operations.append(readOperation)
 
-            var detail = "Loombre\u{2019}s service account (\(serviceAccount)) will be able to read \(path) and everything added to it later."
+            var detail = "Loombre\u{2019}s service account (\(serviceAccount)) will be able to read \(path), everything already in it, and everything added to it later."
             if operations.count == 2 {
                 detail += "\n\nIt will also be allowed to pass through \(home) to reach it \u{2014} without seeing anything else there."
             }

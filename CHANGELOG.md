@@ -21,6 +21,16 @@ are the version axis.
 
 ## [Unreleased]
 
+### Since v0.9.0-rc.10
+
+- macOS folder grant: apply the media-folder read entry with `chmod -R +a`,
+  not `chmod +a`. The inherit flags only reach files and subfolders added
+  after the grant; existing contents were left unreadable (the folder was
+  granted but the media inside it was not). `-R` reaches what already
+  exists. The menu bar app's read operation, the picker's fallback command,
+  and the install guide all carry the fix; the traverse-only and names-only
+  grants stay single-directory. Linux (`setfacl -R`) was already correct.
+
 ### v0.9.0-rc.10 draft (2026-09-01)
 
 - Tenth release candidate — rc.9's cross-platform media-permissions wave

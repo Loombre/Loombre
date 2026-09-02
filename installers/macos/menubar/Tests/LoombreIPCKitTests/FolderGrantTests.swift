@@ -38,8 +38,9 @@ final class FolderGrantTests: XCTestCase {
     func testNamesOnlyOnTheConsoleHomeIsASingleListSearchACE() {
         guard let plan = success(plan("loombre://grant?v=1&scope=names-only&path=%2FUsers%2Fozzy")) else { return }
         XCTAssertEqual(plan.scope, .namesOnly)
-        XCTAssertEqual(plan.operations, [FolderGrantOperation(path: "/Users/ozzy", ace: "user:_loombre allow list,search")])
+        XCTAssertEqual(plan.operations, [FolderGrantOperation(path: "/Users/ozzy", ace: "user:_loombre allow list,search", recursive: false)])
         XCTAssertEqual(plan.operations[0].chmodArguments, ["+a", "user:_loombre allow list,search", "/Users/ozzy"])
+        XCTAssertFalse(plan.operations[0].recursive)
         XCTAssertTrue(plan.consentDetail.contains("names of the folders directly inside /Users/ozzy"))
         XCTAssertTrue(plan.consentDetail.contains("nothing inside them"))
         XCTAssertTrue(plan.consentDetail.contains("chmod -a \"user:_loombre allow list,search\" /Users/ozzy"))
@@ -59,11 +60,16 @@ final class FolderGrantTests: XCTestCase {
     func testReadInsideTheHomeWithTraversalIsTwoOperationsTraversalFirst() {
         guard let plan = success(plan("loombre://grant?v=1&scope=read&path=%2FUsers%2Fozzy%2FMovies&traverse=%2FUsers%2Fozzy")) else { return }
         XCTAssertEqual(plan.operations, [
-            FolderGrantOperation(path: "/Users/ozzy", ace: "user:_loombre allow search"),
-            FolderGrantOperation(path: "/Users/ozzy/Movies", ace: "user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit"),
+            FolderGrantOperation(path: "/Users/ozzy", ace: "user:_loombre allow search", recursive: false),
+            FolderGrantOperation(path: "/Users/ozzy/Movies", ace: "user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit", recursive: true),
         ])
+        // The traverse grant on the home is a single directory (never -R);
+        // the read grant is -R so existing files inside are reached too.
+        XCTAssertEqual(plan.operations[0].chmodArguments, ["+a", "user:_loombre allow search", "/Users/ozzy"])
+        XCTAssertEqual(plan.operations[1].chmodArguments, ["-R", "+a", "user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit", "/Users/ozzy/Movies"])
         XCTAssertEqual(plan.consentTitle, "Let Loombre\u{2019}s service read \u{201C}Movies\u{201D}?")
         XCTAssertTrue(plan.consentDetail.contains("pass through /Users/ozzy"))
+        XCTAssertTrue(plan.consentDetail.contains("everything already in it"))
         XCTAssertTrue(plan.consentDetail.contains("Nothing else in your home folder becomes visible."))
     }
 
@@ -71,6 +77,7 @@ final class FolderGrantTests: XCTestCase {
         guard let plan = success(plan("loombre://grant?v=1&scope=read&path=%2FUsers%2Fozzy%2FMovies")) else { return }
         XCTAssertEqual(plan.operations.count, 1)
         XCTAssertEqual(plan.operations[0].path, "/Users/ozzy/Movies")
+        XCTAssertTrue(plan.operations[0].recursive)
         XCTAssertFalse(plan.consentDetail.contains("pass through"))
     }
 
@@ -83,10 +90,11 @@ final class FolderGrantTests: XCTestCase {
     func testPathsRoundTripPercentEncodingSpacesAndAmpersands() {
         guard let plan = success(plan("loombre://grant?v=1&scope=read&path=%2FUsers%2Fozzy%2FMy%20Media%20%26%20More")) else { return }
         XCTAssertEqual(plan.operations[0].path, "/Users/ozzy/My Media & More")
-        XCTAssertEqual(plan.operations[0].chmodArguments[2], "/Users/ozzy/My Media & More")
+        XCTAssertEqual(plan.operations[0].chmodArguments.last, "/Users/ozzy/My Media & More")
+        XCTAssertEqual(plan.operations[0].chmodArguments.first, "-R")
         XCTAssertEqual(
             plan.operations[0].shellCommand,
-            "chmod +a \"user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit\" '/Users/ozzy/My Media & More'"
+            "chmod -R +a \"user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit\" '/Users/ozzy/My Media & More'"
         )
     }
 

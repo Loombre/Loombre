@@ -409,10 +409,11 @@ function macOsNativeGrantUrl(scope: "names-only" | "read", targetPath: string, t
   return `loombre://grant?${query}${traverse === null ? "" : `&traverse=${encodeURIComponent(traverse)}`}`;
 }
 
-/** The read grant for a media folder: read + list now, inherited by
- *  everything added to it later (the two inherit flags). Identical to the
- *  ACE docs/install/macos.md's "Media in your home folder" section has the
- *  operator run by hand. */
+/** The read grant for a media folder. Applied with `chmod -R +a` (below):
+ *  the ACE itself, plus the two inherit flags, is what docs/install/
+ *  macos.md's "Media in your home folder" section runs by hand — `-R`
+ *  covers files and subfolders that already exist, the inherit flags cover
+ *  what is added later. */
 const MEDIA_READ_ACE = "read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit";
 
 /**
@@ -519,15 +520,18 @@ function macOsRemediation(normalized: string, canTraverse: (p: string) => boolea
   // Read + list on just the requested folder, inherited by everything added
   // to it later (docs/install/macos.md's "Media in your home folder"
   // section).
-  commands.push(`chmod +a "user:_loombre allow ${MEDIA_READ_ACE}" ${shellQuote(normalized)}`);
+  // -R so the entry reaches files and subfolders that ALREADY exist —
+  // the two inherit flags only cover what is added later (rc.10 field
+  // report: the folder was granted, its existing contents were not).
+  commands.push(`chmod -R +a "user:_loombre allow ${MEDIA_READ_ACE}" ${shellQuote(normalized)}`);
 
   const note =
     homeAncestor === null
-      ? "Read access on this folder and everything added to it later."
+      ? "Read access on this folder, everything already in it, and everything added to it later."
       : needsTraversal
-        ? `Read access on this folder and everything added to it later, plus permission to walk through ${homeAncestor} ` +
+        ? `Read access on this folder, everything already in it, and everything added to it later, plus permission to walk through ${homeAncestor} ` +
           "without revealing what it contains — nothing else in your home folder."
-        : "Read access on this folder and everything added to it later — nothing else in your home folder.";
+        : "Read access on this folder, everything already in it, and everything added to it later — nothing else in your home folder.";
 
   return {
     summary: "Loombre's service account (_loombre) can't read this folder.",

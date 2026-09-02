@@ -78,7 +78,7 @@ const REMEDIATION = {
   summary: "Loombre's service account (_loombre) can't read this folder.",
   commands: [
     'chmod +a "user:_loombre allow search" /Users/ozzy',
-    'chmod +a "user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit" /Users/ozzy/Media',
+    'chmod -R +a "user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit" /Users/ozzy/Media',
   ],
   verify: "sudo -u _loombre ls /Users/ozzy/Media",
 };
@@ -98,7 +98,7 @@ const HOME_STEP_1 = {
 const HOME_STEP_2 = {
   summary: "Loombre's service account (_loombre) can't read this folder.",
   commands: [
-    'chmod +a "user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit" /Users/ozzy/Movies',
+    'chmod -R +a "user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit" /Users/ozzy/Movies',
   ],
   verify: "sudo -u _loombre ls /Users/ozzy/Movies",
   note: "Read access on this folder and everything added to it later — nothing else in your home folder.",

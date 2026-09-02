@@ -357,9 +357,13 @@ describe("admin-directories", () => {
       expect(remediation?.commands).toHaveLength(2);
       expect(remediation?.commands[0]).toBe('chmod +a "user:_loombre allow search" /Users/ozzy');
       expect(remediation?.commands[1]).toBe(
-        'chmod +a "user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit" /Users/ozzy/Media',
+        'chmod -R +a "user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit" /Users/ozzy/Media',
       );
       expect(remediation?.verify).toBe("sudo -u _loombre ls /Users/ozzy/Media");
+      // The read grant is recursive (-R reaches existing files); the
+      // traverse grant on the home is a single directory, never -R.
+      expect(remediation?.commands[0]?.startsWith("chmod +a ")).toBe(true);
+      expect(remediation?.commands[1]?.startsWith("chmod -R +a ")).toBe(true);
       // The scope note says what the grant exposes — and that the traversal
       // half reveals nothing inside the home folder.
       expect(remediation?.note).toContain("/Users/ozzy");
@@ -383,7 +387,7 @@ describe("admin-directories", () => {
         const remediation = permissionRemediation("/Users/ozzy/Media", "darwin", "_loombre", TRAVERSABLE);
         expect(remediation?.commands).toHaveLength(1);
         expect(remediation?.commands[0]).toBe(
-          'chmod +a "user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit" /Users/ozzy/Media',
+          'chmod -R +a "user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit" /Users/ozzy/Media',
         );
         expect(remediation?.note).not.toContain("/Users/ozzy ");
         expect(remediation?.note).toContain("nothing else in your home folder");
@@ -408,7 +412,7 @@ describe("admin-directories", () => {
       const remediation = permissionRemediation("/Users/ozzy/My Media", "darwin", "_loombre", NOT_TRAVERSABLE);
       expect(remediation?.commands[0]).toBe('chmod +a "user:_loombre allow search" /Users/ozzy');
       expect(remediation?.commands[1]).toBe(
-        'chmod +a "user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit" \'/Users/ozzy/My Media\'',
+        'chmod -R +a "user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit" \'/Users/ozzy/My Media\'',
       );
       expect(remediation?.verify).toBe("sudo -u _loombre ls '/Users/ozzy/My Media'");
     });
@@ -416,7 +420,7 @@ describe("admin-directories", () => {
     it("shell-quotes a requested path containing a single quote", () => {
       const remediation = permissionRemediation("/Users/ozzy/O'Brien", "darwin", "_loombre", NOT_TRAVERSABLE);
       expect(remediation?.commands[1]).toBe(
-        "chmod +a \"user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit\" '/Users/ozzy/O'\\''Brien'",
+        "chmod -R +a \"user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit\" '/Users/ozzy/O'\\''Brien'",
       );
     });
 
@@ -424,7 +428,7 @@ describe("admin-directories", () => {
       const remediation = permissionRemediation("/Volumes/media", "darwin", "_loombre", NOT_TRAVERSABLE);
       expect(remediation?.commands).toHaveLength(1);
       expect(remediation?.commands[0]).toBe(
-        'chmod +a "user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit" /Volumes/media',
+        'chmod -R +a "user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit" /Volumes/media',
       );
       expect(remediation?.note).toContain("everything added to it later");
       expect(remediation?.note).not.toContain("home folder");
@@ -442,7 +446,7 @@ describe("admin-directories", () => {
       const remediation = permissionRemediation("/Users/Shared/x", "darwin", "_loombre", NOT_TRAVERSABLE);
       expect(remediation?.commands).toHaveLength(1);
       expect(remediation?.commands[0]).toBe(
-        'chmod +a "user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit" /Users/Shared/x',
+        'chmod -R +a "user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit" /Users/Shared/x',
       );
     });
 
@@ -531,7 +535,7 @@ describe("admin-directories", () => {
       const remediation = permissionRemediation("/Users/ozzy/../Shared/Media", "darwin", "_loombre", NOT_TRAVERSABLE);
       expect(remediation?.commands).toHaveLength(1);
       expect(remediation?.commands[0]).toBe(
-        'chmod +a "user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit" /Users/Shared/Media',
+        'chmod -R +a "user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit" /Users/Shared/Media',
       );
       expect(remediation?.commands.join(" ")).not.toContain("/Users/ozzy");
       expect(remediation?.verify).toBe("sudo -u _loombre ls /Users/Shared/Media");
@@ -548,7 +552,7 @@ describe("admin-directories", () => {
         expect(remediation?.commands).toHaveLength(2);
         expect(remediation?.commands[0]).toBe('chmod +a "user:_loombre allow search" /users/ozzy');
         expect(remediation?.commands[1]).toBe(
-          'chmod +a "user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit" /users/ozzy/Media',
+          'chmod -R +a "user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit" /users/ozzy/Media',
         );
       });
 
@@ -556,7 +560,7 @@ describe("admin-directories", () => {
         const remediation = permissionRemediation("/Users/SHARED/x", "darwin", "_loombre", NOT_TRAVERSABLE);
         expect(remediation?.commands).toHaveLength(1);
         expect(remediation?.commands[0]).toBe(
-          'chmod +a "user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit" /Users/SHARED/x',
+          'chmod -R +a "user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit" /Users/SHARED/x',
         );
       });
     });
