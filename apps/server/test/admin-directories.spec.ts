@@ -364,6 +364,13 @@ describe("admin-directories", () => {
       // half reveals nothing inside the home folder.
       expect(remediation?.note).toContain("/Users/ozzy");
       expect(remediation?.note).toContain("nothing else in your home folder");
+      // The native-helper handoff (menubar app's loombre://grant scheme):
+      // the same recipe, as a URL the app re-validates and applies with a
+      // consent dialog. `traverse` rides along only when the home cannot be
+      // walked yet — exactly when command 1 is emitted.
+      expect(remediation?.nativeGrantUrl).toBe(
+        "loombre://grant?v=1&scope=read&path=%2FUsers%2Fozzy%2FMedia&traverse=%2FUsers%2Fozzy",
+      );
     });
 
     // ── The two-step picker flow: once step 1 (the names-only grant on the
@@ -380,6 +387,7 @@ describe("admin-directories", () => {
         );
         expect(remediation?.note).not.toContain("/Users/ozzy ");
         expect(remediation?.note).toContain("nothing else in your home folder");
+        expect(remediation?.nativeGrantUrl).toBe("loombre://grant?v=1&scope=read&path=%2FUsers%2Fozzy%2FMedia");
       });
 
       it("probes exactly the home folder, and never for a path outside a personal home", () => {
@@ -420,6 +428,14 @@ describe("admin-directories", () => {
       );
       expect(remediation?.note).toContain("everything added to it later");
       expect(remediation?.note).not.toContain("home folder");
+      expect(remediation?.nativeGrantUrl).toBe("loombre://grant?v=1&scope=read&path=%2FVolumes%2Fmedia");
+    });
+
+    it("percent-encodes the path in the native grant URL, so spaces and '&' cannot split the query", () => {
+      const remediation = permissionRemediation("/Users/ozzy/My Media & More", "darwin", "_loombre", TRAVERSABLE);
+      expect(remediation?.nativeGrantUrl).toBe(
+        "loombre://grant?v=1&scope=read&path=%2FUsers%2Fozzy%2FMy%20Media%20%26%20More",
+      );
     });
 
     it("skips the traversal command under /Users/Shared — it is world-readable, no traversal grant needed", () => {
@@ -457,6 +473,7 @@ describe("admin-directories", () => {
         expect(remediation?.summary).toContain("_loombre");
         expect(remediation?.commands).toEqual(['chmod +a "user:_loombre allow list,search" /Users/ozzy']);
         expect(remediation?.verify).toBe("sudo -u _loombre ls /Users/ozzy");
+        expect(remediation?.nativeGrantUrl).toBe("loombre://grant?v=1&scope=names-only&path=%2FUsers%2Fozzy");
       });
 
       it("never grants read, execute, or the inherit flags on the home folder", () => {
@@ -570,6 +587,8 @@ describe("admin-directories", () => {
         expect(r?.verify).toBe("sudo -u loombre ls /media/ozzy/USB/Movies");
         expect(r?.note).toContain("/media/ozzy");
         expect(r?.note).toContain("Operation not supported");
+        // No native helper on Linux — the commands are the whole recipe.
+        expect(r?.nativeGrantUrl).toBeUndefined();
       });
 
       it("stops probing at the first blocked ancestor — deeper ones are unreachable regardless", () => {

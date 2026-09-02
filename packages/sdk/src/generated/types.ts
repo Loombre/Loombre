@@ -3070,6 +3070,8 @@ export interface components {
             verify: string;
             /** @description Optional one- or two-sentence scope note: exactly what the commands expose (and what they leave private), and — when the recipe is one step of a longer flow, such as the names-only listing grant on a macOS home folder that precedes the media folder's own read grant — what the next step is. Clients render it as a muted caption next to the commands; absent means there is nothing to add beyond `summary`. */
             note?: string;
+            /** @description Optional URL that hands the same grant to a native helper on the machine running Loombre — today the macOS menu bar app's `loombre://grant` scheme, which shows a native consent dialog and applies the ACL as the signed-in user, no Terminal. Present only on platforms with such a helper. Clients render it as a button ("Allow in Loombre"), keep `commands` as the fallback (the browser is not necessarily on that machine), and re-run the browse afterwards. */
+            nativeGrantUrl?: string;
         };
         CrashFileList: {
             /** @description Newest first; bounded by the crash writer's retention cap. */

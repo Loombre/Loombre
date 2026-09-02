@@ -5469,6 +5469,17 @@ components:
             folder's own read grant — what the next step is. Clients render
             it as a muted caption next to the commands; absent means there
             is nothing to add beyond `summary`.
+        nativeGrantUrl:
+          type: string
+          description: >-
+            Optional URL that hands the same grant to a native helper on the
+            machine running Loombre — today the macOS menu bar app's
+            `loombre://grant` scheme, which shows a native consent dialog
+            and applies the ACL as the signed-in user, no Terminal. Present
+            only on platforms with such a helper. Clients render it as a
+            button ("Allow in Loombre"), keep `commands` as the fallback
+            (the browser is not necessarily on that machine), and re-run the
+            browse afterwards.
 
     CrashFileList:
       type: object

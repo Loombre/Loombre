@@ -21,6 +21,19 @@ are the version axis.
 
 ## [Unreleased]
 
+### Since v0.9.0-rc.9
+
+- macOS: the folder picker's permission grant no longer needs Terminal.
+  Each step of the home-folder flow gets an **Allow in Loombre…** button
+  that hands the grant to the menu bar app via a new `loombre://grant`
+  URL scheme; the app re-validates the request under the server's own
+  policy (never a whole-home read, never Desktop/Documents/Downloads,
+  traversal only on your own home), shows a native consent dialog naming
+  the exact folder and scope, and applies the same `chmod +a` entry as the
+  signed-in user — no password, since you own the folder. The picker
+  re-checks automatically. Commands remain for browsers on other machines.
+  Contract: additive `FilesystemPermissionRemediation.nativeGrantUrl`.
+
 ### v0.9.0-rc.9 draft (2026-09-01)
 
 - Ninth release candidate — the media-permissions fix wave from the rc.8

@@ -326,9 +326,11 @@ under `~` isn't readable by Loombre.
 700/750), so the `_loombre` service account cannot traverse them. That is
 the system working as designed, not a broken install.
 
-**Fix:** The picker itself offers the fix in two steps, each a pre-filled
-command to run in Terminal followed by **Check again**: a names-only listing
-grant on your home folder, then a read grant on just the media folder. See
+**Fix:** The picker itself offers the fix in two steps — a names-only
+listing grant on your home folder, then a read grant on just the media
+folder. On the Mac itself, click **Allow in Loombre…** and confirm the menu
+bar app's dialog (no Terminal); from elsewhere, copy the pre-filled command,
+run it in Terminal, then **Check again**. See
 the "Media in your home folder" section of
 [docs/install/macos.md](/install/macos) — it covers the easy placements
 (`/Volumes`, `/Users/Shared`), those two ACL grants (and how to revoke

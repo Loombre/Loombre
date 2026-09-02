@@ -481,9 +481,15 @@ working as designed, not a broken install.
 
 **If your media must stay in your home folder**, grant `_loombre` access to
 just that subtree with targeted ACLs — nothing else in your home folder
-becomes readable. The folder picker walks you through this in two steps,
-each with the exact command pre-filled for the folder you clicked: copy it,
-run it in Terminal, then click **Check again**.
+becomes readable. The folder picker walks you through this in two steps.
+When your browser is on the Mac running Loombre, each step has an **Allow
+in Loombre…** button: it opens a permission dialog in the Loombre menu bar
+app showing exactly what will be granted, and one click on **Allow** applies
+it — no Terminal, no password (you own the folder, so macOS lets the app
+add the entry on your behalf). The picker then re-checks on its own. From
+another computer, or if you prefer, each step also shows the exact command
+pre-filled for the folder you clicked: copy it, run it in Terminal, then
+click **Check again**.
 
 1. **Click your home folder** (marked **No access**). The picker offers a
    names-only grant so that it can list what's in your home. It reveals only
@@ -502,6 +508,12 @@ run it in Terminal, then click **Check again**.
    ```sh
    chmod +a "user:_loombre allow read,execute,readattr,readextattr,list,search,file_inherit,directory_inherit" ~/Media
    ```
+
+The menu bar app applies these same entries and nothing else: it refuses a
+read grant on your whole home folder, refuses the `Desktop`/`Documents`/
+`Downloads` folders (see Full Disk Access below), and only ever acts after
+you click **Allow** in its dialog — a web page can open the request, but
+cannot grant anything.
 
 Doing it by hand instead? Adjust `~/Media` to your actual folder. If you
 don't need the picker to list your home, step 1 can be traversal-only —

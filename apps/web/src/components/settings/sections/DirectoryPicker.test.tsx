@@ -55,7 +55,13 @@ const USERS = {
  *  reproduces the Linux/dev 403 (no scripted grant recipe), matching every
  *  pre-existing test in this file; callers that want the macOS grant-flow
  *  case pass it explicitly. */
-function forbiddenError(remediation?: { summary: string; commands: string[]; verify: string; note?: string }): Error {
+function forbiddenError(remediation?: {
+  summary: string;
+  commands: string[];
+  verify: string;
+  note?: string;
+  nativeGrantUrl?: string;
+}): Error {
   return Object.assign(new Error("Forbidden"), {
     problem: {
       type: "urn:loombre:problem:forbidden",
@@ -85,6 +91,7 @@ const HOME_STEP_1 = {
   commands: ['chmod +a "user:_loombre allow list,search" /Users/ozzy'],
   verify: "sudo -u _loombre ls /Users/ozzy",
   note: "This reveals only the names of the folders directly inside your home — nothing inside them.",
+  nativeGrantUrl: "loombre://grant?v=1&scope=names-only&path=%2FUsers%2Fozzy",
 };
 
 // Step 2, once the home is listable: the media folder's own read grant.
@@ -315,6 +322,100 @@ describe("DirectoryPicker", () => {
       // Step 1's command is not repeated — the home is already traversable.
       expect(afterStep2).not.toContain("allow search");
       expect(afterStep2).not.toContain("allow list,search");
+    });
+
+    // ── The no-Terminal path: nativeGrantUrl hands the grant to the macOS
+    //    menubar app. The picker must (1) open it on click, (2) keep the
+    //    panel up while it quietly re-checks, (3) swap to the listing the
+    //    moment the grant lands, and (4) show nothing of this on Linux,
+    //    where the commands are the whole recipe. ──
+    describe("native grant handoff (nativeGrantUrl)", () => {
+      function allowButton(): HTMLButtonElement | undefined {
+        return Array.from(view!.container.querySelectorAll("button")).find((b) =>
+          (b.textContent ?? "").startsWith("Allow in Loombre"),
+        ) as HTMLButtonElement | undefined;
+      }
+
+      it("renders no native button when the server sends no nativeGrantUrl", async () => {
+        withDeniedResponse(forbiddenError(HOME_STEP_2));
+        await render();
+        await click(entryButton("/Users"));
+        await click(entryButton("ozzy"));
+        expect(allowButton()).toBeUndefined();
+        expect(view!.container.textContent ?? "").toContain("Run this in Terminal");
+      });
+
+      it("drops a nativeGrantUrl that is not a loombre:// URL, keeping the commands", async () => {
+        withDeniedResponse(forbiddenError({ ...HOME_STEP_1, nativeGrantUrl: "javascript:alert(1)" }));
+        await render();
+        await click(entryButton("/Users"));
+        await click(entryButton("ozzy"));
+        expect(allowButton()).toBeUndefined();
+        expect(view!.container.textContent ?? "").toContain(HOME_STEP_1.commands[0]);
+      });
+
+      it("opens the URL on click, re-checks quietly on a timer with the panel still up, then shows the listing", async () => {
+        vi.useFakeTimers();
+        try {
+          let homeGranted = false;
+          apiGetMock.mockImplementation((path: string, options?: { params?: { query?: { path?: string } } }) => {
+            if (path !== "/admin/filesystem/directories") {
+              return Promise.reject(new Error(`unexpected apiGet ${path}`));
+            }
+            const requested = options?.params?.query?.path;
+            if (requested === undefined) return Promise.resolve(ROOTS);
+            if (requested === "/Users") return Promise.resolve(USERS);
+            if (requested === "/Users/ozzy") {
+              return homeGranted ? Promise.resolve(HOME) : Promise.reject(forbiddenError(HOME_STEP_1));
+            }
+            return Promise.reject(new Error(`unexpected path ${requested}`));
+          });
+          const openExternal = vi.fn();
+          view = renderIntoBody(<DirectoryPicker open onClose={onClose} onSelect={onSelect} openExternal={openExternal} />);
+          await act(async () => {});
+          await click(entryButton("/Users"));
+          await click(entryButton("ozzy"));
+
+          const button = allowButton();
+          expect(button).toBeDefined();
+          expect(view!.container.textContent ?? "").toContain("Or run this in Terminal");
+          await click(button!);
+          expect(openExternal).toHaveBeenCalledWith(HOME_STEP_1.nativeGrantUrl);
+          expect(view!.container.textContent ?? "").toContain("re-checking automatically");
+
+          // First tick: still denied — the panel (and its command) must
+          // stay on screen, not blink to a skeleton.
+          apiGetMock.mockClear();
+          await act(async () => {
+            vi.advanceTimersByTime(1500);
+          });
+          expect(apiGetMock).toHaveBeenCalledWith(
+            "/admin/filesystem/directories",
+            expect.objectContaining({ params: { query: { path: "/Users/ozzy" } } }),
+          );
+          expect(view!.container.textContent ?? "").toContain(HOME_STEP_1.commands[0]);
+
+          // The user clicked Allow in the native dialog: next tick lists.
+          homeGranted = true;
+          await act(async () => {
+            vi.advanceTimersByTime(1500);
+          });
+          const text = view!.container.textContent ?? "";
+          expect(text).not.toContain(HOME_STEP_1.commands[0]);
+          expect(text).not.toContain("re-checking automatically");
+          expect(entryButton("Movies").textContent).toContain("No access");
+          expect(entryButton("Media").textContent).not.toContain("No access");
+
+          // And the timer is gone: no further browse calls.
+          apiGetMock.mockClear();
+          await act(async () => {
+            vi.advanceTimersByTime(6000);
+          });
+          expect(apiGetMock).not.toHaveBeenCalled();
+        } finally {
+          vi.useRealTimers();
+        }
+      });
     });
 
     it("falls back to the plain detail paragraph when remediation is absent (Linux/dev)", async () => {

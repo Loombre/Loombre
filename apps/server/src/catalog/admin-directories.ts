@@ -389,6 +389,24 @@ export interface PermissionRemediation {
   /** What the commands expose, what they leave private, and — for a
    *  multi-step flow — what comes next (the contract's optional `note`). */
   note: string;
+  /** The same grant as a `loombre://grant` URL for the macOS menubar app,
+   *  which runs as the signed-in user and can apply it behind a native
+   *  consent dialog (the contract's optional `nativeGrantUrl`). Absent
+   *  where no native helper exists (Linux). */
+  nativeGrantUrl?: string;
+}
+
+/**
+ * The macOS menubar app's URL scheme: `loombre://grant?v=1&scope=…&path=…
+ * [&traverse=…]`. The app does NOT trust this URL for policy — any web page
+ * can open a custom-scheme URL — it re-validates against the same rules
+ * (never a whole-home read, never a TCC folder, traversal only on the
+ * signed-in user's own home) and shows the exact grant in a consent
+ * dialog before applying anything. The URL is the recipe, not authority.
+ */
+function macOsNativeGrantUrl(scope: "names-only" | "read", targetPath: string, traverse: string | null): string {
+  const query = `v=1&scope=${scope}&path=${encodeURIComponent(targetPath)}`;
+  return `loombre://grant?${query}${traverse === null ? "" : `&traverse=${encodeURIComponent(traverse)}`}`;
 }
 
 /** The read grant for a media folder: read + list now, inherited by
@@ -474,6 +492,7 @@ function macOsRemediation(normalized: string, canTraverse: (p: string) => boolea
       note:
         "This reveals only the names of the folders directly inside your home — nothing inside them. " +
         "Once it can list your home, open your media folder there to get its own read grant as the next step.",
+      nativeGrantUrl: macOsNativeGrantUrl("names-only", normalized, null),
     };
   }
 
@@ -515,6 +534,7 @@ function macOsRemediation(normalized: string, canTraverse: (p: string) => boolea
     commands,
     verify: `sudo -u _loombre ls ${shellQuote(normalized)}`,
     note,
+    nativeGrantUrl: macOsNativeGrantUrl("read", normalized, needsTraversal ? homeAncestor : null),
   };
 }
 

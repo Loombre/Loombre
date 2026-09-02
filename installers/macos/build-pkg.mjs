@@ -456,11 +456,23 @@ function assembleAppBundle(payloadRoot) {
        this true even without this key (a plain SPM executable has no
        Info.plist at all when run via swift run). -->
   <key>LSUIElement</key><true/>
+  <!-- loombre://grant — the folder picker's "Allow in Loombre" handoff
+       (menubar/Sources/LoombreIPCKit/FolderGrant.swift documents the
+       trust model: the URL is a request the app re-validates and asks
+       consent for; it is never authority). -->
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key><string>Loombre folder-access request</string>
+      <key>CFBundleURLSchemes</key><array><string>loombre</string></array>
+      <key>CFBundleTypeRole</key><string>Viewer</string>
+    </dict>
+  </array>
 </dict>
 </plist>
 `;
   writeFileSync(path.join(contentsDir, "Info.plist"), infoPlist, "utf8");
-  log(`assembled /Applications/Loombre.app (Info.plist LSUIElement=true, version ${version})`);
+  log(`assembled /Applications/Loombre.app (Info.plist LSUIElement=true, URL scheme loombre, version ${version})`);
 }
 
 // ---------------------------------------------------------------------

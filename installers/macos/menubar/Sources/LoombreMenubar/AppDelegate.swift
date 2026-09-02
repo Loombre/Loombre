@@ -103,6 +103,106 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActions {
         return false
     }
 
+    // MARK: - loombre://grant (folder-access consent flow)
+
+    /// URL-scheme entry point (build-pkg.mjs's Info.plist registers
+    /// `loombre`). The web folder picker's "Allow in Loombre" button opens
+    /// `loombre://grant?v=1&scope=…&path=…` when the browser is on this
+    /// Mac. The URL is a REQUEST, not authority — FolderGrant re-derives
+    /// the grant under the server's own policy, preflight proves it can be
+    /// made at all, and the user consents to the exact operations before
+    /// FolderGrantApplier runs the documented chmod +a. Anything else the
+    /// scheme is asked to do is ignored.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls where FolderGrant.isGrantURL(url) {
+            handleGrantRequest(url)
+        }
+    }
+
+    @MainActor
+    private func handleGrantRequest(_ url: URL) {
+        // LSUIElement app: without this the dialog opens BEHIND the browser
+        // that just handed us the URL.
+        NSApp.activate(ignoringOtherApps: true)
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+
+        let plan: FolderGrantPlan
+        switch FolderGrant.plan(url: url, consoleHome: home) {
+        case .failure(let refusal):
+            presentRefusal(refusal)
+            return
+        case .success(let planned):
+            plan = planned
+        }
+
+        switch FolderGrantApplier.preflight(plan) {
+        case .ok:
+            break
+        case .missing(let path):
+            presentProblem(title: "That folder doesn\u{2019}t exist", detail: "\(path) was not found on this Mac. Nothing was changed.")
+            return
+        case .notADirectory(let path):
+            presentProblem(title: "That isn\u{2019}t a folder", detail: "\(path) is a file, not a folder. Nothing was changed.")
+            return
+        case .notOwned(let path, _):
+            presentProblem(
+                title: "You don\u{2019}t own that folder",
+                detail: "Only a folder\u{2019}s owner can grant access to it, and \(path) belongs to another account. Run the command from the install guide as that account (or with sudo). Nothing was changed."
+            )
+            return
+        }
+
+        let consent = NSAlert()
+        consent.messageText = plan.consentTitle
+        consent.informativeText = plan.consentDetail
+        consent.alertStyle = .informational
+        consent.addButton(withTitle: "Allow")
+        consent.addButton(withTitle: "Cancel")
+        guard consent.runModal() == .alertFirstButtonReturn else { return }
+
+        switch FolderGrantApplier.apply(plan) {
+        case .success:
+            // No success dialog: the folder picker that sent us here
+            // re-checks on its own and shows the listing.
+            break
+        case .failed(let operation, let message):
+            presentProblem(
+                title: "Could not grant access",
+                detail: "\(message)\n\nYou can run it by hand in Terminal:\n\(operation.shellCommand)"
+            )
+        }
+    }
+
+    @MainActor
+    private func presentRefusal(_ refusal: FolderGrantRefusal) {
+        let explanation = FolderGrant.explain(refusal)
+        let alert = NSAlert()
+        alert.messageText = explanation.title
+        alert.informativeText = explanation.detail
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        if case .tccProtected = refusal {
+            // The one refusal with a next step this app can open directly:
+            // Full Disk Access, the only thing that lifts TCC for a daemon.
+            alert.addButton(withTitle: "Open Privacy & Security")
+            if alert.runModal() == .alertSecondButtonReturn,
+               let settings = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
+                NSWorkspace.shared.open(settings)
+            }
+            return
+        }
+        alert.runModal()
+    }
+
+    @MainActor
+    private func presentProblem(title: String, detail: String) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = detail
+        alert.alertStyle = .warning
+        alert.runModal()
+    }
+
     // MARK: - Polling
 
     @MainActor

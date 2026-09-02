@@ -11,7 +11,7 @@ the same commit.
 | What | Where | Owner (uid:gid) | Mode |
 |------|-------|------------------|------|
 | Node runtime + server/worker dist + web standalone + bundled ffmpeg + embedded-PG | `/opt/loombre/<version>/` (symlinked from `/opt/loombre/current`) | `root:wheel` (read-only payload) | `0755` dirs, `0755` executables |
-| Menubar controller app | `/Applications/Loombre.app` | `root:wheel` | `0755` |
+| Menubar controller app (also the `loombre://grant` URL-scheme handler — the folder picker's no-Terminal media-permissions consent flow; see `menubar/Sources/LoombreIPCKit/FolderGrant.swift`) | `/Applications/Loombre.app` | `root:wheel` | `0755` |
 | App-data ROOT (holds the IPC discovery/token files at its top level — see §4) | `/Library/Application Support/Loombre/` | `_loombre:admin` (completeness audit: group `admin` so the console user's menubar can TRAVERSE to the 0640 group-admin IPC files; root dir only, never `-R`) | `0750` |
 | App-data subtrees created by postinstall (`db/`, `config/`, `ipc/`) | `/Library/Application Support/Loombre/{db,config,ipc}` | `_loombre:_loombre` | `0750` |
 | Secrets (P4.7 file0600 SecretRef fallback dir) | `/Library/Application Support/Loombre/secrets/` | `_loombre:_loombre` | `0700` — never loosened |

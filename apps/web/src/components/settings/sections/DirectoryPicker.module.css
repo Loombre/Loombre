@@ -129,6 +129,15 @@
   color: var(--color-text-muted);
 }
 
+/* "Allow in Loombre…" + its caption: the native-helper handoff, shown above
+   the commands it replaces (the commands remain the fallback). */
+.nativeGrant {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
 .grantCaption {
   margin: 0;
   display: flex;
