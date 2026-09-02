@@ -21,8 +21,10 @@ are the version axis.
 
 ## [Unreleased]
 
-### Since v0.9.0-rc.9
+### v0.9.0-rc.10 draft (2026-09-01)
 
+- Tenth release candidate — rc.9's cross-platform media-permissions wave
+  plus the macOS native grant flow below.
 - macOS: the folder picker's permission grant no longer needs Terminal.
   Each step of the home-folder flow gets an **Allow in Loombre…** button
   that hands the grant to the menu bar app via a new `loombre://grant`
