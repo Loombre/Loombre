@@ -1,6 +1,6 @@
 {
   "name": "loombre",
-  "version": "0.9.0-rc.10",
+  "version": "0.9.0-rc.11",
   "private": true,
   "license": "AGPL-3.0-only",
   "packageManager": "pnpm@11.17.0",

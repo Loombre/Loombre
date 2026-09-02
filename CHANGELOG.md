@@ -21,8 +21,9 @@ are the version axis.
 
 ## [Unreleased]
 
-### Since v0.9.0-rc.10
+### v0.9.0-rc.11 draft (2026-09-02)
 
+- Eleventh release candidate — the macOS recursive-grant fix below.
 - macOS folder grant: apply the media-folder read entry with `chmod -R +a`,
   not `chmod +a`. The inherit flags only reach files and subfolders added
   after the grant; existing contents were left unreadable (the folder was
