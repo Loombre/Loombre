@@ -26,7 +26,7 @@
  *                   continues the numbering (docs/PLAYBACK.md §9) — run1's
  *                   files are s000043.m4s.. even though they live in a
  *                   DIFFERENT directory than run0's s000000..s000042.m4s.
- *   {SEG_DUR}       policy.segmentDurationSec, always 6 (§2.4, fixed v1).
+ *   {SEG_DUR}       policy.segmentDurationSec, always 2 (§2.4, fixed v1; SPF-1).
  *   {START_SEG}     0 for a session's first run; on a seek-restart,
  *                   `producedSegment + 1` (binding constraint 5 — the
  *                   numbering continues from the last segment the OLD run

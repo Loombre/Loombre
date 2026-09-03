@@ -312,7 +312,7 @@ function genRandomPolicy(rng: Rng): ServerPolicy {
     // property (5)'s restricted generator below is not the only place an
     // explicit av1 rung is ever seen.
     ladderRungs: pick(rng, ALL_LADDER_TABLES),
-    segmentDurationSec: 6,
+    segmentDurationSec: 2,
     hevcEncodePreferred: bool(rng, 0.3),
     // The operator opt-in (§2.4), sampled at both settings — the engine's
     // own §7.2 gate is what decides whether it can mean anything.
@@ -402,7 +402,7 @@ function genPermissivePolicy(rng: Rng): ServerPolicy {
     audioTranscodeCodecPriority: ["opus", "aac"],
     maxSimultaneousTranscodes: 1,
     ladderRungs: LADDER_TABLE,
-    segmentDurationSec: 6,
+    segmentDurationSec: 2,
     hevcEncodePreferred: false,
     // Randomized deliberately: property (2) asserts a DIRECT-PLAY outcome,
     // and §7.1's copy-preference guarantee says no ladder rule may ever

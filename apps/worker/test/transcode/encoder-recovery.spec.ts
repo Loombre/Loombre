@@ -204,7 +204,7 @@ const planInput: PlanInput = {
     audioTranscodeCodecPriority: ["opus", "aac"],
     maxSimultaneousTranscodes: 1,
     ladderRungs: [],
-    segmentDurationSec: 6,
+    segmentDurationSec: 2,
     hevcEncodePreferred: true,
     av1EncodePreferred: false,
   },

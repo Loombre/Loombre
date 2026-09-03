@@ -267,19 +267,19 @@ describe("SettingsService.updateSetting — failure paths", () => {
 });
 
 describe("SettingsService.updateSetting — F9 cross-field validation (registry alone can't express a between-key relationship)", () => {
-  // Defaults at boot: transcode.segmentAheadResumeThreshold=5,
-  // transcode.segmentAheadSuspendThreshold=10; sessions.staleCutoffMs=900_000
-  // (15min), sessions.heartbeatSuspendCutoffMs=90_000 (90s).
+  // Defaults at boot: transcode.segmentAheadResumeThreshold=15,
+  // transcode.segmentAheadSuspendThreshold=30 (SPF-1: 2s segments);
+  // sessions.staleCutoffMs=900_000 (15min), sessions.heartbeatSuspendCutoffMs=90_000 (90s).
 
   it("segmentAheadResumeThreshold: rejects raising resume to >= the OTHER key's current (default) suspend value", async () => {
     const service = freshService();
     await service.bootstrap();
     await expect(
-      service.updateSetting({ key: "transcode.segmentAheadResumeThreshold", value: 10, actorUserId: adminId, nowMs: Date.now() }),
+      service.updateSetting({ key: "transcode.segmentAheadResumeThreshold", value: 30, actorUserId: adminId, nowMs: Date.now() }),
     ).rejects.toMatchObject({ status: 422 });
     // Also strictly greater, not just equal.
     await expect(
-      service.updateSetting({ key: "transcode.segmentAheadResumeThreshold", value: 15, actorUserId: adminId, nowMs: Date.now() }),
+      service.updateSetting({ key: "transcode.segmentAheadResumeThreshold", value: 45, actorUserId: adminId, nowMs: Date.now() }),
     ).rejects.toMatchObject({ status: 422 });
   });
 
@@ -287,10 +287,10 @@ describe("SettingsService.updateSetting — F9 cross-field validation (registry 
     const service = freshService();
     await service.bootstrap();
     await expect(
-      service.updateSetting({ key: "transcode.segmentAheadSuspendThreshold", value: 5, actorUserId: adminId, nowMs: Date.now() }),
+      service.updateSetting({ key: "transcode.segmentAheadSuspendThreshold", value: 15, actorUserId: adminId, nowMs: Date.now() }),
     ).rejects.toMatchObject({ status: 422 });
     await expect(
-      service.updateSetting({ key: "transcode.segmentAheadSuspendThreshold", value: 3, actorUserId: adminId, nowMs: Date.now() }),
+      service.updateSetting({ key: "transcode.segmentAheadSuspendThreshold", value: 10, actorUserId: adminId, nowMs: Date.now() }),
     ).rejects.toMatchObject({ status: 422 });
   });
 
@@ -300,25 +300,25 @@ describe("SettingsService.updateSetting — F9 cross-field validation (registry 
     try {
       const suspendUp = await service.updateSetting({
         key: "transcode.segmentAheadSuspendThreshold",
+        value: 40,
+        actorUserId: adminId,
+        nowMs: Date.now(),
+      });
+      expect(suspendUp.value).toBe(40);
+      const resumeUp = await service.updateSetting({
+        key: "transcode.segmentAheadResumeThreshold",
         value: 20,
         actorUserId: adminId,
         nowMs: Date.now(),
       });
-      expect(suspendUp.value).toBe(20);
-      const resumeUp = await service.updateSetting({
-        key: "transcode.segmentAheadResumeThreshold",
-        value: 8,
-        actorUserId: adminId,
-        nowMs: Date.now(),
-      });
-      expect(resumeUp.value).toBe(8);
+      expect(resumeUp.value).toBe(20);
     } finally {
-      // Revert to the registry defaults (5/10) so later tests/files sharing
-      // this DB see a clean slate — order matters: lower resume back to 5
-      // FIRST (still < the still-raised 20), then suspend back to 10 (now
-      // > the already-reverted 5), so every intermediate write stays valid.
-      await service.updateSetting({ key: "transcode.segmentAheadResumeThreshold", value: 5, actorUserId: adminId, nowMs: Date.now() });
-      await service.updateSetting({ key: "transcode.segmentAheadSuspendThreshold", value: 10, actorUserId: adminId, nowMs: Date.now() });
+      // Revert to the registry defaults (15/30) so later tests/files sharing
+      // this DB see a clean slate — order matters: lower resume back to 15
+      // FIRST (still < the still-raised 40), then suspend back to 30 (now
+      // > the already-reverted 15), so every intermediate write stays valid.
+      await service.updateSetting({ key: "transcode.segmentAheadResumeThreshold", value: 15, actorUserId: adminId, nowMs: Date.now() });
+      await service.updateSetting({ key: "transcode.segmentAheadSuspendThreshold", value: 30, actorUserId: adminId, nowMs: Date.now() });
     }
   });
 

@@ -5,8 +5,9 @@
 // SIGSTOP WHILE THE VIEWER IS PAUSED.
 //
 // The segment-ahead throttle (docs/PLAYBACK.md §9) SIGSTOPs the ffmpeg
-// process group once the encoder is more than 10 segments (60 s) ahead of
-// the client, and resumes it when the lead drops back to 5. For a paused
+// process group once the encoder is more than 30 segments (60 s at the
+// SPF-1 2 s segment size) ahead of the client, and resumes it when the
+// lead drops back to 15 (30 s). For a paused
 // viewer the lead never drops, so the process stayed SIGSTOPped for as long
 // as the pause lasted — minutes, or the whole heartbeat window. That is the
 // leading suspected trigger for the VideoToolbox session death behind
@@ -231,7 +232,7 @@ describe("d3-f3: a throttle SIGSTOP is bounded — a paused viewer never leaves 
       audioTranscodeCodecPriority: ["opus", "aac"],
       maxSimultaneousTranscodes: 10,
       ladderRungs: [],
-      segmentDurationSec: 6,
+      segmentDurationSec: 2,
       hevcEncodePreferred: false,
     };
     const caps: VerifiedCapabilities = { backends: [] };
@@ -311,11 +312,14 @@ describe("d3-f3: a throttle SIGSTOP is bounded — a paused viewer never leaves 
     return rows.map((r) => ({ run_index: r.run_index, start_segment: r.start_segment, source_origin_ms: Number(r.source_origin_ms) }));
   }
 
-  /** Drives run 0 into the throttle's suspended state: 12 x 6 s produced
+  /** Drives run 0 into the throttle's suspended state: 32 x 6 s produced
    *  against a client that has requested nothing (a viewer who pressed
-   *  pause at 0:00), i.e. ahead = 11 > the suspend threshold of 10. */
+   *  pause at 0:00), i.e. ahead = 31 > the suspend threshold of 30 (SPF-1:
+   *  60 s of lead at 2 s segments; the fabricated playlist's own EXTINF
+   *  values stay 6 s each — fixture data, unrelated to the runtime's
+   *  segment-duration constant). */
   async function suspendRunZero(sessionId: string): Promise<void> {
-    fabricateRunPlaylist(sessionId, 0, 12);
+    fabricateRunPlaylist(sessionId, 0, 32);
     await waitUntil(async () => (await readRow(sessionId)).suspended_by_throttle, 15_000 * TIME_SCALE, "run 0 throttle-suspended");
     expect(signalsFor(children[0]!.pid), "the throttle physically SIGSTOPs the group").toContain("SIGSTOP");
   }
@@ -389,22 +393,22 @@ describe("d3-f3: a throttle SIGSTOP is bounded — a paused viewer never leaves 
         await suspendRunZero(sessionId);
         await waitUntil(() => children[0]!.closed, 15_000 * TIME_SCALE, "the stopped encoder is released");
 
-        // Play resumes: the client works through the ~72 s of buffer the
+        // Play resumes: the client works through the ~192 s of buffer the
         // throttle had run ahead to build, which apps/server records on
         // every segment GET (`requested_segment`).
-        await raw.query(`UPDATE playback_sessions SET requested_segment = 11, updated_at_ms = $2 WHERE id = $1`, [sessionId, Date.now()]);
+        await raw.query(`UPDATE playback_sessions SET requested_segment = 31, updated_at_ms = $2 WHERE id = $1`, [sessionId, Date.now()]);
 
         await waitForSpawnCount(2, 15_000 * TIME_SCALE);
         await waitUntil(async () => (await readRuns(sessionId)).length >= 2, 10_000 * TIME_SCALE, "the resumed run is recorded");
         await new Promise((r) => setTimeout(r, 300 * TIME_SCALE));
 
         // ONE restart, at the position the old run had reached — exactly the
-        // slot-handoff origin (12 x 6 s), never back at the top of the file
+        // slot-handoff origin (32 x 6 s), never back at the top of the file
         // and never a second spawn.
         expect(children.length, "a resume restarts the pipeline exactly once").toBe(2);
         expect(await readRuns(sessionId)).toEqual([
           { run_index: 0, start_segment: 0, source_origin_ms: 0 },
-          { run_index: 1, start_segment: 12, source_origin_ms: 72_000 },
+          { run_index: 1, start_segment: 32, source_origin_ms: 192_000 },
         ]);
 
         // Restart hygiene (V8): the fresh process is not throttle-stopped,
@@ -448,7 +452,7 @@ describe("d3-f3: a throttle SIGSTOP is bounded — a paused viewer never leaves 
         await waitForSpawnCount(1, 10_000 * TIME_SCALE);
         await suspendRunZero(sessionId);
 
-        await raw.query(`UPDATE playback_sessions SET requested_segment = 11, updated_at_ms = $2 WHERE id = $1`, [sessionId, Date.now()]);
+        await raw.query(`UPDATE playback_sessions SET requested_segment = 31, updated_at_ms = $2 WHERE id = $1`, [sessionId, Date.now()]);
         await waitUntil(async () => !(await readRow(sessionId)).suspended_by_throttle, 15_000 * TIME_SCALE, "the throttle resumes the run");
 
         expect(signalsFor(children[0]!.pid), "resuming inside the bound is a SIGCONT").toContain("SIGCONT");

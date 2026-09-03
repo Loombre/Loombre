@@ -88,7 +88,7 @@
  *                           produced segment range — Lane B decides
  *                           "outside" using `produced_segment` (already
  *                           readable) and the fixed `segmentDurationSec`
- *                           (6s) it already has from policy;
+ *                           (2s, SPF-1) it already has from policy;
  *                           `packages/db/src/query/playback-sessions.ts`'s
  *                           `requestSeek(db, ctx, id, seekTargetMs, now)`
  *                           is already implemented for Lane B to call.

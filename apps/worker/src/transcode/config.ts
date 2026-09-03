@@ -200,9 +200,16 @@ export function resolveTranscodeCopyShapeBurstSec(): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : COPY_SHAPE_READRATE_BURST_SEC;
 }
 
-/** `ServerPolicy.segmentDurationSec` is a fixed literal `6` in
+/** `ServerPolicy.segmentDurationSec` is a fixed literal `2` in
  *  @loombre/playback-engine's own type (§2.4: "fixed v1") — this runtime
  *  substitutes `{SEG_DUR}` with this constant directly rather than
  *  threading a policy object through, since there is only ever one value
- *  it could be. */
-export const SEGMENT_DURATION_SEC = 6;
+ *  it could be.
+ *
+ *  SPF-1: was 6. The first playable segment of every run needs a full
+ *  segment of CONTENT encoded before ffmpeg closes it and writes the
+ *  playlist entry (measured: Tier-0 model 1x software encoder 6.9 s at
+ *  6 s segments -> 2.9 s at 2 s segments). The GOP is already 2 s
+ *  (`-g 2*fps` in args.ts) so cutting segments at 2 s adds no extra
+ *  keyframes -- it only shortens how much content each segment needs. */
+export const SEGMENT_DURATION_SEC = 2;

@@ -300,7 +300,7 @@ describe.skipIf(!ffmpegAvailable || process.platform === "win32")(
           { heightPx: 180, videoBitrateBps: 300_000, audioBitrateBps: 128_000, codec: "h264" },
           { heightPx: 120, videoBitrateBps: 150_000, audioBitrateBps: 128_000, codec: "h264" },
         ],
-        segmentDurationSec: 6,
+        segmentDurationSec: 2,
         hevcEncodePreferred: false,
         av1EncodePreferred: false,
       };
@@ -893,7 +893,7 @@ describe.skipIf(!ffmpegAvailable || process.platform === "win32")(
         // Stand in for a client that is actually WATCHING — i.e. one whose
         // segment GETs are being ANSWERED. Without a climbing
         // `requested_segment` the segment-ahead throttle SIGSTOPs the
-        // encode at ahead > 10 and its resume condition (ahead <= 5) is
+        // encode at ahead > 30 and its resume condition (ahead <= 15) is
         // unreachable forever; without a climbing `highest_served_segment`
         // (d4-f2) retention's viewer floor never rises and the head is
         // never pruned. Both are what one served GET writes, so both move
@@ -1012,16 +1012,16 @@ describe.skipIf(!ffmpegAvailable || process.platform === "win32")(
           await waitForThrottleSuspended(sessionId, "run 0 throttle-suspended (paused viewer)");
 
           // The paused viewer now seeks FORWARD, out of the in-flight
-          // window (produced ≈ 11 segments ≈ 66 s; 100 s is beyond it but
-          // inside the 150 s fixture) — the restart path, from
-          // 'suspended'.
+          // window (produced ≈ 31 segments ≈ 62 s at the SPF-1 2 s segment
+          // size; 100 s is beyond it but inside the 150 s fixture) — the
+          // restart path, from 'suspended'.
           await requestSeek(db, ctx, sessionId, 100_000, Date.now());
           await waitForRunCount(sessionId, 2, "seek run recorded from suspended state");
 
           // THE PIN. Pre-V8: two ticks after the spawn the throttle read
-          // ahead = produced(≈11) − requested(0) = 11 > 10 and SIGSTOPped
+          // ahead = produced(≈31) − requested(0) = 31 > 30 and SIGSTOPped
           // the fresh run BEFORE its first segment; with requested pinned
-          // and the run producing nothing, resume (ahead ≤ 5) was
+          // and the run producing nothing, resume (ahead ≤ 15) was
           // arithmetically unreachable — this wait timed out forever
           // ("buffers forever", QA 2026-08-12). With the floor, floored
           // ahead = produced − max(0, startSegment) ≤ 0 until the run is
