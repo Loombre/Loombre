@@ -480,6 +480,18 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   // (clearLandingWatch), so a timed-out seek never leaves a stale play
   // armed for some future landing.
   const resumePlayAfterRebuildRef = useRef(false);
+  // SPF-10: the hard-seek play-intent capture. The PRE-seek run keeps
+  // playing under the relocating spinner today — audible, and hls.js keeps
+  // fetching its next fragments (the stale-run 503 storms). Captured once
+  // per LIFECYCLE at `dispatchHardSeek`'s very first dispatch (the leading
+  // edge OR the coalesced trailing dispatch, whichever actually POSTs
+  // first) and consulted at every landing site; reset to `null` only by
+  // `clearLandingWatch` (lifecycle end), so a SUPERSEDING dispatch — the
+  // coalesced trailing call, or a re-seek before the first lands — never
+  // re-derives it from an element THIS SAME lifecycle already paused (it
+  // would always read "paused" and silently drop the original intent).
+  // `null` = no lifecycle open (nothing captured yet).
+  const hardSeekPlayIntentRef = useRef<boolean | null>(null);
   // d3-a2 round 1: the second-ENDLIST honest-end watch
   // (lib/endlist-eos-watch.ts). Armed on every ENDLIST parse; cancelled
   // by an un-ended refresh, the hard-seek rebuild, and teardown;
@@ -551,6 +563,10 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
     // for some future landing. (A landing that DID assign consumed it
     // already; completion's clear is then a no-op.)
     resumePlayAfterRebuildRef.current = false;
+    // SPF-10: the lifecycle's captured play intent dies with it too — a
+    // fresh hard seek must capture its OWN intent, never inherit a dead
+    // lifecycle's.
+    hardSeekPlayIntentRef.current = null;
     landingWatchRef.current = null;
     landedAwaitingResumeRef.current = null;
     relocatingRef.current = null;
@@ -1383,6 +1399,10 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
             if (resumePlayAfterRebuildRef.current) {
               resumePlayAfterRebuildRef.current = false;
               void video.play().catch(() => undefined);
+            } else if (hardSeekPlayIntentRef.current) {
+              // SPF-10: the ordinary (non-rebuilt) hard seek — the element
+              // was paused at dispatch, resume it now the run has landed.
+              void video.play().catch(() => undefined);
             }
           }
           positionRef.current = targetMs;
@@ -2056,6 +2076,9 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
       if (resumePlayAfterRebuildRef.current) {
         resumePlayAfterRebuildRef.current = false;
         void video.play().catch(() => undefined);
+      } else if (hardSeekPlayIntentRef.current) {
+        // SPF-10: the ordinary (non-rebuilt) absorbed-202 landing.
+        void video.play().catch(() => undefined);
       }
       positionRef.current = targetMs;
       setPositionMs(targetMs);
@@ -2126,9 +2149,11 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   repairWedgedLandingRef.current = repairWedgedLanding;
 
   /** The actual hard-seek dispatch: the POST + the whole landing/nudge
-   *  lifecycle arm, unchanged by SPF-5. Called either synchronously (the
-   *  coalescing wrapper's leading edge, below) or from the trailing
-   *  coalesce timer once it fires. */
+   *  lifecycle arm, plus SPF-10's play-intent capture + pause. Called
+   *  either synchronously (the coalescing wrapper's leading edge, below) or
+   *  from the trailing coalesce timer once it fires — both dispatch paths
+   *  run this same capture/pause step, so a coalesced seek is covered
+   *  exactly like an isolated one. */
   const dispatchHardSeek = useCallback(
     (targetMs: number): void => {
       const sessionId = session?.id;
@@ -2144,6 +2169,28 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
         setPositionMs(queued);
         return;
       }
+      // SPF-10: the seek must read as a jump — freeze at the 202, land,
+      // resume — never a stutter of the OLD content playing on under the
+      // relocating spinner while hls.js keeps fetching the doomed run's
+      // next fragments (the stale-run 503 storms). Capture the play
+      // intent BEFORE pausing, and only ONCE per lifecycle: a superseding
+      // dispatch (this same open lifecycle's coalesced trailing call, or a
+      // re-seek issued before the first one lands) must keep the ORIGINAL
+      // intent, not re-derive it from an element this lifecycle already
+      // paused. `resumePlayAfterRebuildRef.current` covers the "a play is
+      // already pending" half: a still-open lifecycle can have a play
+      // queued for its own landing (the post-ENDLIST rebuild below) before
+      // this capture point ever sees it, and `!video.paused` alone would
+      // miss it (the deferred play has not fired yet). `video.ended`
+      // matches the codebase's existing convention (see
+      // `rebuildMsePipelineForHardSeek`'s own `resumePlay`): a seek from
+      // the fully-ENDED state plays, exactly like every other hard seek
+      // that lands from 'ended'.
+      const video = videoRef.current;
+      if (hardSeekPlayIntentRef.current === null && video) {
+        hardSeekPlayIntentRef.current = !video.paused || video.ended || resumePlayAfterRebuildRef.current;
+      }
+      video?.pause();
       // Take the supersession epoch BEFORE the POST: if another hard seek
       // (or anything that clears the watch) happens while this request is
       // in flight, this response is stale and must not arm.
@@ -2231,8 +2278,15 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
             // suppression keeps that one inert until the landing.)
             eosWatchStopRef.current?.();
             eosWatchStopRef.current = null;
+            // SPF-10: `rebuildMsePipelineForHardSeek`'s own `resumePlay` reads
+            // `media.paused` at rebuild time — but the dispatch above has
+            // ALREADY paused the element for this hard seek, so `!paused`
+            // alone can no longer see a pre-seek playing state (only `ended`
+            // still could). `hardSeekPlayIntentRef` is the one capture that
+            // saw the element BEFORE that pause — OR it in, so a playing
+            // viewer's rebuild still resumes exactly as before SPF-10.
             const { resumePlay } = rebuildMsePipelineForHardSeek<HTMLVideoElement>(hls, videoRef.current, listedWindowEndSec(listedFragments()));
-            if (resumePlay) resumePlayAfterRebuildRef.current = true;
+            if (resumePlay || hardSeekPlayIntentRef.current) resumePlayAfterRebuildRef.current = true;
           }
           // rem2-absorbed-seek: the ABSORBED 202, answered at RESPONSE
           // time. When the CURRENT window already lists the clamped
@@ -2312,6 +2366,11 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
                 const startSec = Math.max(0, end - 0.25);
                 landedAwaitingResumeRef.current = { startSec, targetMs: clamped };
                 v.currentTime = startSec;
+                // SPF-10: same play-intent resume as the hls.js landing
+                // sites — no `resumePlayAfterRebuildRef` check needed here
+                // (the ENDLIST-rebuild lever above is hls.js-only; this
+                // branch only ever runs with `!hls`).
+                if (hardSeekPlayIntentRef.current) void v.play().catch(() => undefined);
                 heartbeatRef.current?.flushNow();
               }
             }, 500);
