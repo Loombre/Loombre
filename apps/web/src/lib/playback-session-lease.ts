@@ -159,7 +159,7 @@ const playbackSessionLeases = createSessionLeasePool<CreateSessionResult>({
 /** One create per (item, pinned media file) — `startMs` is deliberately
  *  NOT part of the key: a deep-link offset changes where playback starts,
  *  not which session the server should mint. */
-export function playbackSessionLeaseKey(itemId: string, mediaFileId?: string): string {
+export function playbackSessionLeaseKey(itemId: string, mediaFileId?: string, subtitleStreamIndex?: number | null): string {
   // d3-aq3 (verify/gap-F1): the separator is a NUL *escape*, never a raw
   // NUL byte. Written literally, `.gitattributes` (`* text=auto`) detects
   // the file as BINARY: this whole module landed with no reviewable diff,
@@ -168,7 +168,12 @@ export function playbackSessionLeaseKey(itemId: string, mediaFileId?: string): s
   // UUID, so no two distinct pairs can collide) — only its spelling
   // changes; scripts/grep-gates.mjs pass (d) now fails any raw NUL byte in
   // tracked source.
-  return `${itemId}\u0000${mediaFileId ?? ""}`;
+  // A subtitle pin (PlanRequest.selection.subtitleStreamIndex) mints a
+  // DIFFERENT session: the pinned re-create must never join the unpinned
+  // session's still-in-flight create. No pin (undefined/null) keeps the
+  // pre-pin key byte-for-byte; same escaped-NUL separator as above.
+  const pin = subtitleStreamIndex === undefined || subtitleStreamIndex === null ? "" : `\u0000sub:${subtitleStreamIndex}`;
+  return `${itemId}\u0000${mediaFileId ?? ""}${pin}`;
 }
 
 export function acquirePlaybackSessionLease(

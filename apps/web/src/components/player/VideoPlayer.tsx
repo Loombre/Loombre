@@ -30,6 +30,8 @@ import { fetchItemSummary, backdropImage, type ItemSummary } from "../../lib/ite
 import { buildImageUrl } from "../../lib/image-url.js";
 import { getAuthStore } from "../../lib/auth-store.js";
 import { createPlaybackSession, endPlaybackSession, endPlaybackSessionOnUnload } from "../../lib/playback-session.js";
+import { decideSubtitleSelection, isSubtitleTrackShown } from "../../lib/subtitle-selection.js";
+import { fetchSubtitleTrackObjectUrl } from "../../lib/subtitle-track-fetch.js";
 import { acquirePlaybackSessionLease, playbackSessionLeaseKey } from "../../lib/playback-session-lease.js";
 import {
   appendTokenParam,
@@ -241,6 +243,15 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   const [controlsVisible, setControlsVisible] = useState(true);
   const [selectedAudioIndex, setSelectedAudioIndex] = useState<number | null>(null);
   const [selectedSubtitleIndex, setSelectedSubtitleIndex] = useState<number | null>(null);
+  // The subtitle stream the SESSION is pinned to (PlanRequest.selection.
+  // subtitleStreamIndex) — distinct from `selectedSubtitleIndex`, which is
+  // what the picker shows (Off is a client-side hide of an extracted
+  // track, not a re-create). A change here re-runs the session-create
+  // effect; `sessionSwapRef` hands that re-run the position to resume at
+  // and tells it to skip the saved-progress prompt (lib/subtitle-
+  // selection.ts decides when a pick needs a new session).
+  const [subtitlePin, setSubtitlePin] = useState<number | null>(null);
+  const sessionSwapRef = useRef<{ resumeMs: number } | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   // The <video> element tracked in STATE (not only the ref) so effects can
@@ -676,8 +687,10 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
     // POST and owns the orphan cleanup that the per-invocation `cancelled`
     // flag used to do — see AUD-A4v4-003 notes at the lease module and at
     // the `cancelled` check below.
-    const lease = acquirePlaybackSessionLease(playbackSessionLeaseKey(itemId, mediaFileId), () =>
-      createPlaybackSession(itemId, "stream", mediaFileId),
+    const lease = acquirePlaybackSessionLease(playbackSessionLeaseKey(itemId, mediaFileId, subtitlePin), () =>
+      subtitlePin === null
+        ? createPlaybackSession(itemId, "stream", mediaFileId)
+        : createPlaybackSession(itemId, "stream", mediaFileId, { subtitleStreamIndex: subtitlePin }),
     );
 
     async function run(): Promise<void> {
@@ -762,8 +775,24 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
       sourceClockRef.current = initialSourceClockState();
       const defaultAudio = result.session.media?.audio.find((a) => a.isDefault) ?? result.session.media?.audio[0];
       if (defaultAudio) setSelectedAudioIndex(defaultAudio.index);
+      // The picker mirrors what the plan actually selected (a pin, or the
+      // §2.6 forced-flag auto-match): an 'hls-vtt' streamIndex is the stream
+      // the side-track carries. 'none' — and burn-in/embed, which carry no
+      // client-side control — show as Off.
+      const planSubtitle = result.session.plan.subtitle;
+      setSelectedSubtitleIndex(
+        planSubtitle.strategy === "hls-vtt" && planSubtitle.streamIndex !== undefined ? planSubtitle.streamIndex : null,
+      );
 
-      if (startMs !== undefined) {
+      const swap = sessionSwapRef.current;
+      sessionSwapRef.current = null;
+      if (swap) {
+        // A subtitle-pin re-create (selectSubtitle below): resume where the
+        // viewer was — the same ref a deep-link start rides — and never
+        // re-ask the saved-progress question mid-watch.
+        pendingSeekMsRef.current = swap.resumeMs;
+        setAwaitingResumeChoice(false);
+      } else if (startMs !== undefined) {
         pendingSeekMsRef.current = startMs;
         setAwaitingResumeChoice(false);
       } else {
@@ -784,7 +813,7 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
       cancelled = true;
       lease.release();
     };
-  }, [itemId, mediaFileId, startMs]);
+  }, [itemId, mediaFileId, startMs, subtitlePin]);
 
   // ── Session end on unmount ──────────────────────────────────────────────
   // browser-player-F5: session ids the pagehide teardown path (below) has
@@ -1518,12 +1547,17 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
 
   // ── Subtitles: the hls-vtt side-track (Phase 3 Step 6c, deliverable 3) ──
   // burn-in needs nothing (already baked into the video frames); embed/none
-  // have no side-track to attach. Built once per session (a plain <track>
-  // fetches its VTT file exactly once — no token-refresh loop needed the
-  // way the long-lived HLS/direct-play URLs above need one).
+  // have no side-track to attach. Built once per session: the VTT is
+  // fetched ONCE with a CORS request and handed to <track> as a blob: URL
+  // (lib/subtitle-track-fetch.ts explains why a bare cross-origin <track
+  // src> can never load, and owns the retry while the subtitle-extract
+  // job is still running) — no token-refresh loop needed the way the
+  // long-lived HLS/direct-play URLs above need one. The blob is revoked
+  // when the session changes or the player unmounts.
   const [subtitleTrack, setSubtitleTrack] = useState<SubtitleTrackInfo | null>(null);
   useEffect(() => {
     let cancelled = false;
+    let objectUrl: string | null = null;
     if (!session || session.plan.subtitle.strategy !== "hls-vtt") {
       setSubtitleTrack(null);
       return;
@@ -1532,12 +1566,21 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
       const token = await getAuthStore().getAccessToken();
       if (cancelled || !token) return;
       const url = buildHlsSubtitleUrl(serverUrl, session.id, token);
+      const fetched = await fetchSubtitleTrackObjectUrl(url);
+      if (cancelled) {
+        if (fetched) URL.revokeObjectURL(fetched);
+        return;
+      }
+      objectUrl = fetched;
       setSubtitleTrack(
-        deriveSubtitleTrackInfo(session.plan.subtitle.strategy, session.plan.subtitle.streamIndex, session.media?.subtitle ?? [], url),
+        fetched === null
+          ? null
+          : deriveSubtitleTrackInfo(session.plan.subtitle.strategy, session.plan.subtitle.streamIndex, session.media?.subtitle ?? [], fetched),
       );
     })();
     return () => {
       cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [session, serverUrl]);
 
@@ -2363,7 +2406,26 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
     if (videoRef.current && session?.media) applyAudioTrackSelection(videoRef.current, index, session.media.audio);
   }, [session]);
 
-  const selectSubtitle = useCallback((index: number | null) => setSelectedSubtitleIndex(index), []);
+  // Subtitles (lib/subtitle-selection.ts): Off, and re-picking the stream
+  // this session already extracted, are client-side — the <track> below is
+  // dropped or shown, nothing is minted or ended. Any other text stream
+  // needs a session pinned to it: the create effect above re-runs on
+  // `subtitlePin`, resumes at the captured SOURCE-axis position (the
+  // watched position; the element's own time for a fresh direct-play
+  // session), and the session-end effect releases the old session once the
+  // new id lands. Audio falls back to the new session's default (the
+  // WebKit-only client-side switch does not survive a swap).
+  const selectSubtitle = useCallback(
+    (index: number | null) => {
+      const action = decideSubtitleSelection(session?.plan ?? null, index);
+      setSelectedSubtitleIndex(index);
+      if (action.kind !== "recreate") return;
+      const video = videoRef.current;
+      sessionSwapRef.current = { resumeMs: watchedPositionRef.current ?? Math.round((video?.currentTime ?? 0) * 1000) };
+      setSubtitlePin(action.subtitleStreamIndex);
+    },
+    [session],
+  );
 
   // ── Keyboard shortcuts (space/arrows/f/m) ───────────────────────────────
   useEffect(() => {
@@ -2559,7 +2621,7 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
             playsInline
             onClick={togglePlay}
           >
-            {subtitleTrack && (
+            {subtitleTrack && isSubtitleTrackShown(selectedSubtitleIndex, session?.plan ?? null) && (
               <track
                 kind="subtitles"
                 src={subtitleTrack.src}

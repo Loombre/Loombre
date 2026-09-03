@@ -23,11 +23,28 @@ are the version axis.
 
 ### v1.0.0-beta.1 draft (2026-09-03)
 
-- First 1.0 beta, for testers — the v0.9.0-rc.12 dry-run tree renamed;
-  no code changes from rc.12. The line from here: `1.0.0-beta.N` tester
-  builds, then `1.0.0-rc.1` (the build intended to ship unchanged), then
-  `1.0.0` on the same code. 1.0.0 is where docs/PLAN.md §4.1's
-  additive-only API policy becomes a public promise.
+- First 1.0 beta, for testers — the v0.9.0-rc.12 dry-run tree plus the
+  subtitle fixes below. The line from here: `1.0.0-beta.N` tester builds,
+  then `1.0.0-rc.1` (the build intended to ship unchanged), then `1.0.0`
+  on the same code. 1.0.0 is where docs/PLAN.md §4.1's additive-only API
+  policy becomes a public promise. (The first beta.1 draft was cut before
+  the subtitle fix and discarded unpublished, tag included, along with
+  every rc.* tag — none of them ever had a published release.)
+- Player: text subtitles can actually be turned on. The track picker still
+  rendered every subtitle as "requires transcoding (Phase 3)", a Phase-2
+  stub left behind after the server grew its WebVTT side-track
+  (docs/PLAYBACK.md Stage E `hls-vtt` + the subtitle-extract worker job).
+  Picking a text stream (subrip/ass/webvtt/mov_text) now re-creates the
+  session pinned to it (`PlanRequest.selection.subtitleStreamIndex`),
+  resuming where the viewer was with no second resume prompt; Off and
+  re-picking the extracted stream are client-side only. Image subtitles
+  (pgs/vobsub/dvbsub) stay disabled with an honest "needs burn-in
+  (transcode)" note. The picker's note no longer overflows the popover.
+- Player: the side-track is fetched with a CORS request and attached as a
+  blob: URL — a bare cross-origin `<track src>` is refused by browsers, and
+  the web app and server are different origins in every deployment (:3000
+  vs :3001). The fetch retries while the subtitle-extract job is still
+  running (the live check hit two 404s before the 200).
 
 ### v0.9.0-rc.12 draft (2026-09-03)
 

@@ -4215,4 +4215,100 @@ describe("VideoPlayer", () => {
       ).toContain("Seek timed out");
     });
   });
+
+  // ── Subtitles: picking a text track re-creates the session pinned to it ──
+  // (docs/PLAYBACK.md §2.6 pin → Stage E 'hls-vtt' → the subtitle-extract
+  // worker → GET /playback/sessions/{id}/subtitles/sub0.vtt). Off is a
+  // client-side hide; re-picking the already-extracted stream just shows
+  // it again — neither mints a session.
+  describe("subtitle selection", () => {
+    // The side-track is fetched with a CORS request and handed to <track>
+    // as a same-origin blob URL (lib/subtitle-track-fetch.ts) — a bare
+    // cross-origin <track src> is refused by browsers ("Unsafe attempt to
+    // load URL … Domains, protocols and ports must match"), which the
+    // 2026-09-03 live check hit against the real :3000/:3001 split.
+    const fetchMock = vi.fn();
+    beforeEach(() => {
+      fetchMock.mockReset().mockResolvedValue(new Response("WEBVTT\n", { status: 200, headers: { "content-type": "text/vtt" } }));
+      vi.stubGlobal("fetch", fetchMock);
+      if (!("createObjectURL" in URL)) {
+        Object.defineProperty(URL, "createObjectURL", { configurable: true, writable: true, value: () => "blob:test/vtt" });
+        Object.defineProperty(URL, "revokeObjectURL", { configurable: true, writable: true, value: () => undefined });
+      }
+    });
+
+    function subtitleStream(index: number): PlaybackSession["media"] extends infer M ? (M extends { subtitle: (infer S)[] } ? S : never) : never {
+      return { index, codec: "subrip", language: "eng", isForced: false, isDefault: false, isExternal: false, externalPath: null };
+    }
+    function withSubtitle(id: string, extracted: boolean): PlaybackSession {
+      const base = directPlaySession();
+      if (!base.media) throw new Error("fixture has no media");
+      return {
+        ...base,
+        id,
+        plan: { ...base.plan, subtitle: extracted ? { strategy: "hls-vtt", streamIndex: 3 } : { strategy: "none" } },
+        media: { ...base.media, subtitle: [subtitleStream(3)] },
+      };
+    }
+    function optionButton(v: TestRender, text: string): HTMLButtonElement {
+      const el = Array.from(v.container.querySelectorAll<HTMLButtonElement>("button")).find((b) => b.textContent?.startsWith(text));
+      if (!el) throw new Error(`no option "${text}"`);
+      return el;
+    }
+
+    it("picking a text subtitle re-creates the session with the pin, keeps the position, skips the resume prompt, and attaches the VTT side-track", async () => {
+      createPlaybackSession
+        .mockReset()
+        .mockResolvedValueOnce({ ok: true, session: withSubtitle(SESSION_ID, false) })
+        .mockResolvedValueOnce({ ok: true, session: withSubtitle(SECOND_SESSION_ID, true) });
+      const v = (view = await renderReady());
+      const video = videoEl(v);
+      await act(async () => button(v, "Play").click());
+      video.currentTime = 42;
+      expect(v.container.querySelector("track")).toBeNull();
+
+      await act(async () => button(v, "Audio and subtitle tracks").click());
+      await act(async () => optionButton(v, "SUBRIP · eng").click());
+
+      expect(createPlaybackSession).toHaveBeenCalledTimes(2);
+      expect(createPlaybackSession).toHaveBeenLastCalledWith(ITEM_ID, "stream", undefined, { subtitleStreamIndex: 3 });
+      expect(findProgressForItem).toHaveBeenCalledTimes(1); // no second resume prompt
+      expect(endPlaybackSession).toHaveBeenCalledWith(SESSION_ID); // the unpinned session is released
+      expect(video.src).toContain(SECOND_SESSION_ID);
+
+      const track = v.container.querySelector("track");
+      expect(track).not.toBeNull();
+      expect(track?.getAttribute("src")).toMatch(/^blob:/);
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining(`/playback/sessions/${SECOND_SESSION_ID}/subtitles/sub0.vtt`),
+        expect.objectContaining({ mode: "cors" }),
+      );
+      expect(optionButton(v, "SUBRIP · eng").getAttribute("data-active")).toBe("true");
+
+      // The swapped source resumes where the viewer was (the attach effect's
+      // own currentTime carry-over), not at 0 and not at a resume prompt.
+      await act(async () => {
+        video.dispatchEvent(new Event("loadedmetadata"));
+      });
+      expect(video.currentTime).toBe(42);
+    });
+
+    it("Off hides the track without a new session; re-picking the extracted stream shows it again without one either", async () => {
+      createPlaybackSession.mockReset().mockResolvedValue({ ok: true, session: withSubtitle(SESSION_ID, true) });
+      const v = (view = await renderReady());
+      // The server auto-selected (or a prior pin produced) an extracted
+      // stream: the picker reflects it and the track is attached.
+      await act(async () => button(v, "Audio and subtitle tracks").click());
+      expect(optionButton(v, "SUBRIP · eng").getAttribute("data-active")).toBe("true");
+      expect(v.container.querySelector("track")).not.toBeNull();
+
+      await act(async () => optionButton(v, "Off").click());
+      expect(v.container.querySelector("track")).toBeNull();
+      expect(optionButton(v, "Off").getAttribute("data-active")).toBe("true");
+
+      await act(async () => optionButton(v, "SUBRIP · eng").click());
+      expect(v.container.querySelector("track")).not.toBeNull();
+      expect(createPlaybackSession).toHaveBeenCalledTimes(1);
+    });
+  });
 });

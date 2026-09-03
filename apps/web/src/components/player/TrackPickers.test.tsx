@@ -229,28 +229,56 @@ describe("TrackPickers — subtitles", () => {
     view = null;
   });
 
-  it("renders every embedded subtitle in the typed disabled state, plus a live Off entry", () => {
-    const onSelectSubtitle = vi.fn();
+  function render(streams: SubtitleStream[], selected: number | null, onSelectSubtitle = vi.fn()): HTMLButtonElement[] {
     view = renderIntoBody(
       <TrackPickers
         audioStreams={[]}
-        subtitleStreams={[subtitle(3), subtitle(4, { codec: "pgs", language: "fra" })]}
+        subtitleStreams={streams}
         selectedAudioIndex={null}
-        selectedSubtitleIndex={null}
+        selectedSubtitleIndex={selected}
         videoElement={videoWithoutAudioTracks()}
         directPlay
         onSelectAudio={vi.fn()}
         onSelectSubtitle={onSelectSubtitle}
       />,
     );
-    const buttons = Array.from(view.container.querySelectorAll("button"));
+    return Array.from(view.container.querySelectorAll("button"));
+  }
+
+  it("text subtitles are live entries — selecting one reports its stream index", () => {
+    const onSelectSubtitle = vi.fn();
+    const buttons = render([subtitle(3), subtitle(5, { codec: "ass", language: "jpn" })], null, onSelectSubtitle);
+    expect(buttons.map((b) => b.textContent)).toEqual(["Off", "SUBRIP · eng", "ASS · jpn"]);
+    expect(buttons[1]?.disabled).toBe(false);
+    expect(buttons[2]?.disabled).toBe(false);
+    expect(view?.container.textContent).not.toContain("requires transcoding");
+
+    buttons[1]?.click();
+    expect(onSelectSubtitle).toHaveBeenCalledWith(3);
+  });
+
+  it("image subtitles stay disabled with an honest burn-in note", () => {
+    const buttons = render([subtitle(4, { codec: "pgs", language: "fra" }), subtitle(6, { codec: "vobsub", language: "deu" })], null);
+    expect(buttons[1]?.disabled).toBe(true);
+    expect(buttons[2]?.disabled).toBe(true);
+    expect(buttons[1]?.textContent).toContain("needs burn-in (transcode)");
+    expect(buttons[1]?.title).toContain("burn");
+  });
+
+  it("Off is always live, active when nothing is selected, and reports null", () => {
+    const onSelectSubtitle = vi.fn();
+    const buttons = render([subtitle(3)], null, onSelectSubtitle);
     expect(buttons[0]?.textContent).toBe("Off");
     expect(buttons[0]?.disabled).toBe(false);
     expect(buttons[0]?.getAttribute("data-active")).toBe("true");
-    expect(buttons.slice(1).every((b) => b.disabled)).toBe(true);
-    expect(view.container.textContent).toContain("requires transcoding (Phase 3)");
-
+    expect(buttons[1]?.getAttribute("data-active")).toBe("false");
     buttons[0]?.click();
     expect(onSelectSubtitle).toHaveBeenCalledWith(null);
+  });
+
+  it("the selected text subtitle is marked active and Off is not", () => {
+    const buttons = render([subtitle(3), subtitle(4, { codec: "pgs" })], 3);
+    expect(buttons[0]?.getAttribute("data-active")).toBe("false");
+    expect(buttons[1]?.getAttribute("data-active")).toBe("true");
   });
 });

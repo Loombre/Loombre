@@ -30,6 +30,7 @@ import { getAuthStore } from "./auth-store.js";
 
 type PlaybackSession = components["schemas"]["PlaybackSession"];
 type PlanReason = components["schemas"]["PlanReason"];
+type TrackSelection = components["schemas"]["TrackSelection"];
 
 export interface CreateSessionOk {
   ok: true;
@@ -66,11 +67,19 @@ interface ProblemWithWouldBeReasons {
  * (lib/playback-fallback.ts): accepting a fallback re-attempts session
  * creation pinned to that specific alternate file, rather than the item's
  * default one.
+ *
+ * `selection` (PlanRequest.selection, the contract's TrackSelection) pins
+ * streams by index — today the player pins a subtitle stream when the
+ * viewer picks one (docs/PLAYBACK.md §2.6: a pin wins over the forced-flag
+ * auto-match; lib/subtitle-selection.ts decides when a pick needs this).
+ * Omitted entirely when nothing is pinned, so an unpinned create's body
+ * is exactly what it always was.
  */
 export async function createPlaybackSession(
   itemId: string,
   mode: "stream" | "download" = "stream",
   mediaFileId?: string,
+  selection?: TrackSelection,
 ): Promise<CreateSessionResult> {
   const serverUrl = getAuthStore().getSnapshot().serverUrl;
   // d3-a6: the live capability probe, with the deliberate per-browser
@@ -79,7 +88,14 @@ export async function createPlaybackSession(
   const device = await resolveSessionDeviceProfile();
   const network = buildNetworkConditions(serverUrl);
   try {
-    const body = mediaFileId ? { itemId, mediaFileId, device, network, mode } : { itemId, device, network, mode };
+    const body = {
+      itemId,
+      ...(mediaFileId ? { mediaFileId } : {}),
+      device,
+      network,
+      mode,
+      ...(selection ? { selection } : {}),
+    };
     const session = await apiPost("/playback/sessions", { body });
     return { ok: true, session };
   } catch (err) {

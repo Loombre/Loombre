@@ -200,6 +200,17 @@ describe("createSessionLeasePool", () => {
 });
 
 describe("playbackSessionLeaseKey", () => {
+  it("a subtitle pin is part of the key — a pinned re-create must never join the unpinned session's in-flight create", () => {
+    expect(playbackSessionLeaseKey("item-1", undefined, 3)).not.toBe(playbackSessionLeaseKey("item-1"));
+    expect(playbackSessionLeaseKey("item-1", "file-1", 3)).not.toBe(playbackSessionLeaseKey("item-1", "file-1"));
+    expect(playbackSessionLeaseKey("item-1", undefined, 3)).not.toBe(playbackSessionLeaseKey("item-1", undefined, 4));
+  });
+
+  it("no pin (undefined or null) is the same key as before", () => {
+    expect(playbackSessionLeaseKey("item-1", undefined, null)).toBe(playbackSessionLeaseKey("item-1"));
+    expect(playbackSessionLeaseKey("item-1", "file-1", undefined)).toBe(playbackSessionLeaseKey("item-1", "file-1"));
+  });
+
   it("distinguishes the pinned-file variants of one item, and defaults to the primary-file key", () => {
     expect(playbackSessionLeaseKey("item-1")).toBe(playbackSessionLeaseKey("item-1", undefined));
     expect(playbackSessionLeaseKey("item-1")).not.toBe(playbackSessionLeaseKey("item-1", "file-a"));

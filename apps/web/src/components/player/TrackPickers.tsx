@@ -27,15 +27,18 @@
 //     track. Feature-detected at call time on top of that; when the API is
 //     absent, entries still list every audio stream (driven by real
 //     metadata) but are disabled with their own explicit note.
-//   - SUBTITLES: embedded text tracks are NOT extractable client-side from
-//     the container (P2.4 Phase-2 reality) and the contract exposes NO
-//     sidecar/external subtitle-serving endpoint today (checked against
-//     packages/contract/openapi.yaml — grep confirms no such path exists).
-//     So `resolveSubtitleTrackUrl` below always returns null right now;
-//     every subtitle entry renders in the typed "requires transcoding
-//     (Phase 3)" disabled state. The wiring for the day a sidecar URL DOES
-//     exist is left in place (a non-null resolver result attaches a real
-//     <track> src) so this doesn't need rework later.
+//   - SUBTITLES: a TEXT subtitle (subrip/ass/webvtt/mov_text) is a live
+//     pick. The server delivers it as a per-session WebVTT side-track
+//     (docs/PLAYBACK.md Stage E 'hls-vtt' — the session is created pinned
+//     to the stream, the subtitle-extract worker writes sub0.vtt, and
+//     VideoPlayer attaches it as a <track>), so picking one the current
+//     session didn't extract re-creates the session with the pin; Off and
+//     re-picking the extracted stream are client-side only
+//     (lib/subtitle-selection.ts decides which; VideoPlayer acts on it).
+//     An IMAGE subtitle (pgs/vobsub/dvbsub, and `unknown`, which the engine
+//     treats as image) has no text to convert — showing it means burning
+//     it into the video frames, a transcode — so those entries stay
+//     disabled with a note that says exactly that.
 
 import type { components } from "@loombre/sdk";
 import styles from "./TrackPickers.module.css";
@@ -49,12 +52,14 @@ export function isTextSubtitle(stream: SubtitleStream): boolean {
   return TEXT_SUBTITLE_CODECS.has(stream.codec);
 }
 
-/** Always null today — see this file's header. Kept as a named function
- *  (not inlined) so the ONE place that would need to change, the day the
- *  contract grows a sidecar-serving path, is obvious. */
-export function resolveSubtitleTrackUrl(_stream: SubtitleStream): string | null {
-  return null;
+/** Why this subtitle can't be picked here, or null when it can. Exported so
+ *  the tests pin the exact user-visible note. */
+export function subtitleBlockedReason(stream: SubtitleStream): string | null {
+  return isTextSubtitle(stream) ? null : "needs burn-in (transcode)";
 }
+
+const IMAGE_SUBTITLE_TITLE =
+  "Image subtitles have no text to convert — showing them means burning them into the video, a transcode. Not offered here yet.";
 
 function audioTracksApiSupported(video: HTMLVideoElement | null): boolean {
   return video !== null && "audioTracks" in video;
@@ -145,19 +150,19 @@ export function TrackPickers({
             <span>Off</span>
           </button>
           {subtitleStreams.map((stream) => {
-            const url = resolveSubtitleTrackUrl(stream);
-            const renderable = url !== null;
+            const blocked = subtitleBlockedReason(stream);
             return (
               <button
                 key={stream.index}
                 type="button"
                 className={styles.option}
                 data-active={stream.index === selectedSubtitleIndex}
-                disabled={!renderable}
+                disabled={blocked !== null}
+                title={blocked !== null ? IMAGE_SUBTITLE_TITLE : undefined}
                 onClick={() => onSelectSubtitle(stream.index)}
               >
                 <span>{describeSubtitle(stream)}</span>
-                {!renderable && <span className={styles.optionMeta}>requires transcoding (Phase 3)</span>}
+                {blocked !== null && <span className={styles.optionMeta}>{blocked}</span>}
               </button>
             );
           })}
