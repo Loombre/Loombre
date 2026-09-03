@@ -49,7 +49,7 @@ describe("startStashWatcher", () => {
       { libraryId: "lib-b", sqlitePath: libBPath },
     ];
     const changed: string[] = [];
-    const handle = startStashWatcher(connections, {
+    const handle = await startStashWatcher(connections, {
       onChange: (libraryId) => changed.push(libraryId),
       debounceMs: 50,
       // Windows only: force chokidar's stat-polling backend instead of the

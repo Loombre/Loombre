@@ -38,7 +38,7 @@ export interface StartStashWatcherOptions {
   debounceMs?: number;
 }
 
-export function startStashWatcher(connections: readonly StashWatcherConnection[], options: StartStashWatcherOptions): WatcherHandle {
+export function startStashWatcher(connections: readonly StashWatcherConnection[], options: StartStashWatcherOptions): Promise<WatcherHandle> {
   return startWatcher(
     connections.map((c) => ({ id: c.libraryId, paths: [c.sqlitePath, `${c.sqlitePath}-wal`, `${c.sqlitePath}-shm`] })),
     {

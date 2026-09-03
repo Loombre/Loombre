@@ -31,6 +31,8 @@
  *      hatch for a Linux NFS/CIFS library).
  */
 import { watch as chokidarWatch, type FSWatcher } from "chokidar";
+import { access } from "node:fs/promises";
+import { dirname } from "node:path";
 
 const POLL_ENV_VAR = "LOOMBRE_SCAN_POLL";
 const DEBOUNCE_MS = 2000;
@@ -65,7 +67,15 @@ export function resolveUsePolling(
 
 export interface WatcherHandle {
   stop(): Promise<void>;
+  /** Libraries for which at least one path passed the boot probe and is
+   *  actually being watched — diagnostics for logs and tests. */
+  readonly watchedLibraryIds: readonly string[];
 }
+
+/** How long a single library path may take to answer the boot-time
+ *  access probe before it is skipped. Generous for a slow network mount,
+ *  far below what a frozen boot costs. */
+export const PATH_PROBE_TIMEOUT_MS = 2_000;
 
 export interface StartWatcherOptions {
   /** Called (debounced) after a burst of filesystem activity settles under
@@ -74,6 +84,14 @@ export interface StartWatcherOptions {
   env?: NodeJS.ProcessEnv;
   platform?: NodeJS.Platform;
   debounceMs?: number;
+  /** Boot-time reachability probe for a library path — resolves when the
+   *  path is accessible, rejects when it is missing or denied. Injectable
+   *  for tests; defaults to fs.promises.access, which runs in the libuv
+   *  threadpool and therefore cannot freeze the event loop even when the
+   *  operating system blocks the call on a consent prompt. */
+  probePath?: (path: string) => Promise<void>;
+  probeTimeoutMs?: number;
+  log?: (message: string) => void;
 }
 
 /**
@@ -82,14 +100,63 @@ export interface StartWatcherOptions {
  * (`debounceMs`, default 2s) so a burst of writes (a multi-file copy)
  * triggers exactly one `onChange` call once things settle, not one per
  * file event.
+ *
+ * BOOT GUARD — a watcher must never freeze the worker. On macOS the
+ * native `fs.watch` backend opens the watched directory synchronously
+ * inside libuv (`uv_fs_event_start` -> `open()`), and opening a
+ * privacy-protected folder (Desktop/Documents/Downloads) without consent
+ * blocks the MAIN THREAD on the TCC prompt — indefinitely with nobody at
+ * the keyboard. chokidar watches the nearest EXISTING ancestor of a
+ * missing path, so a library whose folder has vanished from under such a
+ * parent hits the same wall. Observed live (2026-09-03): every pg-boss
+ * poller went silent after its first fetch and no probe/transcode job
+ * ever ran. So every path is probed asynchronously with a bounded timeout
+ * first (`probePath`, threadpool-backed); a path that is missing, denied
+ * or silent is logged and skipped, and chokidar only ever sees paths that
+ * answered. chokidar's runtime 'error' events are observed too, so an
+ * unlistened emit can never become a process-fatal unhandled rejection.
  */
-export function startWatcher(
+export async function startWatcher(
   libraries: readonly { id: string; paths: readonly string[] }[],
   options: StartWatcherOptions
-): WatcherHandle {
+): Promise<WatcherHandle> {
   const env = options.env ?? process.env;
   const platform = options.platform ?? process.platform;
   const debounceMs = options.debounceMs ?? DEBOUNCE_MS;
+  const probePath = options.probePath ?? ((path: string) => access(path));
+  const probeTimeoutMs = options.probeTimeoutMs ?? PATH_PROBE_TIMEOUT_MS;
+  const log = options.log ?? ((message: string) => console.error(message));
+  const watchedLibraryIds: string[] = [];
+
+  /** A path is watchable when it answers, OR when it is merely missing but
+   *  its parent answers — chokidar then watches the parent for the path's
+   *  creation, which is how a Stash `-wal` file that does not exist yet
+   *  (and a library folder mounted later) still gets picked up. Only a
+   *  blocked/denied/silent probe is skipped. */
+  async function watchable(path: string): Promise<{ ok: true } | { ok: false; why: string }> {
+    const direct = await reachable(path);
+    if (direct.ok || !/ENOENT/.test(direct.why)) return direct;
+    const parent = await reachable(dirname(path));
+    return parent.ok ? { ok: true } : { ok: false, why: `${direct.why}; parent ${dirname(path)}: ${parent.why}` };
+  }
+
+  async function reachable(path: string): Promise<{ ok: true } | { ok: false; why: string }> {
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<{ ok: false; why: string }>((resolve) => {
+      timer = setTimeout(() => resolve({ ok: false, why: `no answer within ${probeTimeoutMs} ms (blocked on a permission prompt?)` }), probeTimeoutMs);
+    });
+    try {
+      return await Promise.race([
+        probePath(path).then(
+          () => ({ ok: true }) as const,
+          (err: unknown) => ({ ok: false, why: err instanceof Error ? err.message : String(err) }) as const,
+        ),
+        timeout,
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
 
   const watchers: FSWatcher[] = [];
   const timers = new Map<string, NodeJS.Timeout>();
@@ -109,24 +176,44 @@ export function startWatcher(
   for (const library of libraries) {
     if (library.paths.length === 0) continue;
 
+    const watchablePaths: string[] = [];
+    for (const path of library.paths) {
+      const result = await watchable(path);
+      if (result.ok) {
+        watchablePaths.push(path);
+      } else {
+        log(`worker: not watching library ${library.id} path ${path} — ${result.why}; scans still run, the watch resumes on the next worker start once the path is reachable`);
+      }
+    }
+    if (watchablePaths.length === 0) continue;
+
     // usePolling is a single boolean per chokidar instance, but the
     // heuristic is per-path — a library could mix a local path and a
     // network path. If ANY of the library's paths look like a network
     // mount, the whole watcher instance polls (the safe direction to
     // round to: a spurious poll on a local path costs a little CPU, a
     // missed native event on a network path silently breaks the watch).
-    const usePolling = library.paths.some((p) => resolveUsePolling(p, env, platform));
+    const usePolling = watchablePaths.some((p) => resolveUsePolling(p, env, platform));
 
-    const watcher = chokidarWatch([...library.paths], {
+    const watcher = chokidarWatch(watchablePaths, {
       usePolling,
       ignoreInitial: true,
       persistent: true,
     });
     watcher.on("all", () => scheduleChange(library.id));
+    // An EventEmitter "error" with no listener THROWS inside chokidar's
+    // async handlers — i.e. an unhandled rejection, which the worker's
+    // crash handler treats as fatal. A watch failure is not fatal to a
+    // worker; the scanner never depended on the watcher in the first place.
+    watcher.on("error", (err: unknown) => {
+      log(`worker: library watcher error for library ${library.id}: ${err instanceof Error ? err.message : String(err)}`);
+    });
     watchers.push(watcher);
+    watchedLibraryIds.push(library.id);
   }
 
   return {
+    watchedLibraryIds,
     async stop() {
       for (const timer of timers.values()) clearTimeout(timer);
       timers.clear();

@@ -364,11 +364,15 @@ let pluginDeliveryLoopHandle: PluginDeliveryLoopHandle | undefined;
 // network mounts — see ./scan/watcher.ts), debounced into incremental scan
 // jobs. Best-effort at boot: a watcher-start failure (e.g. a library path
 // that no longer exists) is logged, not fatal — the worker still serves
-// scan/probe/image jobs either way.
+// scan/probe/image jobs either way. startWatcher probes every path with a
+// bounded timeout BEFORE chokidar touches it (see its header: a blocked
+// fs.watch open() on a macOS privacy-protected folder froze this whole
+// process at boot), so an unreachable library can delay boot by at most
+// PATH_PROBE_TIMEOUT_MS per path and never wedge it.
 async function startLibraryWatcher(): Promise<void> {
   try {
     const libraries = await listLibraries(db);
-    watcherHandle = startWatcher(
+    watcherHandle = await startWatcher(
       libraries.map((l) => ({ id: l.id, paths: l.paths })),
       {
         onChange: (libraryId) => {
@@ -401,7 +405,7 @@ async function startStashLibraryWatcher(): Promise<void> {
     }
     if (connections.length === 0) return;
 
-    stashWatcherHandle = startStashWatcher(connections, {
+    stashWatcherHandle = await startStashWatcher(connections, {
       onChange: (libraryId) => {
         queue.enqueue("stash-sync", { libraryId, mode: "incremental" }).catch((err: unknown) => {
           console.error(`worker: failed to enqueue watch-triggered stash-sync for library ${libraryId}:`, err);
