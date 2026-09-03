@@ -17,9 +17,9 @@
 // decision table directly.
 
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { classifyFfmpegFailure } from "../src/ffmpeg-failure.js";
@@ -51,16 +51,41 @@ function vendoredFfmpegPath(): string | null {
   return existsSync(candidate) ? candidate : null;
 }
 
+function isRegularFile(candidate: string): boolean {
+  try {
+    return statSync(candidate).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/** PATH lookup, the same shape as apps/worker/src/probe/ffprobe.ts's
+ *  findOnPath (packages/shared cannot import from apps/worker): every PATH
+ *  entry, the bare name on POSIX, each PATHEXT extension on Windows; the
+ *  first existing regular file wins. This is how CI's package-manager-
+ *  installed ffmpeg is found — the runners never populate vendor/ffmpeg. */
+function findOnPath(name: string): string | null {
+  const dirs = (process.env["PATH"] ?? "").split(delimiter).filter((dir) => dir.length > 0);
+  const suffixes = process.platform === "win32" ? (process.env["PATHEXT"] ?? ".EXE;.CMD;.BAT;.COM").split(";") : [""];
+  for (const dir of dirs) {
+    for (const suffix of suffixes) {
+      const candidate = join(dir, name + suffix);
+      if (isRegularFile(candidate)) return candidate;
+    }
+  }
+  return null;
+}
+
 function resolveFfmpegForTest(): string | null {
   const envPath = process.env["LOOMBRE_FFMPEG"];
   if (envPath && existsSync(envPath)) return envPath;
-  return vendoredFfmpegPath();
+  return findOnPath("ffmpeg") ?? vendoredFfmpegPath();
 }
 
 const ffmpegPath = resolveFfmpegForTest();
 if (!ffmpegPath && process.env["LOOMBRE_REQUIRE_FFMPEG"]) {
   throw new Error(
-    "LOOMBRE_REQUIRE_FFMPEG is set but no ffmpeg binary was resolvable (LOOMBRE_FFMPEG env, or vendor/ffmpeg/<platform>) " +
+    "LOOMBRE_REQUIRE_FFMPEG is set but no ffmpeg binary was resolvable (LOOMBRE_FFMPEG env, PATH, or vendor/ffmpeg/<platform>) " +
       "— refusing to silently skip the real-ffmpeg ffmpeg-failure cases",
   );
 }
