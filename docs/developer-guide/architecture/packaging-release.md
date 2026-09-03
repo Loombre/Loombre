@@ -103,7 +103,9 @@ Burn-bundle `.exe` (which chains the VC++ redistributable ahead of an
 internally-built MSI — the MSI itself is deliberately **not** published
 as a separate release asset; the bundle's success page offers a Launch
 button that opens the tray and then the browser at the setup wizard), and
-macOS `.pkg` (arm64; x64 is a known pending gap, needing an Intel runner),
+macOS `.pkg` (two per release, one matrix leg per architecture: arm64 on
+`macos-latest`, x64 natively on `macos-15-intel` — Intel support is
+demand-based, see the [macOS install guide](../../install/macos.md)),
 pushes the two multi-arch Docker images (`loombre`, `loombre-web`),
 assembles and signs the release
 manifest and `SHA256SUMS`, and attests build provenance for every

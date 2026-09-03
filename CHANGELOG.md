@@ -21,6 +21,17 @@ are the version axis.
 
 ## [Unreleased]
 
+### Unreleased (after v0.9.0-rc.11)
+
+- macOS: the release pipeline now builds an Intel (`x64`) `.pkg` alongside
+  the Apple Silicon (`arm64`) one — one matrix leg per architecture, the
+  x64 leg natively on GitHub's `macos-15-intel` runner, each leg asserting
+  its runner CPU matches its arch before building (`swift build` and the
+  wg-native Go build emit host-arch binaries; `--arch` only selects the
+  Node/ffmpeg/PostgreSQL payload). Intel support is published on a demand
+  basis and may be dropped in a later release; docs/install/macos.md
+  states the policy.
+
 ### v0.9.0-rc.11 draft (2026-09-02)
 
 - Eleventh release candidate — the macOS recursive-grant fix below.

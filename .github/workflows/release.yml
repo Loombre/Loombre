@@ -284,12 +284,52 @@ jobs:
   # workflow_dispatch.
   # ───────────────────────────────────────────────────────────────────────
   build-macos:
-    name: build-macos
+    name: build-macos-${{ matrix.arch }}
     needs: prepare
-    runs-on: macos-latest
+    # One leg per CPU architecture. The .pkg bundles arch-specific
+    # binaries (Node, ffmpeg/ffprobe, embedded PostgreSQL, the wg-native
+    # dylib, the Swift menubar app), so Intel Macs need their own x64
+    # .pkg built NATIVELY on an Intel runner — nothing here cross-compiles
+    # (swift build / go build emit host-arch output; see the guard step).
+    # macos-15-intel is GitHub's last x86_64 image (retires August 2027).
+    # Intel support is demand-based (MAC-X64-1; the user-facing policy
+    # text lives in docs/install/macos.md).
+    # scripts/release/test/release-workflow-macos.test.mjs guards this
+    # shape (both legs present, nothing single-arch hard-coded).
+    strategy:
+      fail-fast: false # a failing Intel leg must not cancel the arm64 build
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-latest
+          - arch: x64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Assert the runner's CPU matches this leg's arch
+        # `swift build` and `go build -buildmode=c-shared` emit HOST-arch
+        # binaries while build-pkg.mjs --arch picks the Node/ffmpeg/PG
+        # payload; a runner label silently repointed to the other arch
+        # would ship a mixed .pkg. Fails before any install/build time
+        # is spent.
+        env:
+          LOOMBRE_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          host="$(uname -m)"
+          case "$LOOMBRE_ARCH" in
+            arm64) expected="arm64" ;;
+            x64) expected="x86_64" ;;
+            *) echo "::error::unknown matrix arch '$LOOMBRE_ARCH' (expected arm64 or x64)"; exit 1 ;;
+          esac
+          if [ "$host" != "$expected" ]; then
+            echo "::error::runner CPU is $host but this leg builds $LOOMBRE_ARCH (needs $expected) — the runner label no longer matches the arch; fix the build-macos matrix"
+            exit 1
+          fi
+          echo "build-macos: runner CPU $host matches arch $LOOMBRE_ARCH"
 
       - name: Set up pnpm
         uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
@@ -327,35 +367,38 @@ jobs:
       - name: build-pkg.mjs (lane I4)
         # Real CLI contract (installers/macos/build-pkg.mjs): NO --version
         # flag at all — always reads package.json directly (`prepare`
-        # already verified it matches the tag). --arch=arm64|x64 (default:
-        # the RUNNER's own arch; macos-latest is arm64 as of this writing —
-        # a native x64 .pkg would need an intel runner, logged as a
-        # follow-up, not attempted here). NO --out/--out-dir flag either —
-        # output is ALWAYS installers/macos/dist/loombre-<version>-macos-
-        # <arch>.pkg; the next step copies it into dist/release.
+        # already verified it matches the tag). --arch (arm64 or x64) is
+        # passed explicitly from the matrix (the default would be the runner's
+        # own arch, which the guard step above already proved identical —
+        # explicit anyway so the staged filename and the payload can never
+        # disagree). NO --out/--out-dir flag either — output is ALWAYS
+        # installers/macos/dist/loombre-<version>-macos-<arch>.pkg; the
+        # next step copies it into dist/release.
         env:
+          LOOMBRE_ARCH: ${{ matrix.arch }}
           # Vendor-mirror fallback — see build-tarball's note. (macOS pins
           # evermeet/osxexperts, historically the stable pair, but the
           # fallback should not be x64/arm64-leg-only.)
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          node installers/macos/build-pkg.mjs --arch=arm64
+          node installers/macos/build-pkg.mjs --arch="$LOOMBRE_ARCH"
 
       - name: Stage the built .pkg into dist/release
         env:
           LOOMBRE_VERSION: ${{ needs.prepare.outputs.version }}
+          LOOMBRE_ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
-          src="installers/macos/dist/loombre-${LOOMBRE_VERSION}-macos-arm64.pkg"
+          src="installers/macos/dist/loombre-${LOOMBRE_VERSION}-macos-${LOOMBRE_ARCH}.pkg"
           if [ ! -f "$src" ]; then
             echo "::error::expected .pkg not found at $src — build-pkg.mjs's documented output path may have changed; update this step to match"
             exit 1
           fi
           cp "$src" dist/release/
 
-      # Real install smoke (runner has passwordless sudo; macos-latest is
-      # arm64, matching the payload). Added after the v0.9.0-rc.1 draft
+      # Real install smoke (runner has passwordless sudo; each leg's runner
+      # CPU matches its payload — asserted above). Added after the v0.9.0-rc.1 draft
       # FAILED on a real Mac with a defect no green BUILD can catch —
       # PackageKit refused the non-executable preinstall script
       # (PKInstallErrorDomain 112; the scripts were tracked 100644). A
@@ -365,9 +408,10 @@ jobs:
       - name: Install smoke (sudo installer, real PackageKit)
         env:
           LOOMBRE_VERSION: ${{ needs.prepare.outputs.version }}
+          LOOMBRE_ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
-          pkg="dist/release/loombre-${LOOMBRE_VERSION}-macos-arm64.pkg"
+          pkg="dist/release/loombre-${LOOMBRE_VERSION}-macos-${LOOMBRE_ARCH}.pkg"
           if ! sudo installer -pkg "$pkg" -target / -verboseR; then
             echo "::error::sudo installer failed — PackageKit log tail follows"
             tail -50 /var/log/install.log || true
@@ -437,7 +481,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: release-artifacts-macos
+          name: release-artifacts-macos-${{ matrix.arch }}
           path: dist/release/**
           if-no-files-found: error
 

@@ -26,14 +26,23 @@ boundary.
 
 ## Downloading
 
-Get `loombre-<version>-macos-<arch>.pkg` for your Mac (`arch` is `arm64` for
-Apple Silicon, `x64` for Intel) plus the release's shared verification
-files, from the [releases page] (or your own mirror).
+Get `loombre-<version>-macos-<arch>.pkg` for your Mac plus the release's
+shared verification files, from the [releases page] (or your own mirror).
+Every release publishes two `.pkg`s, one per CPU architecture — pick by
+what Apple menu → About This Mac reports under **Chip**:
 
-**Apple Silicon (`arm64`) only for now** — the release pipeline builds and
-publishes only the `arm64` `.pkg` today; an Intel (`x64`) build is not yet
-published (the build script already supports `--arch=x64` — the gap is the
-pipeline, a known pending item). The downloads:
+- `arm64` — Apple Silicon (any "Apple M…" chip)
+- `x64` — Intel
+
+**Intel support policy.** The `x64` build is published on a demand basis,
+not as a long-term commitment: Apple no longer makes Intel Macs, and the
+Intel build machines the release pipeline runs on are retired by their
+provider in August 2027. Depending on demand, Intel builds may be dropped
+in a later release; earlier releases stay downloadable either way. If you
+run Loombre on an Intel Mac, saying so in a GitHub issue is the demand
+signal.
+
+The downloads:
 
 - `loombre-<version>-macos-<arch>.pkg` — the installer
 - `SHA256SUMS` — checksums for every artifact in the release
