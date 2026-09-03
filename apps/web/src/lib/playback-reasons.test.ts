@@ -82,6 +82,43 @@ describe("itemUnavailableReasons", () => {
   });
 });
 
+// SPF-7 Phase B: the eight client-side fatal-cause codes goFatal's
+// `clientFailureReasons` (lib/playback-recovery.ts) can now render instead
+// of the always-generic CLIENT_PLAYBACK_ERROR_CODE — same out-of-contract-
+// enum precedent, same {title, detail, severity} shape, so UnavailableScreen
+// needs no separate rendering path for any of them.
+describe("SPF-7 Phase B client-cause codes", () => {
+  const codes = [
+    "client-media-aborted",
+    "client-media-network-error",
+    "client-media-decode-error",
+    "client-media-src-not-supported",
+    "hls-network-error",
+    "hls-media-error",
+    "hls-fatal-error",
+    "playback-stalled",
+  ];
+
+  it("every client-cause code has its own dedicated, distinct copy — not the generic fallback", () => {
+    const titles = new Set<string>();
+    for (const code of codes) {
+      const copy = describeReasonCode(code);
+      expect(copy.title, `"${code}" fell through to the generic fallback`).not.toBe(code);
+      expect(copy.detail).not.toMatch(/this build's reason copy map may be behind/i);
+      expect(copy.severity).toBe("blocking");
+      titles.add(copy.title);
+    }
+    expect(titles.size, "every code must have its own distinct title").toBe(codes.length);
+  });
+
+  it("stays consistent with docs/user-guide/playback-errors.md's own framing for the network/decode/format codes", () => {
+    expect(describeReasonCode("hls-network-error").title.toLowerCase()).toContain("stream");
+    expect(describeReasonCode("client-media-decode-error").title.toLowerCase()).toContain("decode");
+    expect(describeReasonCode("client-media-src-not-supported").title.toLowerCase()).toContain("format");
+    expect(describeReasonCode("playback-stalled").title.toLowerCase()).toContain("stalled");
+  });
+});
+
 // Phase 4 deliverable D (admin Sessions "why is this transcoding" reasons
 // panel): the closed docs/PLAYBACK.md §4 reason-code enum, hand-mirrored
 // from packages/contract/openapi.yaml's PlanReasonCode `oneOf` (verified

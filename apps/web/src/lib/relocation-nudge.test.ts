@@ -8,6 +8,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  HARD_SEEK_EXTRA_RELOAD_MS,
   HARD_SEEK_REFRESH_NUDGE_MS,
   LEVEL_LOADING_EVENT,
   pickReloadLevelIndex,
@@ -30,22 +31,47 @@ describe("startRelocationNudge", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  it("fires immediately on arm (SPF-4/SPF-5), then once per interval while relocating", () => {
+  it("fires immediately on arm (SPF-4/SPF-5), once more shortly after (R6), then once per interval while relocating", () => {
     const hls = makeReloader();
     const stop = startRelocationNudge(() => hls, () => true);
     expect(
       hls.calls,
       "SPF-4: the server now parks the manifest GET while a seek is pending/in-progress, so the first reload fires the moment the nudge is armed instead of waiting out an interval",
     ).toEqual(["stopLoad", "startLoad(-1,true)"]);
-    vi.advanceTimersByTime(HARD_SEEK_REFRESH_NUDGE_MS);
+    // R6: the extra 150 ms tick fires before the 1 s cadence resumes.
+    vi.advanceTimersByTime(HARD_SEEK_EXTRA_RELOAD_MS);
     expect(hls.calls).toEqual(["stopLoad", "startLoad(-1,true)", "stopLoad", "startLoad(-1,true)"]);
+    vi.advanceTimersByTime(HARD_SEEK_REFRESH_NUDGE_MS - HARD_SEEK_EXTRA_RELOAD_MS);
+    expect(hls.calls).toEqual([
+      "stopLoad", "startLoad(-1,true)",
+      "stopLoad", "startLoad(-1,true)",
+      "stopLoad", "startLoad(-1,true)",
+    ]);
     vi.advanceTimersByTime(HARD_SEEK_REFRESH_NUDGE_MS * 2);
     expect(hls.calls).toEqual([
       "stopLoad", "startLoad(-1,true)",
       "stopLoad", "startLoad(-1,true)",
       "stopLoad", "startLoad(-1,true)",
       "stopLoad", "startLoad(-1,true)",
+      "stopLoad", "startLoad(-1,true)",
     ]);
+    stop();
+  });
+
+  // R6: pin the exact tick schedule the peer review asked for.
+  it("ticks at 0, 150, 1000, 2000 … (R6 — the extra reload recovers from the playlist-loader's identity dedupe)", () => {
+    vi.setSystemTime(0);
+    const hls = makeReloader();
+    const stamps: number[] = [];
+    hls.stopLoad = () => stamps.push(Date.now());
+    const stop = startRelocationNudge(() => hls, () => true);
+    expect(stamps).toEqual([0]);
+    vi.advanceTimersByTime(HARD_SEEK_EXTRA_RELOAD_MS);
+    expect(stamps).toEqual([0, 150]);
+    vi.advanceTimersByTime(HARD_SEEK_REFRESH_NUDGE_MS - HARD_SEEK_EXTRA_RELOAD_MS);
+    expect(stamps).toEqual([0, 150, 1000]);
+    vi.advanceTimersByTime(HARD_SEEK_REFRESH_NUDGE_MS);
+    expect(stamps).toEqual([0, 150, 1000, 2000]);
     stop();
   });
 
@@ -62,8 +88,13 @@ describe("startRelocationNudge", () => {
     const hls = makeReloader();
     const stop = startRelocationNudge(() => hls, () => true, () => 42.5);
     expect(hls.calls, "the immediate arm-time tick also uses the caller's resume position").toEqual(["stopLoad", "startLoad(42.5,true)"]);
+    // Crosses both the R6 extra 150 ms tick and the 1 s cadence tick.
     vi.advanceTimersByTime(HARD_SEEK_REFRESH_NUDGE_MS);
-    expect(hls.calls).toEqual(["stopLoad", "startLoad(42.5,true)", "stopLoad", "startLoad(42.5,true)"]);
+    expect(hls.calls).toEqual([
+      "stopLoad", "startLoad(42.5,true)",
+      "stopLoad", "startLoad(42.5,true)",
+      "stopLoad", "startLoad(42.5,true)",
+    ]);
     stop();
   });
 
@@ -72,11 +103,12 @@ describe("startRelocationNudge", () => {
     let relocating = true;
     const stop = startRelocationNudge(() => hls, () => relocating);
     expect(hls.calls, "the immediate arm-time tick still checks isRelocating").toHaveLength(2);
+    // Crosses both the R6 extra 150 ms tick and the 1 s cadence tick.
     vi.advanceTimersByTime(HARD_SEEK_REFRESH_NUDGE_MS);
-    expect(hls.calls).toHaveLength(4);
+    expect(hls.calls).toHaveLength(6);
     relocating = false;
     vi.advanceTimersByTime(HARD_SEEK_REFRESH_NUDGE_MS * 3);
-    expect(hls.calls).toHaveLength(4);
+    expect(hls.calls).toHaveLength(6);
     stop();
   });
 
@@ -84,10 +116,12 @@ describe("startRelocationNudge", () => {
     const hls = makeReloader();
     const stop = startRelocationNudge(() => hls, () => true);
     expect(hls.calls).toHaveLength(2);
+    // Crosses both the R6 extra 150 ms tick and the 1 s cadence tick.
     vi.advanceTimersByTime(HARD_SEEK_REFRESH_NUDGE_MS);
+    expect(hls.calls).toHaveLength(6);
     stop();
     vi.advanceTimersByTime(HARD_SEEK_REFRESH_NUDGE_MS * 5);
-    expect(hls.calls).toHaveLength(4);
+    expect(hls.calls).toHaveLength(6);
   });
 
   it("a vanished hls instance (detach/recovery mid-relocation) is skipped, not crashed on", () => {
@@ -160,7 +194,9 @@ describe("startRelocationNudge", () => {
     };
     const stop = startRelocationNudge(() => hls, () => true, () => 42.5);
     vi.advanceTimersByTime(HARD_SEEK_REFRESH_NUDGE_MS * 2);
-    expect(calls, "each tick (including the immediate arm-time one) must re-read the playlist WITHOUT aborting/re-kicking fragment loads").toEqual([
+    // Immediate tick + the R6 extra 150 ms tick + two 1 s cadence ticks.
+    expect(calls, "each tick (including the immediate arm-time one and the R6 extra tick) must re-read the playlist WITHOUT aborting/re-kicking fragment loads").toEqual([
+      `trigger(${LEVEL_LOADING_EVENT})`,
       `trigger(${LEVEL_LOADING_EVENT})`,
       `trigger(${LEVEL_LOADING_EVENT})`,
       `trigger(${LEVEL_LOADING_EVENT})`,

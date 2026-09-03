@@ -480,3 +480,164 @@ describe("UnavailableScreen rendering the real engine's refusal (phone sheet)", 
     expect(onBack).toHaveBeenCalledTimes(1);
   });
 });
+
+// SPF-7 Phase B: the code line's aria-label, the "Copy details" affordance
+// beside it, and the optional "Try again" action.
+describe("SPF-7 Phase B: error code line, Copy details, Try again", () => {
+  let view: TestRender | null = null;
+
+  afterEach(() => {
+    view?.unmount();
+    view = null;
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  function installClipboard(): { writeText: ReturnType<typeof vi.fn> } {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    return { writeText };
+  }
+
+  function findButton(container: HTMLElement, text: string): HTMLButtonElement {
+    const button = Array.from(container.querySelectorAll("button")).find((b) => b.textContent?.includes(text));
+    if (!button) throw new Error(`no button found containing "${text}"`);
+    return button;
+  }
+
+  it("the code line carries an 'Error code' aria-label for assistive tech", () => {
+    installMatchMedia(false);
+    view = renderIntoBody(
+      <UnavailableScreen
+        title="Arrival"
+        backdropUrl={null}
+        dominantColor={null}
+        reasons={sessionFailureReasons("transcode-failed")}
+        fallback={null}
+        onAcceptFallback={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+    const codeEl = view.container.querySelector('[aria-label="Error code"]');
+    expect(codeEl).not.toBeNull();
+    expect(codeEl?.textContent).toContain("transcode-failed");
+  });
+
+  it("Copy details writes <title> · <code> · <detail> · HTTP <status> · session <id> · <ISO time> to the clipboard", () => {
+    installMatchMedia(false);
+    const { writeText } = installClipboard();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-03T12:00:00.000Z"));
+    view = renderIntoBody(
+      <UnavailableScreen
+        title="Arrival"
+        backdropUrl={null}
+        dominantColor={null}
+        reasons={[{ code: "transcode-failed", streamIndex: null, detail: "exit code 1" }]}
+        statusCode={500}
+        sessionId="sess-1"
+        variant="failed"
+        fallback={null}
+        onAcceptFallback={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+    findButton(view.container, "Copy details").click();
+    expect(writeText).toHaveBeenCalledWith(
+      "Transcoding failed on the server · transcode-failed · exit code 1 · HTTP 500 · session sess-1 · 2026-09-03T12:00:00.000Z",
+    );
+  });
+
+  it("a reason with no detail copies 'no detail' rather than a blank/undefined segment", () => {
+    installMatchMedia(false);
+    const { writeText } = installClipboard();
+    view = renderIntoBody(
+      <UnavailableScreen
+        title="Arrival"
+        backdropUrl={null}
+        dominantColor={null}
+        reasons={sessionFailureReasons(null)}
+        fallback={null}
+        onAcceptFallback={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+    findButton(view.container, "Copy details").click();
+    const copied = writeText.mock.calls[0]?.[0] as string;
+    expect(copied).toContain("no detail");
+    expect(copied).toContain(`HTTP ?`);
+    expect(copied).toContain("session ?");
+  });
+
+  it("a denied/absent Clipboard API falls back gracefully — no throw, no crash", () => {
+    installMatchMedia(false);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined });
+    view = renderIntoBody(
+      <UnavailableScreen
+        title="Arrival"
+        backdropUrl={null}
+        dominantColor={null}
+        reasons={sessionFailureReasons("transcode-failed")}
+        fallback={null}
+        onAcceptFallback={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+    expect(() => findButton(view!.container, "Copy details").click()).not.toThrow();
+  });
+
+  it("renders no 'Try again' button when onRetry is omitted", () => {
+    installMatchMedia(false);
+    view = renderIntoBody(
+      <UnavailableScreen
+        title="Arrival"
+        backdropUrl={null}
+        dominantColor={null}
+        reasons={sessionFailureReasons("transcode-failed")}
+        fallback={null}
+        onAcceptFallback={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+    expect(view.container.textContent).not.toContain("Try again");
+  });
+
+  it("renders a primary 'Try again' button on desktop, wired to onRetry", () => {
+    installMatchMedia(false);
+    const onRetry = vi.fn();
+    view = renderIntoBody(
+      <UnavailableScreen
+        title="Arrival"
+        backdropUrl={null}
+        dominantColor={null}
+        reasons={sessionFailureReasons("transcode-failed")}
+        fallback={null}
+        onAcceptFallback={vi.fn()}
+        onBack={vi.fn()}
+        onRetry={onRetry}
+      />,
+    );
+    findButton(view.container, "Try again").click();
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders the SAME 'Try again' button on the phone sheet, wired to onRetry", () => {
+    installMatchMedia(true);
+    const onRetry = vi.fn();
+    view = renderIntoBody(
+      <UnavailableScreen
+        title="Arrival"
+        backdropUrl={null}
+        dominantColor={null}
+        reasons={sessionFailureReasons("transcode-failed")}
+        fallback={null}
+        onAcceptFallback={vi.fn()}
+        onBack={vi.fn()}
+        onRetry={onRetry}
+      />,
+    );
+    expect(view.container.querySelector('[role="dialog"]')).not.toBeNull(); // still the BottomSheet form
+    findButton(view.container, "Try again").click();
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+});

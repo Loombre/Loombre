@@ -45,7 +45,7 @@ import { decideAttachStrategy, isMseAvailable, isNativeHlsSupported } from "../.
 import { buildHlsJsConfig, resolveStartLevel } from "../../lib/hls-js-config.js";
 import { QualitySelector, type QualityLevel } from "./QualitySelector.js";
 import { deriveSubtitleTrackInfo, type SubtitleTrackInfo } from "../../lib/subtitle-track.js";
-import { clientPlaybackErrorReasons, itemUnavailableReasons, resolveUnavailableReasons } from "../../lib/playback-reasons.js";
+import { itemUnavailableReasons, resolveUnavailableReasons } from "../../lib/playback-reasons.js";
 import { findPlayableFallback, decisionLabel, type FallbackCandidate } from "../../lib/playback-fallback.js";
 import { findProgressForItem, isWorthResuming } from "../../lib/progress-lookup.js";
 import { HeartbeatScheduler, type HeartbeatSnapshot, type ProgressState } from "../../lib/heartbeat.js";
@@ -80,9 +80,18 @@ import {
 } from "../../lib/source-clock.js";
 import { reopenEndedLevels, startRelocationNudge } from "../../lib/relocation-nudge.js";
 import { decideHardSeekDispatch } from "../../lib/seek-coalesce.js";
+import { formatSeekFailedToast, formatSeekTimedOutToast } from "../../lib/seek-toast.js";
 import { listedWindowEndSec, rebuildMsePipelineForHardSeek } from "../../lib/post-endlist-rebuild.js";
 import { startEndlistEosWatch } from "../../lib/endlist-eos-watch.js";
-import { decideRecovery, sessionCreateFailedReasons, sessionEndedReasons, sessionFailureReasons } from "../../lib/playback-recovery.js";
+import {
+  basename,
+  clientFailureReasons,
+  decideRecovery,
+  sessionCreateFailedReasons,
+  sessionEndedReasons,
+  sessionFailureReasons,
+  type ClientFailureCause,
+} from "../../lib/playback-recovery.js";
 import { useToast } from "../ui/Toast.js";
 import { AmbientBackdrop } from "./AmbientBackdrop.js";
 import { UnavailableScreen, type UnavailableVariant } from "./UnavailableScreen.js";
@@ -118,9 +127,10 @@ const IDLE_HIDE_MS = 3000;
 // RECOVERY_MIN_INTERVAL_MS, before falling through to the same
 // fatal-unavailable path (`goFatal`) an unrecoverable decode/
 // src-not-supported error already uses — which now inspects the session
-// server-side first (status 'failed' -> the session's errorCode copy,
-// lib/playback-recovery.ts; anything else -> clientPlaybackErrorReasons,
-// lib/playback-reasons.ts).
+// server-side first (status 'failed'/'ended' -> the session's own code,
+// lib/playback-recovery.ts; anything else -> the specific client cause
+// `goFatal` was called with, lib/playback-recovery.ts's
+// `clientFailureReasons`).
 // How long a stall (`waiting`/`stalled` while playing, no fatal `error`
 // event at all) must sit with a KNOWN-stale attached token — a fresher one
 // already exists, see `onStallSignal` — before it's treated as Safari's
@@ -227,6 +237,11 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   // fallback-accept round trip, so relying on the default would let a
   // previous framing leak into the next failure.
   const [unavailableVariant, setUnavailableVariant] = useState<UnavailableVariant>("refused");
+  // SPF-7 Phase B: bumped by handleRetry (below) to re-run the session-
+  // create effect with nothing else in its dependency list changed — the
+  // minimal lever for "try the exact same create again", per subtitlePin's
+  // existing precedent for "re-run the create effect on demand".
+  const [retryNonce, setRetryNonce] = useState(0);
   const [fallback, setFallback] = useState<FallbackCandidate | null>(null);
   const [session, setSession] = useState<PlaybackSession | null>(null);
   const [resumeCandidateMs, setResumeCandidateMs] = useState<number | null>(null);
@@ -609,14 +624,23 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   // (lib/playback-recovery.ts) instead. Any inspect failure (network gone,
   // 404 after an idle sweep, no session yet) falls back to the client
   // reason — this path must never hang on a GET to render SOMETHING.
-  const goFatal = useCallback((): void => {
+  // browser-player-F1 / SPF-7 Phase B: `cause` is the client-side failure
+  // that triggered this call — which MediaError code, which hls.js fatal
+  // (network/media/other), or the stall watchdog giving up, plus (when the
+  // failure was reached via bounded recovery) how many retries were spent
+  // first. Rendered ONLY when the session inspect below does NOT confirm a
+  // server-side failure/end — a specific client code is honest only when
+  // nothing on the server side already explains what happened; when the
+  // server DID mark the session failed/ended, its own (strictly more
+  // informative) code wins exactly as before this cause existed.
+  const goFatal = useCallback((cause: ClientFailureCause, retries?: number): void => {
     const sessionId = session?.id;
     // d3-a5: every goFatal destination is a RUNTIME failure — playback had
     // already started, so none of them is a planner refusal. All three
     // branches wear AQ's "failed" framing (pill "Session failed", never
     // "Session refused").
     const clientFallback = (): void => {
-      setUnavailableReasons(clientPlaybackErrorReasons());
+      setUnavailableReasons(clientFailureReasons(cause, retries));
       setUnavailableStatus(undefined);
       setUnavailableVariant("failed");
       setPhase("unavailable");
@@ -795,7 +819,7 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
         return;
       }
       if (!result.ok) {
-        setUnavailableReasons(resolveUnavailableReasons(result.status, result.wouldBeReasons));
+        setUnavailableReasons(resolveUnavailableReasons(result.status, result.reasons));
         setUnavailableStatus(result.status);
         // A genuine planner refusal (409/422/429) — the one path that IS
         // the default "refused" framing, set explicitly (d3-a5).
@@ -850,7 +874,16 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
       cancelled = true;
       lease.release();
     };
-  }, [itemId, mediaFileId, startMs, subtitlePin]);
+    // SPF-7 Phase B: `retryNonce` is otherwise unread inside this effect —
+    // it exists ONLY to force a re-run (handleRetry bumps it after arming
+    // `sessionSwapRef`, below `selectSubtitle`), the identical lever
+    // `subtitlePin` already is for a subtitle-pin re-create. The lease
+    // pool (AUD-A4v4-003) and the session-end-on-unmount effect
+    // (browser-player-F5) both key off `session?.id` alone, so the OLD
+    // (failed/ended) session still gets ended the moment this run adopts
+    // a new one — retrying wires no new teardown path, it just re-enters
+    // the existing one.
+  }, [itemId, mediaFileId, startMs, subtitlePin, retryNonce]);
 
   // ── Session end on unmount ──────────────────────────────────────────────
   // browser-player-F5: session ids the pagehide teardown path (below) has
@@ -1045,7 +1078,7 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
       attach();
     }
 
-    function scheduleRecoveryAttach(): void {
+    function scheduleRecoveryAttach(cause: ClientFailureCause): void {
       // decideRecovery (lib/playback-recovery.ts, browser-player-F1): the
       // SAME bounded policy the hls.js attach effect consults — budget
       // exhausted -> fatal; inside the cooldown -> DEFER the retry to when
@@ -1057,7 +1090,10 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
       // arriving before it fires changes nothing.)
       const decision = decideRecovery(recoveryAttemptsRef.current, recoveryStampRef.current, Date.now());
       if (decision.action === "fatal") {
-        goFatal();
+        // SPF-7 Phase B: the budget was spent retrying THIS cause — carry
+        // the attempt count into the detail line (`describeClientFailure`'s
+        // ` · after <n> retries` suffix).
+        goFatal(cause, recoveryAttemptsRef.current);
         return;
       }
       if (decision.delayMs === 0) {
@@ -1085,11 +1121,13 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
       // down and re-registering this very listener with the updated
       // closure.
       const err = video.error;
+      const cause: ClientFailureCause = { kind: "media-error", code: err ? err.code : null, message: err?.message ?? "" };
       if (err && (err.code === MEDIA_ERR_SRC_NOT_SUPPORTED || err.code === MEDIA_ERR_DECODE)) {
-        goFatal();
+        // Unrecoverable outright — no retry budget was ever spent on it.
+        goFatal(cause);
         return;
       }
-      scheduleRecoveryAttach();
+      scheduleRecoveryAttach(cause);
     };
 
     // ── Stall watchdog (2026-08-10 opus review finding 2) ─────────────────
@@ -1123,7 +1161,7 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
         const attachedNow = video.src;
         if (!attachedNow || attachedNow === activeSrcUrl) return; // still the current token — an ordinary rebuffer, not this
         if (!isSameUrlIgnoringToken(attachedNow, activeSrcUrl)) return; // a genuinely different resource — not this watchdog's concern
-        scheduleRecoveryAttach();
+        scheduleRecoveryAttach({ kind: "playback-stalled", positionSec: video.currentTime });
       }, STALL_WATCHDOG_MS);
     };
 
@@ -1503,11 +1541,13 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
         recoveryAttemptsRef.current += 1;
         retry();
       };
-      const scheduleHlsRecovery = (retry: () => void): void => {
+      const scheduleHlsRecovery = (retry: () => void, cause: ClientFailureCause): void => {
         const decision = decideRecovery(recoveryAttemptsRef.current, recoveryStampRef.current, Date.now());
         if (decision.action === "fatal") {
           hls?.stopLoad();
-          goFatal();
+          // SPF-7 Phase B: the budget was spent retrying THIS cause — carry
+          // the attempt count into the detail line.
+          goFatal(cause, recoveryAttemptsRef.current);
           return;
         }
         if (decision.delayMs === 0) {
@@ -1525,15 +1565,28 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
       hls.on(HlsCtor.Events.ERROR, (_event, data) => {
         if (!data.fatal) return;
         switch (data.type) {
-          case HlsCtor.ErrorTypes.NETWORK_ERROR:
-            scheduleHlsRecovery(() => hls?.startLoad());
+          case HlsCtor.ErrorTypes.NETWORK_ERROR: {
+            const resource = data.frag?.relurl ? basename(data.frag.relurl) : data.url ? basename(data.url) : null;
+            scheduleHlsRecovery(() => hls?.startLoad(), {
+              kind: "hls-network-error",
+              details: data.details,
+              httpStatus: data.response?.code ?? null,
+              resource,
+            });
             break;
+          }
           case HlsCtor.ErrorTypes.MEDIA_ERROR:
-            scheduleHlsRecovery(() => hls?.recoverMediaError());
+            scheduleHlsRecovery(() => hls?.recoverMediaError(), {
+              kind: "hls-media-error",
+              details: data.details,
+              reason: data.reason ?? null,
+            });
             break;
           default:
             hls?.stopLoad();
-            goFatal();
+            // No in-place lever for any other fatal type — no retry budget
+            // was ever spent on it.
+            goFatal({ kind: "hls-fatal-error", type: data.type, details: data.details });
             break;
         }
       });
@@ -2242,7 +2295,9 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
               clearLandingWatch();
               // d3-a5 (verify-A): a failure toast — danger, like every
               // other failure toast in the app, not the accent default.
-              showToast("Seek timed out — the transcoder did not restart in time. Try seeking again.", { variant: "danger" });
+              // SPF-7 Phase B: named with its code (lib/seek-toast.ts) so
+              // it matches docs/user-guide/playback-errors.md.
+              showToast(formatSeekTimedOutToast(), { variant: "danger" });
             }, delayMs);
           };
           armLandingTimer(HARD_SEEK_LANDING_TIMEOUT_MS);
@@ -2376,14 +2431,16 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
             }, 500);
           }
         })
-        .catch(() => {
+        .catch((error: unknown) => {
           // gap-F4: a superseded request's failure is not THIS seek's
           // failure — clearing here would tear down the NEWER seek's
           // watch and toast over a seek the user no longer cares about.
           if (seekEpochRef.current !== epoch) return;
           clearLandingWatch();
           // d3-a5 (verify-A): danger variant, same as the timeout above.
-          showToast("Seek failed — check the connection and try again.", { variant: "danger" });
+          // SPF-7 Phase B: names its code + HTTP status (lib/seek-toast.ts).
+          const status = error instanceof LoombreApiError ? error.status : null;
+          showToast(formatSeekFailedToast(status), { variant: "danger" });
         });
     },
     [session?.id, listedFragments, landAbsorbedTarget, clearLandingWatch, showToast],
@@ -2570,6 +2627,21 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
     [session],
   );
 
+  /** SPF-7 Phase B: UnavailableScreen's "Try again" — re-creates the
+   *  session at the watched position, the SAME `sessionSwapRef` lever
+   *  `selectSubtitle` above uses (resume there, skip the saved-progress
+   *  prompt), bumping `retryNonce` since none of the create effect's other
+   *  inputs actually changed. `setPhase("loading")` leaves the unavailable
+   *  screen immediately rather than leaving it up (stale reasons/status)
+   *  until the new create resolves — a fresh failure re-sets everything
+   *  the create effect's own branches already set. */
+  const handleRetry = useCallback((): void => {
+    const video = videoRef.current;
+    sessionSwapRef.current = { resumeMs: watchedPositionRef.current ?? Math.round((video?.currentTime ?? 0) * 1000) };
+    setPhase("loading");
+    setRetryNonce((n) => n + 1);
+  }, []);
+
   // ── Keyboard shortcuts (space/arrows/f/m) ───────────────────────────────
   useEffect(() => {
     if (phase !== "ready") return undefined;
@@ -2689,7 +2761,7 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   async function handleAcceptFallback(candidate: FallbackCandidate): Promise<void> {
     const result = await createPlaybackSession(itemId, "stream", candidate.mediaFileId);
     if (!result.ok) {
-      setUnavailableReasons(resolveUnavailableReasons(result.status, result.wouldBeReasons));
+      setUnavailableReasons(resolveUnavailableReasons(result.status, result.reasons));
       setUnavailableStatus(result.status);
       // d3-a5: the retry's own real refusal supersedes whatever framing
       // brought the user here (a "failed" fatal could have) — these are
@@ -2728,9 +2800,15 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
         reasons={unavailableReasons}
         statusCode={unavailableStatus}
         variant={unavailableVariant}
+        sessionId={session?.id}
         fallback={fallback}
         onAcceptFallback={(candidate) => void handleAcceptFallback(candidate)}
         onBack={onBack}
+        // SPF-7 Phase B: only goFatal's runtime-failure paths ("failed")
+        // are worth retrying — a genuinely refused plan (409/422/429)
+        // would refuse identically again, and a never-resolved item (404)
+        // has no session to re-create.
+        onRetry={unavailableVariant === "failed" ? handleRetry : undefined}
       />
     );
   }

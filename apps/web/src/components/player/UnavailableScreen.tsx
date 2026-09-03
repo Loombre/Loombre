@@ -55,7 +55,8 @@
 //       (see the phone branch), so putting Back inside the shared trees
 //       would duplicate it there.
 
-import { ArrowLeft } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ArrowLeft, Copy } from "lucide-react";
 import type { components } from "@loombre/sdk";
 import { Icon } from "../icon/Icon.js";
 import { Button } from "../ui/Button.js";
@@ -66,6 +67,10 @@ import { describeSessionFailureCode } from "../../lib/playback-recovery.js";
 import type { FallbackCandidate } from "../../lib/playback-fallback.js";
 import { AmbientBackdrop } from "./AmbientBackdrop.js";
 import styles from "./UnavailableScreen.module.css";
+
+// How long the icon-button's "Copied" state stays up before reverting —
+// same pattern/value as CommandBlock.tsx's identical copy affordance.
+const COPY_RESET_MS = 2000;
 
 type PlanReason = components["schemas"]["PlanReason"];
 
@@ -151,17 +156,99 @@ export interface UnavailableScreenProps {
    *  defaulting to `"refused"`: every existing call site keeps the exact
    *  copy it had before this prop existed. */
   variant?: UnavailableVariant | undefined;
+  /** SPF-7 Phase B: the playback session's own id, when one exists (a
+   *  failed/ended runtime session always has one; a refused/never-created
+   *  session does not) — folded into "Copy details"'s `session <id>`
+   *  segment. `undefined`/`null` renders `session ?` rather than
+   *  fabricating one. */
+  sessionId?: string | null | undefined;
   /** A real alternate media file the engine does NOT refuse, or `null` when
    *  none exists / every one is also refused (lib/playback-fallback.ts). */
   fallback: FallbackCandidate | null;
   onAcceptFallback: (candidate: FallbackCandidate) => void;
   onBack: () => void;
+  /** SPF-7 Phase B: re-create the session at the watched position, when the
+   *  caller can (VideoPlayer.tsx wires this only from `goFatal`'s runtime
+   *  failure paths — a genuinely refused plan has nothing to retry).
+   *  `undefined` omits the "Try again" affordance entirely rather than
+   *  rendering a button that does nothing. */
+  onRetry?: (() => void) | undefined;
 }
 
-export function UnavailableScreen({ title, backdropUrl, dominantColor, reasons, statusCode, variant = "refused", fallback, onAcceptFallback, onBack }: UnavailableScreenProps): React.JSX.Element {
+/** Pure formatter for the "Copy details" affordance beside each reason's
+ *  code line — `title`/`code`/`detail` are that ROW's own copy/code/detail
+ *  (the same `reason.detail` the code line itself already renders, per
+ *  SPF-7's design), `statusCode`/`sessionId`/`nowIso` are screen-level
+ *  context shared by every row. Exported so the exact string is pinned by
+ *  a plain unit test, same pattern as lib/seek-toast.ts's formatters. */
+export function formatErrorCopyDetails(params: {
+  title: string;
+  code: string;
+  detail: string | null | undefined;
+  statusCode: number | undefined;
+  sessionId: string | null | undefined;
+  nowIso: string;
+}): string {
+  const detailPart = params.detail && params.detail.length > 0 ? params.detail : "no detail";
+  return `${params.title} · ${params.code} · ${detailPart} · HTTP ${params.statusCode ?? "?"} · session ${params.sessionId ?? "?"} · ${params.nowIso}`;
+}
+
+export function UnavailableScreen({
+  title,
+  backdropUrl,
+  dominantColor,
+  reasons,
+  statusCode,
+  variant = "refused",
+  sessionId,
+  fallback,
+  onAcceptFallback,
+  onBack,
+  onRetry,
+}: UnavailableScreenProps): React.JSX.Element {
   const isPhone = useMediaQuery(PHONE_QUERY);
   // Not `copy` — the reason rows below already bind that name per reason.
   const framing = VARIANT_COPY[variant];
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const copyResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyResetTimer.current !== null) clearTimeout(copyResetTimer.current);
+    };
+  }, []);
+
+  async function handleCopyDetails(index: number, reasonTitle: string, reasonCode: string, reasonDetail: string | null | undefined): Promise<void> {
+    const text = formatErrorCopyDetails({
+      title: reasonTitle,
+      code: reasonCode,
+      detail: reasonDetail,
+      statusCode,
+      sessionId,
+      nowIso: new Date().toISOString(),
+    });
+    try {
+      // finding 7 (CommandBlock.tsx precedent): `navigator.clipboard` is
+      // undefined outright in a non-secure context (plain-HTTP LAN admin
+      // access is normal here), not merely permission-denied — both fall
+      // into this same catch. Never `readText` — write-only, one
+      // direction, the clipboard's PREVIOUS contents are never inspected.
+      if (navigator.clipboard === undefined) throw new Error("Clipboard API unavailable");
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // Nothing else to fall back to for a plain string (no selectable DOM
+      // node to fall back to, unlike CommandBlock's <code> block) — the
+      // button simply stays showing "Copy details" rather than lying
+      // about having copied.
+      return;
+    }
+    if (copyResetTimer.current !== null) clearTimeout(copyResetTimer.current);
+    setCopiedIndex(index);
+    copyResetTimer.current = setTimeout(() => {
+      copyResetTimer.current = null;
+      setCopiedIndex(null);
+    }, COPY_RESET_MS);
+  }
 
   const reasonList = (
     <div className={styles.reasonList}>
@@ -186,11 +273,20 @@ export function UnavailableScreen({ title, backdropUrl, dominantColor, reasons, 
                 <span className={styles.reasonTitle}>{copy.title}</span>
               </span>
               <span className={styles.reasonDetail}>{copy.detail}</span>
-              <span className={styles.reasonCode}>
-                {reason.code}
-                {reason.streamIndex !== null && reason.streamIndex !== undefined ? ` · stream ${reason.streamIndex}` : ""}
-                {reason.detail ? ` · ${reason.detail}` : ""}
-              </span>
+              <div className={styles.reasonCodeRow}>
+                {/* SPF-7 Phase B: this line IS the error code — labeled for
+                    assistive tech (the code/stream/detail text alone reads
+                    as an opaque fragment without it), monospace unchanged. */}
+                <span className={styles.reasonCode} aria-label="Error code">
+                  {reason.code}
+                  {reason.streamIndex !== null && reason.streamIndex !== undefined ? ` · stream ${reason.streamIndex}` : ""}
+                  {reason.detail ? ` · ${reason.detail}` : ""}
+                </span>
+                <Button type="button" variant="ghost" onClick={() => void handleCopyDetails(i, copy.title, reason.code, reason.detail)}>
+                  <Icon icon={Copy} size="dense" />
+                  {copiedIndex === i ? "Copied" : "Copy details"}
+                </Button>
+              </div>
             </div>
           );
         })
@@ -203,6 +299,19 @@ export function UnavailableScreen({ title, backdropUrl, dominantColor, reasons, 
       <p className={styles.fallbackNote}>A different version of this title can play instead.</p>
       <Button type="button" variant="primary" onClick={() => onAcceptFallback(fallback)}>
         Play the {fallback.label} version
+      </Button>
+    </div>
+  ) : null;
+
+  // SPF-7 Phase B: part of the shared `content` tree (not `.header`) so
+  // desktop and phone render the identical affordance, same as
+  // `fallbackBlock` above — `onRetry` is optional and VideoPlayer.tsx only
+  // wires it from a runtime (goFatal) failure, so a genuinely refused plan
+  // renders no button here at all rather than one that does nothing.
+  const retryBlock = onRetry ? (
+    <div className={styles.retryBlock}>
+      <Button type="button" variant="primary" onClick={onRetry}>
+        Try again
       </Button>
     </div>
   ) : null;
@@ -225,6 +334,7 @@ export function UnavailableScreen({ title, backdropUrl, dominantColor, reasons, 
       <h1 className={styles.title}>{framing.heading(title)}</h1>
       <p className={styles.subtitle}>{framing.subheading}</p>
       {reasonList}
+      {retryBlock}
       {fallbackBlock}
     </>
   );
