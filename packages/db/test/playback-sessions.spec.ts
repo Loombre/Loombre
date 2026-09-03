@@ -1198,6 +1198,28 @@ describe('evictStalestSuspendedTranscodeSession', () => {
     return session!.id;
   }
 
+  it('SPF-9 guard: a heartbeat REVIVES a sweeper-suspended session (status back to active, fresh last_heartbeat_ms) so it is no longer an eviction candidate', async () => {
+    const nowMs = Date.now();
+    const id = await newSuspendedTranscodeSession({ lastHeartbeatMs: nowMs - 200_000, startedAtMs: nowMs - 300_000 });
+    // The viewer is back: their next progress write heartbeats the session.
+    const beat = await heartbeatPlaybackSession(db, adminCtx, id, nowMs);
+    expect(beat?.status).toBe('active');
+    expect(beat?.lastHeartbeatMs).toBe(nowMs);
+    // Now nothing qualifies — the revived session is active, never stale.
+    const evicted = await evictStalestSuspendedTranscodeSession(db, { cutoffMs: nowMs - 90_000, nowMs });
+    expect(evicted).toBeUndefined();
+  });
+
+  it('a heartbeat never touches a THROTTLE-suspended session (the worker owns that row)', async () => {
+    const nowMs = Date.now();
+    const id = await newSuspendedTranscodeSession({ lastHeartbeatMs: nowMs - 200_000, startedAtMs: nowMs - 300_000, suspendedByThrottle: true });
+    const beat = await heartbeatPlaybackSession(db, adminCtx, id, nowMs);
+    expect(beat).toBeUndefined();
+    const row = await rawClient.query("SELECT status, suspended_by_throttle, last_heartbeat_ms FROM playback_sessions WHERE id = $1", [id]);
+    expect(row.rows[0]).toMatchObject({ status: 'suspended', suspended_by_throttle: true });
+    expect(Number(row.rows[0].last_heartbeat_ms)).toBe(nowMs - 200_000);
+  });
+
   it('returns undefined when no session qualifies', async () => {
     const cutoffMs = Date.now() - 90_000;
     // A fresh (recently-heartbeated) suspended session is not stale enough.

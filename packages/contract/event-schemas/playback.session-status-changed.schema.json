@@ -24,7 +24,7 @@
     },
     "reason": {
       "type": "string",
-      "enum": ["pipeline-starting", "pipeline-active", "throttle-suspend", "throttle-resume", "seek", "restart", "heartbeat-stale"],
+      "enum": ["pipeline-starting", "pipeline-active", "throttle-suspend", "throttle-resume", "seek", "restart", "heartbeat-stale", "heartbeat-resume"],
       "description": "Which write moved the row. Worker-owned: the pipeline claiming the session ('pipeline-starting') or reaching its first produced segment ('pipeline-active'), the segment-ahead throttle parking or resuming it, a seek target being claimed, or a restart clearing a throttle park (docs/PLAYBACK.md §9 'Restart hygiene'). Server-owned: 'heartbeat-stale' (d4-f5) is apps/server's session sweeper suspending a session that has not heartbeated for sessions.heartbeatSuspendCutoffMs — the same 'suspended' status the throttle produces, told apart by suspendedByThrottle being false. Note the sweeper's OWN 15-minute no-heartbeat pass ENDS a session instead, which is terminal and therefore stays on playback.ended."
     },
     "changedAtMs": { "type": "integer", "minimum": 0 }

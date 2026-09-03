@@ -94,7 +94,9 @@ export async function getTranscodeSessionRow(db: DbOrTx, sessionId: string): Pro
  * Which write moved the row (the payload's `reason` enum). Every member but
  * the last is worker-owned and emitted from this file; `heartbeat-stale`
  * (d4-f5) belongs to apps/server's session sweeper and is emitted from
- * src/query/playback-sessions.ts's suspendStalePlaybackSession — the type
+ * src/query/playback-sessions.ts's suspendStalePlaybackSession, and
+ * `heartbeat-resume` is its inverse (heartbeatPlaybackSession reviving a
+ * sweeper-suspended row when the viewer's heartbeats return) — the type
  * and the two helpers below are shared rather than duplicated so both
  * emitters can never drift on the transition rule.
  */
@@ -105,7 +107,8 @@ export type SessionStatusChangeReason =
   | 'throttle-resume'
   | 'seek'
   | 'restart'
-  | 'heartbeat-stale';
+  | 'heartbeat-stale'
+  | 'heartbeat-resume';
 
 export interface SessionStatusSnapshot {
   status: PlaybackSessionStatus;

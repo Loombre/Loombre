@@ -381,10 +381,24 @@ export async function heartbeatPlaybackSession(
   progress?: HeartbeatProgressInput
 ): Promise<PlaybackSessionRow | undefined> {
   return withTransaction(db, async (trx) => {
+    // A heartbeat is accepted from a session that is created/active, OR one
+    // the SWEEPER suspended for heartbeat staleness (`suspended` with
+    // `suspended_by_throttle = false`) — the viewer slept the laptop and
+    // came back. Reviving it here (status -> active) is what lets the
+    // worker's reconciler SIGCONT the encoder (its 'active && stopped ->
+    // resume' branch) and what keeps a returning viewer out of the SPF-9
+    // admission-eviction candidate set, whose staleness test reads
+    // last_heartbeat_ms. A THROTTLE-suspended row (flag true) stays the
+    // worker's alone: a heartbeat says nothing about encoder lead.
     const current = await baseSelect(trx)
       .where('playback_sessions.id', '=', id)
       .where('playback_sessions.user_id', '=', ctx.userId)
-      .where('playback_sessions.status', 'in', ['created', 'active'])
+      .where((eb) =>
+        eb.or([
+          eb('playback_sessions.status', 'in', ['created', 'active']),
+          eb.and([eb('playback_sessions.status', '=', 'suspended'), eb('playback_sessions.suspended_by_throttle', '=', false)]),
+        ])
+      )
       .executeTakeFirst();
     if (!current) return undefined;
 
@@ -410,12 +424,28 @@ export async function heartbeatPlaybackSession(
         ...(shouldEmitProgress ? { last_progress_event_at_ms: nowMs } : {}),
       })
       .where('id', '=', id)
-      .where('status', 'in', ['created', 'active'] satisfies PlaybackSessionStatus[])
+      .where((eb) =>
+        eb.or([
+          eb('status', 'in', ['created', 'active'] satisfies PlaybackSessionStatus[]),
+          eb.and([eb('status', '=', 'suspended' satisfies PlaybackSessionStatus), eb('suspended_by_throttle', '=', false)]),
+        ])
+      )
       .returningAll()
       .executeTakeFirst();
     // Lost the race: someone else closed the session first. "A heartbeat
     // cannot revive a dead session" (docstring) — undefined, no event.
     if (!updated) return undefined;
+
+    if (current.status === 'suspended') {
+      await emitSessionStatusChanged(
+        trx,
+        id,
+        { status: current.status, suspended_by_throttle: current.suspended_by_throttle },
+        { status: updated.status, suspended_by_throttle: updated.suspended_by_throttle },
+        'heartbeat-resume',
+        nowMs
+      );
+    }
 
     if (shouldEmitProgress) {
       // current.item_id !== null already checked above; TypeScript can't
