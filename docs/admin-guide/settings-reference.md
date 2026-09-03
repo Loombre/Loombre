@@ -33,7 +33,7 @@ How Loombre converts video for playback, and how much of it happens at once.
 
 How many videos this server will convert at the same time. Lowering it never interrupts anything already playing — it only makes the next person wait for a free slot.
 
-- **Default:** 1 (Tier 0) / 2 (Tier 1) / 4 (Tier 2)
+- **Default:** 2 (Tier 0) / 2 (Tier 1) / 4 (Tier 2)
   (varies by hardware tier — see [Install: system requirements](/install/#system-requirements) for what Tier 0/1/2 mean)
 - **Applies:** immediately — no restart needed.
 - **Note:** Setting this too high can overload the server if several videos convert at once — raise it gradually and keep an eye on how the machine handles it.

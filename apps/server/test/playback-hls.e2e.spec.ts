@@ -96,7 +96,7 @@ beforeAll(async () => {
   // Generous admission cap for this whole suite (security review F9 gave
   // transcode.maxSimultaneousTranscodes a schema ceiling of 64 — was
   // previously pinned to 1000, an arbitrary "large enough" value that now
-  // exceeds that ceiling and would fall back to the tier-0 default of 1).
+  // exceeds that ceiling and would fall back to the tier-0 default of 2).
   process.env["LOOMBRE_MAX_TRANSCODES"] = "64";
 
   const databaseUrl = await ensureTestDatabase(BASE_DATABASE_URL, "playback_hls_test");

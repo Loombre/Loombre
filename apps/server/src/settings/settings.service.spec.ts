@@ -102,7 +102,7 @@ describe("SettingsService.bootstrap/reload", () => {
     const service = freshService();
     await service.bootstrap();
     expect(service.getEffective("restricted.enabled")).toMatchObject({ value: false, source: "default" });
-    expect(service.getEffective("transcode.maxSimultaneousTranscodes")).toMatchObject({ value: 1, source: "default" });
+    expect(service.getEffective("transcode.maxSimultaneousTranscodes")).toMatchObject({ value: 2, source: "default" });
   });
 
   it("unknownDbKeys/notices start empty on a clean load", async () => {
@@ -134,6 +134,14 @@ describe("SettingsService — transcode-slot reduction resolution semantics (the
     expect(service.getEffective("transcode.maxSimultaneousTranscodes")?.value).toBe(1);
     expect(service.getEffective("transcode.maxSimultaneousTranscodes")?.source).toBe("database");
     expect(service.restartPendingKeys).not.toContain("transcode.maxSimultaneousTranscodes");
+
+    // This file's tests share ONE database (module header) — leaving this
+    // write in place would make transcode.maxSimultaneousTranscodes look
+    // DB-sourced (not "default") for every test that runs after this one,
+    // e.g. the F1 masking test's "every OTHER entry is still at its
+    // default" assumption below. Reset it so this test's own write stays
+    // scoped to itself.
+    await db.deleteFrom("server_settings").where("key", "=", "transcode.maxSimultaneousTranscodes").execute();
   });
 });
 
@@ -514,7 +522,7 @@ describe("SettingsService response shaping", () => {
     await service.bootstrap();
     const response = service.toSchemaResponse();
     const entry = response.entries.find((e) => e.key === "transcode.maxSimultaneousTranscodes");
-    expect(entry).toMatchObject({ category: "transcode", scope: "ui", requiresRestart: false, envVar: "LOOMBRE_MAX_TRANSCODES", default: 1 });
+    expect(entry).toMatchObject({ category: "transcode", scope: "ui", requiresRestart: false, envVar: "LOOMBRE_MAX_TRANSCODES", default: 2 });
     expect(entry?.valueSchema).toBeTypeOf("object");
 
     const envOnlyEntry = response.entries.find((e) => e.key === "database.url");
@@ -557,7 +565,7 @@ describe("SettingsService — F1 secret masking (database.url)", () => {
     await service.bootstrap();
     const adminResponse = service.toAdminSettingsResponse([], { configured: false, setAtMs: null, source: null });
     const maxTranscodes = adminResponse.settings.find((s) => s.key === "transcode.maxSimultaneousTranscodes");
-    expect(maxTranscodes?.value).toBe(1);
+    expect(maxTranscodes?.value).toBe(2);
 
     const schemaResponse = service.toSchemaResponse();
     const httpPort = schemaResponse.entries.find((e) => e.key === "http.port");

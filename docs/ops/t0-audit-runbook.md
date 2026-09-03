@@ -417,30 +417,33 @@ other budget in this runbook is secondary to. Read all of D.1 before
 running D.2 — skipping the pre-flight config produces a 429, not a useful
 result.
 
-### D.1 Pre-flight — the tier-0 default WILL block this test
+### D.1 Pre-flight — the tier-0 default now meets this test out of the box
 
-The tier-0 default `maxSimultaneousTranscodes` is **1**, not 2
-(`packages/shared/src/settings-registry.ts`'s
+The tier-0 default `maxSimultaneousTranscodes` is **2** (SPF-8;
+`packages/shared/src/settings-registry.ts`'s
 `transcode.maxSimultaneousTranscodes` entry, consumed by
 `apps/server/src/playback/resolve-policy.ts`) — it is not auto-detected from
-CPU/RAM (only scan concurrency is; transcode concurrency is a flat,
-deliberately-conservative per-tier default, overridable). If you set
-`LOOMBRE_MAX_TRANSCODES=2` in Step A.4 already, you're done — verify with:
+CPU/RAM (only scan concurrency is; transcode concurrency is a flat
+per-tier default, overridable). T0's "≥ 2 simultaneous 1080p hw transcodes"
+commitment is therefore satisfied by a stock install; no pre-flight config
+is required to run this test. Verify the effective value if you want to
+confirm it before running D.2:
 
 ```sh
 grep LOOMBRE_MAX_TRANSCODES /etc/loombre/loombre.env
 ```
 
-If not, set it now and restart:
+`LOOMBRE_MAX_TRANSCODES` remains available as an optional pin — set it if
+you want a HIGHER ceiling for this run (or a lower one, to deliberately
+re-exercise the 429 path):
 
 ```sh
-echo 'LOOMBRE_MAX_TRANSCODES=2' | sudo tee -a /etc/loombre/loombre.env
+echo 'LOOMBRE_MAX_TRANSCODES=4' | sudo tee -a /etc/loombre/loombre.env
 sudo systemctl restart loombre-server
 ```
 
-This is expected/by-design (T0's conservative default protects small
-installs from over-committing by accident), not a bug — `dual-transcode.mjs`
-gives you this exact same explanation if you forget and hit the 429 anyway.
+`dual-transcode.mjs` still names the effective cap in its 429 message if
+you've pinned it down and hit the limit anyway.
 
 ### D.2 Start both sessions
 

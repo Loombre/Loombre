@@ -94,9 +94,9 @@ describe("SETTINGS_REGISTRY", () => {
     }
   });
 
-  it("transcode.maxSimultaneousTranscodes tierDefaults matches resolve-policy.ts's historical tier table (1/2/4)", () => {
+  it("transcode.maxSimultaneousTranscodes tierDefaults matches resolve-policy.ts's historical tier table (SPF-8: 2/2/4)", () => {
     const entry = getSettingsRegistryEntry("transcode.maxSimultaneousTranscodes");
-    expect(entry?.tierDefaults).toEqual({ 0: 1, 1: 2, 2: 4 });
+    expect(entry?.tierDefaults).toEqual({ 0: 2, 1: 2, 2: 4 });
   });
 
   // ==========================================================================

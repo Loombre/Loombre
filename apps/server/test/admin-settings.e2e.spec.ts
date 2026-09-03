@@ -249,7 +249,7 @@ describe("GET /admin/settings/schema", () => {
       scope: "ui",
       requiresRestart: false,
       envVar: "LOOMBRE_MAX_TRANSCODES",
-      default: 1,
+      default: 2,
       locked: false,
     });
     expect(entry.valueSchema).toBeTypeOf("object");

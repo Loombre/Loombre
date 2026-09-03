@@ -440,7 +440,7 @@ export async function heartbeatPlaybackSession(
   });
 }
 
-type EndReason = 'client-stopped' | 'idle-timeout' | 'server-error' | 'revoked' | 'completed';
+type EndReason = 'client-stopped' | 'idle-timeout' | 'server-error' | 'revoked' | 'completed' | 'admission-eviction';
 
 async function finalizeSession(
   trx: Transaction<DB>,
@@ -616,7 +616,7 @@ export async function endStalePlaybackSession(db: Kysely<DB>, id: string, nowMs:
  * has no request to attach itself to). Never throws: a diagnostic must
  * never be able to fail a sweep.
  */
-async function warnOnOrphanSignature(trx: Transaction<DB>, sessionId: string): Promise<void> {
+async function warnOnOrphanSignature(trx: Transaction<DB>, sessionId: string, causeLabel: string = 'heartbeat sweeper'): Promise<void> {
   try {
     const session = await trx
       .selectFrom('playback_sessions')
@@ -634,7 +634,7 @@ async function warnOnOrphanSignature(trx: Transaction<DB>, sessionId: string): P
     if (!activeJob) return;
 
     console.warn(
-      `playback: heartbeat sweeper ended session ${sessionId} while it still named a live transcode ` +
+      `playback: ${causeLabel} ended session ${sessionId} while it still named a live transcode ` +
         `pipeline (ffmpeg pid ${session.worker_pid}, staging ${session.staging_dir ?? 'unknown'}) and a ` +
         `'transcode' job ledger row is still active. That combination is the orphaned-encoder signature: ` +
         `the admission slot is now free while the process may still be running. The worker reclaims it at ` +
@@ -1075,4 +1075,78 @@ export async function countActiveTranscodeSessions(db: Kysely<DB>): Promise<numb
     .where(sql<string>`plan ->> 'decision'`, '!=', 'direct-play')
     .executeTakeFirst();
   return row ? Number(row.count) : 0;
+}
+
+/**
+ * SPF-9 admission-time reclamation: ends the SINGLE stalest
+ * heartbeat-suspended transcode session so admission has a slot to hand to
+ * a NEW request, instead of refusing it outright while a paused-and-
+ * walked-away viewer sits on one indefinitely.
+ *
+ * Candidate set, all three required:
+ *   - `status = 'suspended'` AND `suspended_by_throttle = false` — a
+ *     heartbeat-cause suspend (the client stopped polling), never the
+ *     worker's own segment-ahead throttle park (that session's encoder is
+ *     deliberately paused mid-watch, not abandoned — the A5 law below still
+ *     protects it as a live viewer's slot).
+ *   - `plan ->> 'decision' != 'direct-play'` — direct-play never occupies a
+ *     slot (countActiveTranscodeSessions' own rule); nothing to reclaim.
+ *   - no heartbeat (or none ever recorded) for at least `cutoffMs` — the
+ *     SAME predicate/cutoff the sweeper's own
+ *     listHeartbeatStalePlaybackSessions uses, passed in by the caller so
+ *     this stays in lockstep with sessions.heartbeatSuspendCutoffMs
+ *     (settings-registry.ts) rather than a second hardcoded number.
+ *
+ * Never touches an ACTIVE session (the A5 law: no setting/admission
+ * decision may drop a session someone is actively watching) — only a row
+ * already resting in `suspended` for a heartbeat cause is eligible at all.
+ *
+ * `FOR UPDATE OF playback_sessions ... SKIP LOCKED` (restricted to
+ * playback_sessions, not the LEFT JOINed media_files — Postgres refuses
+ * FOR UPDATE against the nullable side of an outer join) makes this safe
+ * to call from inside transcode-admission.ts's own serialized critical
+ * section: a concurrent caller racing the same cutoff skips a row this
+ * transaction already holds rather than blocking on it, and `ORDER BY
+ * last_heartbeat_ms ASC NULLS FIRST LIMIT 1` always picks the single
+ * longest-idle candidate first.
+ *
+ * Returns the finalized (now `failed`, `error_code = 'evicted-for-
+ * admission'`) row, or `undefined` when no session qualifies.
+ */
+export async function evictStalestSuspendedTranscodeSession(
+  db: Kysely<DB>,
+  { cutoffMs, nowMs }: { cutoffMs: number; nowMs: number }
+): Promise<PlaybackSessionRow | undefined> {
+  return withTransaction(db, async (trx) => {
+    const current = await baseSelect(trx)
+      .where('playback_sessions.status', '=', 'suspended')
+      .where('playback_sessions.suspended_by_throttle', '=', false)
+      .where(sql<string>`playback_sessions.plan ->> 'decision'`, '!=', 'direct-play')
+      .where((eb) =>
+        eb.or([
+          eb.and([
+            eb('playback_sessions.last_heartbeat_ms', 'is not', null),
+            eb('playback_sessions.last_heartbeat_ms', '<', cutoffMs),
+          ]),
+          eb.and([
+            eb('playback_sessions.last_heartbeat_ms', 'is', null),
+            eb('playback_sessions.started_at_ms', '<', cutoffMs),
+          ]),
+        ])
+      )
+      .orderBy('playback_sessions.last_heartbeat_ms', (ob) => ob.asc().nullsFirst())
+      .limit(1)
+      .forUpdate('playback_sessions')
+      .skipLocked()
+      .executeTakeFirst();
+
+    if (!current) return undefined;
+
+    const finalized = await finalizeSession(trx, current, nowMs, {
+      errorCode: 'evicted-for-admission',
+      reason: 'admission-eviction',
+    });
+    await warnOnOrphanSignature(trx, current.id, 'admission-time reclamation');
+    return finalized;
+  });
 }

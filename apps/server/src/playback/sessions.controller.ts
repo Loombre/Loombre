@@ -11,11 +11,14 @@
 //     through transcode-admission.ts's gate, which counts and inserts in
 //     one critical section (429 'transcode-slots-exhausted' when the
 //     global active-ish-transcode-session count already meets the resolved
-//     policy's cap); a genuinely UNPLAYABLE transcode plan (empty
-//     ffmpegArgs — tone-map-refused-by-policy or a degenerate empty
-//     ladder) is a 409 'media-unplayable' carrying the plan's own reasons
-//     instead of a row; otherwise the row is created ('created' status,
-//     per packages/db's own decision-branch) and a 'transcode' job is
+//     policy's cap AND, SPF-9, reclaiming the stalest heartbeat-suspended
+//     transcode session — a paused-and-walked-away viewer, never an
+//     active one — didn't free a slot either); a genuinely UNPLAYABLE
+//     transcode plan (empty ffmpegArgs — tone-map-refused-by-policy or a
+//     degenerate empty ladder) is a 409 'media-unplayable' carrying the
+//     plan's own reasons instead of a row; otherwise the row is created
+//     ('created' status, per packages/db's own decision-branch) and a
+//     'transcode' job is
 //     enqueued.
 // Independent of decision: a plan whose `subtitle.strategy === 'hls-vtt'`
 // ALSO enqueues 'subtitle-extract' (STATE.md P3.9(e) — works for
@@ -40,6 +43,7 @@ import {
   countActiveTranscodeSessions,
   createPlaybackSession,
   endPlaybackSession,
+  evictStalestSuspendedTranscodeSession,
   getMediaInfoAssembly,
   getPlaybackSessionForUser,
   getUserSettings,
@@ -64,6 +68,7 @@ import { assemblePlanInput } from "./plan-assembly.js";
 import { UnplayableMediaException } from "./unplayable-media.exception.js";
 import { TranscodeSlotsExhaustedException } from "./transcode-slots-exhausted.exception.js";
 import { transcodeAdmissionGate } from "./transcode-admission.js";
+import { HEARTBEAT_SUSPEND_CUTOFF_MS } from "./session-sweeper.service.js";
 import { toContractPlaybackSession } from "./session-plan.js";
 import { cleanupDirectPlaySubtitleStagingDir } from "./direct-play-subs-cleanup.js";
 
@@ -155,6 +160,22 @@ export class PlaybackSessionsController {
             cap: planInput.policy.maxSimultaneousTranscodes,
             countActive: () => countActiveTranscodeSessions(this.dbProvider.db),
             create,
+            // SPF-9: one chance to reclaim a slot from a paused-and-
+            // walked-away viewer before refusing this request outright.
+            // Same cutoff the sweeper itself suspends on (sessions.
+            // heartbeatSuspendCutoffMs) — a session isn't a reclaim
+            // candidate until the sweeper itself would already call it
+            // heartbeat-stale.
+            reclaim: () => {
+              const heartbeatSuspendCutoffMs =
+                (this.settingsService.getEffective("sessions.heartbeatSuspendCutoffMs")?.value as number | undefined) ??
+                HEARTBEAT_SUSPEND_CUTOFF_MS;
+              const nowMs = clockNowMs();
+              return evictStalestSuspendedTranscodeSession(this.dbProvider.db, {
+                cutoffMs: nowMs - heartbeatSuspendCutoffMs,
+                nowMs,
+              }).then(Boolean);
+            },
           });
     if (!admission.admitted) {
       throw new TranscodeSlotsExhaustedException(req.originalUrl);

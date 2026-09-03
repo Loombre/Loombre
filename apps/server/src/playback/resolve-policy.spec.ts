@@ -30,7 +30,7 @@ const HEVC_CAPS: VerifiedCapabilities = {
 };
 
 const DEFAULT_SETTINGS_INPUTS: SettingsPolicyInputs = {
-  maxSimultaneousTranscodes: 1,
+  maxSimultaneousTranscodes: 2,
   hevcEncodePreferred: true,
   // Wave C1: the registry default (owner-decision D5 — opt-in).
   av1EncodePreferred: false,
@@ -74,14 +74,14 @@ describe("resolveServerPolicy", () => {
     expect(policy.preferredTextSubMode).toBe("hls-vtt");
     expect(policy.preserveAssStyling).toBe(false);
     expect(policy.audioTranscodeCodecPriority).toEqual(["opus", "aac"]);
-    expect(policy.maxSimultaneousTranscodes).toBe(1); // tier-0 default
+    expect(policy.maxSimultaneousTranscodes).toBe(2); // tier-0 default (SPF-8)
     expect(policy.ladderRungs).toEqual(DEFAULT_LADDER_RUNGS);
     expect(policy.segmentDurationSec).toBe(6);
     expect(policy.hevcEncodePreferred).toBe(false); // NO_CAPS never verifies hevc encode
   });
 
-  it("tier-derived maxSimultaneousTranscodes defaults (1/2/4) are now the CALLER's job (SettingsService's own tier-aware registry default) — this module just echoes whatever it's handed", () => {
-    expect(resolveServerPolicy({ tier: "0" }, NO_CAPS, { ...DEFAULT_SETTINGS_INPUTS, maxSimultaneousTranscodes: 1 }).maxSimultaneousTranscodes).toBe(1);
+  it("tier-derived maxSimultaneousTranscodes defaults (SPF-8: 2/2/4) are now the CALLER's job (SettingsService's own tier-aware registry default) — this module just echoes whatever it's handed", () => {
+    expect(resolveServerPolicy({ tier: "0" }, NO_CAPS, { ...DEFAULT_SETTINGS_INPUTS, maxSimultaneousTranscodes: 2 }).maxSimultaneousTranscodes).toBe(2);
     expect(resolveServerPolicy({ tier: "1" }, NO_CAPS, { ...DEFAULT_SETTINGS_INPUTS, maxSimultaneousTranscodes: 2 }).maxSimultaneousTranscodes).toBe(2);
     expect(resolveServerPolicy({ tier: "2" }, NO_CAPS, { ...DEFAULT_SETTINGS_INPUTS, maxSimultaneousTranscodes: 4 }).maxSimultaneousTranscodes).toBe(4);
   });
