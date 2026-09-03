@@ -1903,7 +1903,7 @@ machine total twice these figures.
     Local; no server round-trip; both directions within the window.
   - HARD (outside the listed window): `POST …/seek {targetMs, rungIndex?}`
     → enter a `relocating` state (scrubber pins at the target, displayed
-    position frozen there). IF the session has seen ENDLIST, restart
+    position frozen there). The element is PAUSED at this same instant (its play intent — playing, ended, or a pending post-rebuild play — is captured once per lifecycle), so the doomed pre-seek run stops playing under the spinner and stops pulling its next fragments; the landing resumes it, the timeout leaves it paused (SPF-2026-09-03, peer UX finding). IF the session has seen ENDLIST, restart
     playlist loading (`startLoad()` or equivalent) as part of ENTERING
     relocating (amendment A1 — hls.js stops polling after ENDLIST;
     without the re-arm the landing watch below can never fire). Watch
@@ -1948,7 +1948,7 @@ machine total twice these figures.
     SURVIVING fragment at that fragment's OWN source position
     (`findRelocatedLandingStart`) — the same honesty as the tail-only
     fresh mount, strictly better than a frozen pin and a timeout toast.
-    Both acceptances hand off to the same resume-evidence half.
+    Both acceptances hand off to the same resume-evidence half. That same half gates the play() resume of a paused-then-landed lifecycle; `isLandingResumeEvidence` needed no change (it reads readyState and the mapped position, never `paused` — `seeked`/`canplay` fire on a paused element).
   - DISCOVERY NUDGE (live-QA fix, 2026-08-20): while `relocating`, the
     client forces a playlist re-read once per second
     (`HARD_SEEK_REFRESH_NUDGE_MS = 1_000`,
