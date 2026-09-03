@@ -155,6 +155,7 @@ export default defineConfig({
             { text: "Restricted content", link: "/user-guide/restricted-content" },
             { text: "Browsing the restricted zone", link: "/user-guide/restricted-content-browsing" },
             { text: "Why is this converting?", link: "/user-guide/why-is-it-converting" },
+            { text: "Playback error codes", link: "/user-guide/playback-errors" },
           ],
         },
       ],

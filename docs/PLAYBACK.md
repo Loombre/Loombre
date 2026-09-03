@@ -159,7 +159,7 @@ interface ServerPolicy {
   audioTranscodeCodecPriority: ('opus'|'aac')[];   // ['opus','aac'] filtered by device
   maxSimultaneousTranscodes: number;       // tier-derived, overridable
   ladderRungs: LadderRung[];               // instance ladder table (§7)
-  segmentDurationSec: 6;                   // fixed v1
+  segmentDurationSec: 2;                   // fixed v1 — 2 s since SPF-1 (was 6; the GOP the builder already emits)
   hevcEncodePreferred: boolean;            // true when caps verify hevc encode
   av1EncodePreferred: boolean;             // false; operator PREFERENCE verbatim (LD-7 — see note)
 }
@@ -753,7 +753,7 @@ with the DG2/Arc generation), so its probe verifies `qsv: decode ∋ av1`,
 `encode ∌ av1` → eligibility `'none'` on T0, always. What the gate
 prevents: SVT-AV1 at its realtime-band presets reaches 1080p realtime on
 roughly 8 modern performance cores; four E-cores deliver a small fraction
-of that — order 0.2–0.4× realtime, i.e. a 6-second segment costs ~15–30 s
+of that — order 0.2–0.4× realtime, i.e. a 2-second segment costs ~5–10 s
 to encode. The §9 segment-ahead throttle never engages (the encoder never
 GETS ahead); the playhead overruns the encoder inside the first minute and
 every playback stalls unrecoverably, while all four cores sit pegged —
@@ -901,11 +901,11 @@ the reasoning is decidable, each step checkable independently):**
 - **Encoding cost is count-INVARIANT.** Under §9.1's delivery model
   exactly ONE rung encodes at any instant, whatever the advertised count
   — LD-16's handoff makes that structural. So the cap is NOT about
-  concurrent encode load; the admission semaphore (`cap = 1` T0 default)
+  concurrent encode load; the admission semaphore (`cap = 2` T0 default, SPF-8)
   already bounds that, sessions × 1 pipeline.
 - **The count's real Tier-0 cost is switch churn.** Every ABR switch is a
   full pipeline handoff: kill + observed exit + spawn + input open + seek
-  + encoder init + first 6 s GOP (§9.1.4) — the most expensive part of a
+  + encoder init + the first 2 s segment (§9.1.4; SPF-1) — the most expensive part of a
   run (the seek-livelock lesson: 17 uncontrolled respawns produced
   nothing). Measured shape on the reference box: QSV h264/hevc ≈ 1–2 s
   wall; the T0 software route (≤ 480p rungs only, §8.3) ≈ 2–4 s. Fine as
@@ -1015,10 +1015,27 @@ State machine: `created → starting → active ⇄ suspended → seeking → ac
 → ended | failed(errorCode)`.
 - **Start:** plan tokens substituted; session dir under transcode staging
   (NVMe path from config); first playlist request blocks ≤ 8 s for init +
-  first segment, else 503-retry-after (client shows buffering).
+  first segment, else 503-retry-after (client shows buffering). The worker's
+  control loop ticks every 100 ms (SPF-3; was 250) and rewrites the served
+  playlist only when its text changed.
+- **Segment duration (SPF-1, 2026-09-03): the nominal HLS segment is 2 s**
+  (`-hls_time 2`, keyframes forced every 2 s — the GOP the builder already
+  emitted, so no extra keyframes and no compression cost). It was 6 s until
+  the seek-performance run measured that the muxer cannot close a run's
+  FIRST segment until a full `hls_time` of content has been encoded, which
+  made every hard seek cost 6 s ÷ encode-speed before anything was playable
+  (6.9 s on a 1×-realtime Tier-0 model, 0.86 s on Apple Silicon
+  VideoToolbox; 2 s cuts both by ~3×). Every segment-COUNT constant in this
+  section keeps its SECONDS meaning: the live window is 60 segments (120 s),
+  the throttle suspends at 30 segments ahead (60 s) and resumes at 15
+  (30 s), the client's forward-buffer ceiling stays 90 s (45 segments,
+  strictly inside the live window), the EOF seek margin stays 6 s (three
+  nominal segments). `-hls_init_time` was measured and rejected: with the
+  append-only per-run playlist it applies to every segment forever.
 - **Segment-ahead throttle:** monitor produced-vs-requested segment index;
-  when ahead > 10 segments (60 s), suspend encode (SIGSTOP on the ffmpeg
-  process group; resume with SIGCONT at ahead ≤ 5). Throttling is mandatory
+  when ahead > 30 segments (60 s at the 2 s nominal segment, SPF-1), suspend
+  encode (SIGSTOP on the ffmpeg process group; resume with SIGCONT at
+  ahead ≤ 15 segments / 30 s). Throttling is mandatory
   — a T0 box must never spend CPU racing ahead of a paused viewer.
   - **Lead arithmetic (V8):
     `ahead = produced − max(requested, currentRun.startSegment)`.** A
@@ -1055,7 +1072,12 @@ State machine: `created → starting → active ⇄ suspended → seeking → ac
     (`apps/worker/src/transcode/args.ts` `injectReadrate`,
     `WIN32_READRATE_MULTIPLIER` in `throttle.ts`), pacing the encode at
     ~1.2× realtime so it structurally never races far enough ahead to need
-    suspending. Behavioral consequence, stated rather than hidden: a win32
+    suspending. Since SPF-2 the injection also carries
+    `-readrate_initial_burst 30` (`WIN32_READRATE_BURST_SEC`): the head of
+    every run — the client's 30 s forward-buffer target — encodes at full
+    speed, then the pacing bounds the lead exactly as before; without the
+    burst every win32 seek restart paid the pacing on its first segment
+    (measured 6.4 s → 0.3 s to the first segment). Behavioral consequence, stated rather than hidden: a win32
     worker never SIGSTOPs anything and never writes
     `suspended_by_throttle = true` — `reconcileThrottle` returns
     `{ action: 'none' }` whenever the mechanism is `readrate`. Swapping a
@@ -1120,7 +1142,12 @@ State machine: `created → starting → active ⇄ suspended → seeking → ac
     auth (NOT the `?token` media-GET family — §9.1.9's zero-new-auth-
     surface stance holds: one new route on an existing guard, no new token
     surface). Direct-play sessions answer 409
-    (`urn:loombre:problem:not-a-transcode-session`). WHY a first-class
+    (`urn:loombre:problem:not-a-transcode-session`). While a seek is
+    PENDING (`seek_target_ms` set, not yet consumed) or in progress
+    (`status = 'seeking'`), `GET …/hls/media.m3u8` is HELD (100 ms poll,
+    the same 8 s deadline as the initial-segment block) rather than
+    answered with the stale pre-seek playlist (SPF-4) — so the client's
+    reload at 202 time returns the moment the restarted run is listed. WHY a first-class
     call: hls.js only requests URIs the playlist lists, and the UA clamps
     `currentTime` writes to `video.seekable`, so an out-of-window target
     could never reach the segment-GET trigger at all — the restart
@@ -1129,8 +1156,8 @@ State machine: `created → starting → active ⇄ suspended → seeking → ac
   - **"Outside" decided per segment GET is DEMOTED to defense** (native
     clients, mid-prune races) — re-bound by gap-F6 (QA 2026-08-20/21,
     apps/server's `hls-file.controller.ts`): a restart is recorded ONLY for
-    (a) an index more than one full live window — 20 segments, the same
-    120s the retention window keeps — ahead of `produced_segment`, or
+    (a) an index more than one full live window — 60 segments (2 s each),
+    the same 120s the retention window keeps — ahead of `produced_segment`, or
     (b) an ENOENT at/behind `produced_segment` in the run that OWNS that
     index (genuinely pruned / before run-start), reached by a BACKWARD
     JUMP — an index more than a small out-of-order hysteresis (3
@@ -1275,8 +1302,21 @@ State machine: `created → starting → active ⇄ suspended → seeking → ac
 - **Concurrency:** global semaphore = `maxSimultaneousTranscodes`; admission
   beyond it fails the session create with a typed 429 (`transcode-slots-
   exhausted`) — clients fall back to a lower-bitrate direct attempt or queue.
+  Since SPF-9, when the count meets the cap the gate first ends the STALEST
+  heartbeat-suspended transcode session (`status = 'suspended'`,
+  `suspended_by_throttle = false`, no heartbeat for ≥ the 90 s sweeper
+  cutoff — a viewer who paused and left) with
+  `error_code = 'evicted-for-admission'`, re-counts, and only then refuses;
+  active and throttle-suspended sessions are never touched (the A5 law),
+  and direct-play never enters the gate.
 - **Audit:** the serialized plan + engineVersion stored on the session row at
-  create; ffmpeg stderr tail (last 4 KB ring) stored on failure.
+  create; ffmpeg stderr tail (last 4 KB ring) stored on failure. Since
+  SPF-7 the worker classifies that tail (pure `packages/shared` classifier:
+  `transcode-input-missing` / `-input-unreadable` / `-decoder-unsupported` /
+  `-encoder-init-failed` / `-disk-full` / `-killed`, fallback
+  `transcode-failed`) into `error_code`, and `GET /playback/sessions/{id}`
+  exposes one sanitized, path-stripped line as `errorDetail` — never the raw
+  tail.
 - **Process lifecycle (no orphaned encoders).** Runs are spawned detached on
   POSIX so the whole process group can be signalled, which also means they do
   not die with their worker. Two mechanisms close that: (a) the worker's
@@ -1336,9 +1376,9 @@ session at once) would require one admission slot per concurrently-
 encoding rung to stay inside the law; it is OUT of v1 scope and recorded
 here only as the law's forward constraint.
 
-*Tier-0 lens:* on the N100 default (`maxSimultaneousTranscodes = 1`) the
-machine-wide encode ceiling after C2 is IDENTICAL to before C2: one
-pipeline. ABR adds switch events, not concurrency.
+*Tier-0 lens:* on the N100 default (`maxSimultaneousTranscodes = 2` since
+SPF-8) the machine-wide encode ceiling after C2 is IDENTICAL to before C2:
+the cap's pipelines, no more. ABR adds switch events, not concurrency.
 
 #### 9.1.1 Delivery model: one pipeline, one playlist, variant identity in the URL
 
@@ -1628,7 +1668,7 @@ construction (§9.1.1 — one playlist):
 6. **The live-edge-jump hazard moves client-side and is closed there.**
    Dropping EVENT makes the stream look live; hls.js's default
    `startPosition: -1` would then start at the live edge — which for
-   this throttled server is ≤ 10 segments past the resume point, i.e. the
+   this throttled server is ≤ 30 segments (60 s) past the resume point, i.e. the
    wrong place. The client config therefore PINS `startPosition` to the
    intended start (resume point or 0) — §9.1.9 — and the existing
    loadedmetadata seek stays as belt-and-braces. No
@@ -1793,8 +1833,8 @@ rung's fresh segments, still inside the same global 120 s window — no
 additive term. The ENDLIST prune-freeze (§9.1.5) caps the residual at
 one final window until teardown deletes the session dir. All figures sit
 comfortably inside the NVMe staging budget an N100/4GB target already
-carries for one session, and the T0 admission cap (1) makes them
-machine totals, not per-session multipliers.
+carries for one session; the T0 admission cap (2 since SPF-8) makes the
+machine total twice these figures.
 
 #### 9.1.9 Client (zero new auth surface)
 
@@ -1908,13 +1948,17 @@ machine totals, not per-session multipliers.
     `apps/web/src/lib/relocation-nudge.ts`) via hls.js's own
     stopLoad()/startLoad(-1) reload lever — the pair its fatal-network
     recovery uses. Rationale: the server side of a hard seek is fast (the
-    worker's 250 ms control loop + ~0.2 s to a video-copy run's first
+    worker's 100 ms control loop + ~0.2 s to a video-copy run's first
     segment puts the restarted run in the served playlist well under a
     second after the 202), but hls.js re-reads a live playlist only on its
-    own targetduration cadence — up to ~6 s of pure discovery latency,
+    own targetduration cadence — up to ~2 s (was ~6 s before SPF-1) of pure discovery latency,
     which live QA measured as the bulk of the observed seek-to-play time.
-    The nudge never fires synchronously (the run cannot be listed at 202
-    time), goes quiet at the FRAGMENT MATCH (not at resume — nudging past
+    The nudge fires IMMEDIATELY at the 202 (SPF-5 — the server holds a
+    playlist GET while a seek is pending, SPF-4, so the immediate reload
+    parks server-side and returns the moment the restarted run is listed),
+    then once per second; hard seeks dispatched within 150 ms of the
+    previous one coalesce on a trailing timer, newest target wins (SPF-5).
+    It goes quiet at the FRAGMENT MATCH (not at resume — nudging past
     the match would abort the very fragment loads the landing needs), and
     aborting an in-flight fragment load mid-relocation costs nothing (the
     pre-seek position's buffer is already abandoned). Native-HLS sessions
@@ -1956,9 +2000,9 @@ machine totals, not per-session multipliers.
 
 1. **Downswitch latency = distance to live edge.** The new rung starts at
    `producedSegment + 1`; segments the old rung already produced ahead of
-   the playhead (throttle-capped at ≤ 10 segments / 60 s) still serve at
+   the playhead (throttle-capped at ≤ 30 segments / 60 s) still serve at
    the OLD quality, and a bandwidth-collapsed client must still fetch
-   them. Bound: ≤ 10 segments, usually far fewer (the throttle holds the
+   them. Bound: ≤ 30 segments (60 s), usually far fewer (the throttle holds the
    encoder near the playhead). The alternative — restarting AT the
    playhead and re-numbering — would break the global-counter invariant
    (at most one run owns a segment index) that every Wave A consumer

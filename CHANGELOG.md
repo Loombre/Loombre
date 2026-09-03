@@ -21,6 +21,34 @@ are the version axis.
 
 ## [Unreleased]
 
+### v1.0.0-beta.2 draft (2026-09-03)
+
+- Player: seeking is fast. Every transcode/remux session now serves
+  2-second HLS segments (was 6 s): the first playable segment after a
+  seek needs a third of the encoded content it used to (a 1×-realtime
+  server: ~7 s → ~3 s; Apple Silicon hardware encode: 0.9 s → 0.4 s),
+  soft seeks fetch three-times-smaller fragments, and the server holds
+  the playlist request while a seek is in flight so the player lands the
+  moment the restarted run exists. Windows servers no longer pace the
+  head of every run (`-readrate_initial_burst 30`), which alone was
+  costing ~6 s per seek there. Rapid seeks coalesce client-side; the
+  worker reacts in 100 ms and no longer rewrites unchanged playlists.
+  (docs/PLAYBACK.md §9 "Segment duration"; reports/state/DECISIONS.md
+  SPF-1–SPF-6.)
+- Player: playback failures name their cause. Every unavailable screen
+  and seek toast shows a specific error code (`transcode-input-missing`,
+  `transcode-encoder-init-failed`, `hls-network-error` with the HTTP
+  status, …), a one-line explanation and a copyable detail line; failed
+  sessions expose `errorDetail` on the API (sanitized, never the raw
+  ffmpeg log). Try again from the error screen restarts playback where
+  you were. The codes are documented in the user guide
+  (docs/user-guide/playback-errors.md). (SPF-7.)
+- Server: the default number of simultaneous conversions is 2 (was 1),
+  and when every slot is taken the server first releases the stalest
+  paused-and-left session (no heartbeat for 90 s, `evicted-for-admission`)
+  instead of refusing — a viewer who walked away no longer blocks the
+  next one. (SPF-8, SPF-9.)
+
 ### v1.0.0-beta.1 draft (2026-09-03)
 
 - First 1.0 beta, for testers — the v0.9.0-rc.12 dry-run tree plus the

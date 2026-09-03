@@ -77,6 +77,11 @@ see [Why is this converting?](why-is-it-converting.md) — Loombre
 is doing some extra work behind the scenes to make sure it plays properly
 on your device.
 
+If playback stops with an error screen, the short code it shows (for
+example `transcode-input-missing` or `hls-network-error`) is explained in
+[Playback error codes](playback-errors.md) — use **Copy details** there
+when you report a problem, and **Try again** to resume where you were.
+
 ## Restricted content
 
 If you try to open something and you're asked for a PIN, see
