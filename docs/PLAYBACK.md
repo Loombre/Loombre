@@ -175,7 +175,10 @@ always-present software backend used to satisfy the check on every box,
 so a Tier-0 machine software-encoded libx265 (2–4× slower than libx264,
 the owner's stutter/freeze on software boxes) and an h264-only hardware
 encoder failed §8.3's target coverage for an hevc ladder and fell to full
-software — over its own working hardware H.264 route. `av1EncodePreferred` is passed through VERBATIM — the raw
+software — over its own working hardware H.264 route. A hardware row that only DECODES (an
+empty `encode` list, e.g. d3d11va) is not a hardware encode route and does
+not block the tier ≥ 1 software-HEVC branch — that is the intended reading
+of "no hardware encoder at all". `av1EncodePreferred` is passed through VERBATIM — the raw
 `transcode.av1EncodePreferred` setting (default `false`), never AND-ed with
 capability by the caller — because AV1's gate is a TIER LAW (§7.2, LD-16)
 that must be enforced INSIDE the pure engine, from `caps` + `policy.tier`,
@@ -1903,7 +1906,7 @@ machine total twice these figures.
     Local; no server round-trip; both directions within the window.
   - HARD (outside the listed window): `POST …/seek {targetMs, rungIndex?}`
     → enter a `relocating` state (scrubber pins at the target, displayed
-    position frozen there). The element is PAUSED at this same instant (its play intent — playing, ended, or a pending post-rebuild play — is captured once per lifecycle), so the doomed pre-seek run stops playing under the spinner and stops pulling its next fragments; the landing resumes it, the timeout leaves it paused (SPF-2026-09-03, peer UX finding). IF the session has seen ENDLIST, restart
+    position frozen there). The element is PAUSED at this same instant (its play intent — playing, ended, or a pending post-rebuild play — is captured once per lifecycle), so the doomed pre-seek run stops PLAYING under the spinner (hls.js still prefetches to its buffer target while paused — it is SPF-4's manifest hold that keeps the doomed run's later URIs from ever being listed); the landing resumes it, the timeout leaves it paused. The pause also fires the player's pause-flush progress write at the pre-seek watched position, which the 202 immediately supersedes with the clamped target (SPF-2026-09-03, peer UX finding). IF the session has seen ENDLIST, restart
     playlist loading (`startLoad()` or equivalent) as part of ENTERING
     relocating (amendment A1 — hls.js stops polling after ENDLIST;
     without the re-arm the landing watch below can never fire). Watch
