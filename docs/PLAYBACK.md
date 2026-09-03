@@ -160,15 +160,22 @@ interface ServerPolicy {
   maxSimultaneousTranscodes: number;       // tier-derived, overridable
   ladderRungs: LadderRung[];               // instance ladder table (§7)
   segmentDurationSec: 2;                   // fixed v1 — 2 s since SPF-1 (was 6; the GOP the builder already emits)
-  hevcEncodePreferred: boolean;            // true when caps verify hevc encode
+  hevcEncodePreferred: boolean;            // setting AND a HARDWARE hevc route (SPF-10 — see note)
   av1EncodePreferred: boolean;             // false; operator PREFERENCE verbatim (LD-7 — see note)
 }
 ```
 
 **`av1EncodePreferred` asymmetry (LD-7, deliberate).** `hevcEncodePreferred`
-arrives ALREADY resolved (operator setting AND caps-verified hevc encode,
+arrives ALREADY resolved (operator setting AND a verified hevc route,
 `apps/server/src/playback/resolve-policy.ts`) because its only gate is a
-capability fact. `av1EncodePreferred` is passed through VERBATIM — the raw
+capability fact. SPF-10 (2026-09-03, peer-review finding): the verified
+route must be a HARDWARE backend's hevc encode — or, on tier ≥ 1 only, the
+software encoder when the box has no hardware encode route at all. The
+always-present software backend used to satisfy the check on every box,
+so a Tier-0 machine software-encoded libx265 (2–4× slower than libx264,
+the owner's stutter/freeze on software boxes) and an h264-only hardware
+encoder failed §8.3's target coverage for an hevc ladder and fell to full
+software — over its own working hardware H.264 route. `av1EncodePreferred` is passed through VERBATIM — the raw
 `transcode.av1EncodePreferred` setting (default `false`), never AND-ed with
 capability by the caller — because AV1's gate is a TIER LAW (§7.2, LD-16)
 that must be enforced INSIDE the pure engine, from `caps` + `policy.tier`,

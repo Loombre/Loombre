@@ -45,7 +45,7 @@ How many videos this server will convert at the same time. Lowering it never int
 
 When converting, prefer the newer, more efficient video format (HEVC) over the older, more compatible one (H.264). Only used when your hardware supports it.
 
-- **Technical details:** Preference only takes effect when the playback device declares HEVC support AND a verified capability snapshot lists an hevc encoder (resolve-policy: setting AND hevcVerified). Ladder rungs may swap h264 -> hevc at equal heights with lower bitrates.
+- **Technical details:** Preference half only. The capability half is resolved per request in apps/server (resolve-policy.ts): HEVC is used when a HARDWARE encoder verifies hevc, or — on tier 1/2 only — when the box has no hardware encode route at all and the software encoder verifies hevc. A tier-0 box never software-encodes HEVC (libx265 is 2–4× slower than libx264), and a box with an h264-only hardware encoder keeps its hardware H.264 route (SPF-10). AV1 preference is separate (transcode.av1EncodePreferred).
 - **Default:** On
 - **Applies:** immediately — no restart needed.
 
