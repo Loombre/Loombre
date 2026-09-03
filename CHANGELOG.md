@@ -21,8 +21,16 @@ are the version axis.
 
 ## [Unreleased]
 
-### Unreleased (after v0.9.0-rc.11)
+### v0.9.0-rc.12 draft (2026-09-03)
 
+- Twelfth release candidate — a pipeline dry run, the first tagged build
+  with the Intel macOS leg below. No product changes beyond the fast-uri
+  bump.
+- deps: fast-uri 3.1.5 → 3.1.6 (transitive, via the server's ajv) —
+  clears four HIGH advisories published 2026-09-02 (host confusion / SSRF
+  in URI normalization: GHSA-5jgf-p345-68v8, GHSA-f65p-4m7j-42xc,
+  GHSA-fph4-wmhf-6fwf, GHSA-jqff-g426-hqxp). Lockfile-only; no
+  audit-allowlist entry.
 - macOS: the release pipeline now builds an Intel (`x64`) `.pkg` alongside
   the Apple Silicon (`arm64`) one — one matrix leg per architecture, the
   x64 leg natively on GitHub's `macos-15-intel` runner, each leg asserting
