@@ -7170,6 +7170,15 @@ components:
         media: { $ref: '#/components/schemas/MediaInfo' }
         status: { $ref: '#/components/schemas/PlaybackSessionStatus' }
         errorCode: { type: [string, 'null'] }
+        errorDetail:
+          type: [string, 'null']
+          # SPF-7.
+          description: >-
+            One sanitized line derived from the worker-captured ffmpeg
+            output when status is `failed` (control characters stripped,
+            absolute filesystem paths reduced to their basename, capped at
+            200 characters); `null` otherwise, and `null` when no
+            recognizable line was captured. Never the raw stderr log.
         manifestUrl:
           type: [string, 'null']
           # Owner-decision V5.

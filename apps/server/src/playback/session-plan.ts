@@ -10,6 +10,8 @@
 // EVERY decision, including direct-play; that same module already branches
 // the row's initial `status` on `plan.decision`, unchanged by this step.
 
+import { classifyFfmpegFailure } from "@loombre/shared";
+
 export interface ContractPlaybackSessionRow {
   id: string;
   userId: string;
@@ -19,6 +21,13 @@ export interface ContractPlaybackSessionRow {
   engineVersion: string | null;
   status: string;
   errorCode: string | null;
+  /** The 4 KB ffmpeg stderr ring the worker persisted on failure
+   *  (packages/db's PlaybackSessionRow.stderrTail) — RAW, never sent to a
+   *  client as-is. `toContractPlaybackSession` re-derives the sanitized,
+   *  viewer-safe `errorDetail` from this via @loombre/shared's
+   *  `classifyFfmpegFailure` (SPF-7); `null` for a session that never
+   *  failed. */
+  stderrTail: string | null;
   startedAtMs: number;
   updatedAtMs: number;
 }
@@ -49,6 +58,26 @@ export function playbackManifestUrl(sessionId: string, decision: string | undefi
   return `/playback/sessions/${sessionId}/hls/master.m3u8`;
 }
 
+/**
+ * `errorDetail` (SPF-7): re-runs @loombre/shared's `classifyFfmpegFailure`
+ * over the row's OWN persisted `stderrTail` rather than reading a stored
+ * `detail` column — there isn't one; the raw tail (docs/PLAYBACK.md §9
+ * audit requirement) is the only thing ever written, and this
+ * classification is cheap and pure enough that re-deriving it here is
+ * simpler than a second column that could drift from the classifier.
+ * `exitCode`/`signal` are irrelevant to the `.detail` half of the result
+ * (they only steer the fallback CODE — `transcode-killed` vs.
+ * `transcode-failed` — between two cases that both carry a null detail
+ * regardless), so fixed placeholder values are passed; only `.detail` is
+ * ever read here. `null` for any session that never failed, or whose
+ * stderr tail (worker start-up failures with a synthetic tail always set
+ * one; this is belt-and-suspenders) is unexpectedly absent.
+ */
+function errorDetailOf(status: string, stderrTail: string | null): string | null {
+  if (status !== "failed" || stderrTail === null) return null;
+  return classifyFfmpegFailure({ stderrTail, exitCode: 1, signal: null }).detail;
+}
+
 function decisionOf(plan: Record<string, unknown> | null): string | undefined {
   if (plan && typeof plan === "object" && "decision" in plan) {
     const decision = (plan as { decision?: unknown }).decision;
@@ -76,6 +105,7 @@ export function toContractPlaybackSession(
     ...(media !== undefined ? { media } : {}),
     status: row.status,
     errorCode: row.errorCode,
+    errorDetail: errorDetailOf(row.status, row.stderrTail),
     manifestUrl: playbackManifestUrl(row.id, decisionOf(row.plan)),
     createdAtMs: row.startedAtMs,
     updatedAtMs: row.updatedAtMs,
