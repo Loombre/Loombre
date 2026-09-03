@@ -1968,6 +1968,17 @@ machine total twice these figures.
     parks server-side and returns the moment the restarted run is listed),
     then once per second; hard seeks dispatched within 150 ms of the
     previous one coalesce on a trailing timer, newest target wins (SPF-5).
+    Every nudge load resets the level's `requestScheduled` anchor to -1 first:
+    hls.js advances that anchor by one reload interval on EVERY completed
+    playlist load (base-playlist-controller.ts, `requestScheduled +=
+    reloadInterval` unless the anchor is already more than an interval in
+    the past), so un-reset 1 Hz nudges pushed the post-landing natural
+    refresh 10–40 s out while the client held one or two segments — a
+    guaranteed freeze right after every hard seek, independent of segment
+    length (measured live on the 8a3e6ae baseline by the peer session:
+    12.3 s to the first post-landing refresh with 12 s buffered). With the
+    reset, each load re-anchors to its own start and the last nudge before
+    the landing schedules the next refresh one targetduration later.
     It goes quiet at the FRAGMENT MATCH (not at resume — nudging past
     the match would abort the very fragment loads the landing needs), and
     aborting an in-flight fragment load mid-relocation costs nothing (the
