@@ -63,6 +63,12 @@ are the version axis.
   the cost of H.264 and h264-only hardware encoders were bypassed for
   full software — a plausible cause of stutter on software boxes.
   (SPF-10, peer finding.)
+- Playback planning: H.264 Constrained Baseline and Constrained High
+  (phone recordings, screen captures, WebRTC/OBS exports, many hardware
+  encoders) now rank at their parent profiles instead of being treated as
+  unsupported, so those files direct-play again rather than being forced
+  through a transcode session that occupied a conversion slot and turned
+  native seeking into the restart path. (SPF-12, peer finding.)
 - Worker: a library whose folder is missing, blocked by a macOS privacy
   prompt, or otherwise unreachable can no longer freeze the worker at
   boot — the file watcher probes every path with a timeout and skips the

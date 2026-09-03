@@ -534,5 +534,6 @@
   "533-t1-six-rung-ladder-never-capped.yaml": "green",
   "534-t2-six-rung-ladder-never-capped.yaml": "green",
   "535-t0-software-route-tier-capped-then-variant-cap-noop.yaml": "green",
-  "536-t0-mixed-codec-ladder-capped-targetcodec-preserved.yaml": "green"
+  "536-t0-mixed-codec-ladder-capped-targetcodec-preserved.yaml": "green",
+  "537-direct-play-h264-constrained-baseline.yaml": "green"
 }

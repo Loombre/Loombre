@@ -122,14 +122,32 @@ const PROFILE_LADDERS: Partial<Record<VideoCodec, readonly string[]>> = {
   vp9: ["profile0", "profile2"],
 };
 
+/** Profile strings that are STRICT SUBSETS of a ladder member and therefore
+ *  rank AT their parent: a decoder that handles the parent handles the
+ *  constrained variant by definition (H.264 Annex A: Constrained Baseline
+ *  ⊂ Baseline ∩ Main; Constrained High ⊂ High). ffprobe reports them as
+ *  "Constrained Baseline"/"Constrained High" (normalized by the worker to
+ *  the lowercase, space-free forms below). Without this alias every phone
+ *  recording, screen capture and WebRTC/OBS export — direct-playable in
+ *  every browser — fell to the conservative unranked-exceeds rule and was
+ *  forced through a transcode session (SPF-12, found live on a Constrained
+ *  Baseline mkv). Anything not listed here stays unranked → exceeds. */
+const PROFILE_ALIASES: Partial<Record<VideoCodec, Readonly<Record<string, string>>>> = {
+  h264: { constrainedbaseline: "baseline", constrainedhigh: "high" },
+};
+
+function canonicalProfile(codec: VideoCodec, profile: string): string {
+  return PROFILE_ALIASES[codec]?.[profile] ?? profile;
+}
+
 /** True iff `streamProfile` exceeds `maxProfile` for `codec` (profile axis
  *  only — caller is responsible for the null-vacuous-pass short-circuit). */
 function profileExceeds(codec: VideoCodec, streamProfile: string, maxProfile: string): boolean {
   if (streamProfile === maxProfile) return false;
   const ladder = PROFILE_LADDERS[codec];
   if (ladder) {
-    const streamRank = ladder.indexOf(streamProfile);
-    const maxRank = ladder.indexOf(maxProfile);
+    const streamRank = ladder.indexOf(canonicalProfile(codec, streamProfile));
+    const maxRank = ladder.indexOf(canonicalProfile(codec, maxProfile));
     if (streamRank !== -1 && maxRank !== -1) {
       return streamRank > maxRank;
     }

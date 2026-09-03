@@ -181,6 +181,20 @@ describe("Stage B: rule 3 — profile axis (documented ladder + null-vacuous + b
     ]);
   });
 
+  it("SPF-12: h264 Constrained Baseline ranks AT baseline — passes a max=high device instead of falling to the unranked-exceeds rule", () => {
+    const media = makeMedia([makeVideoStream({ profile: "constrainedbaseline" })]);
+    const device = makeDevice([makeVideoEntry({ maxProfile: "high" })]);
+    expect(evaluateVideo(media, device, 0).reasons).toEqual([]);
+  });
+
+  it("SPF-12: h264 Constrained High ranks AT high — passes max=high, exceeds max=main", () => {
+    const media = makeMedia([makeVideoStream({ profile: "constrainedhigh" })]);
+    expect(evaluateVideo(media, makeDevice([makeVideoEntry({ maxProfile: "high" })]), 0).reasons).toEqual([]);
+    expect(evaluateVideo(media, makeDevice([makeVideoEntry({ maxProfile: "main" })]), 0).reasons).toEqual([
+      { code: "video-profile-unsupported", streamIndex: 0, detail: "profile=constrainedhigh max=main" },
+    ]);
+  });
+
   it("exact-equal profile string always passes, even off-ladder ('weird-profile' both sides)", () => {
     const media = makeMedia([makeVideoStream({ profile: "weird-profile" })]);
     const device = makeDevice([makeVideoEntry({ maxProfile: "weird-profile" })]);
