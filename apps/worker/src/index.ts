@@ -25,7 +25,8 @@ import {
 import { createSubtitleExtractConsumerHandler } from "./subtitles/index.js";
 import { runScan } from "./scan/scanner.js";
 import { createHashPool, type HashPool } from "./scan/identity/pool.js";
-import { startWatcher, type WatcherHandle } from "./scan/watcher.js";
+import { hasUnresponsiveWatcherThread, startWatcher, type WatcherHandle } from "./scan/watcher.js";
+import { bootConsumersBeforeWatchers } from "./boot-order.js";
 import { getWorkerSettingValue, loadWorkerEffectiveSettings, resolveScanConcurrencyFromEffective } from "./settings/effective-settings.js";
 import { runProbe } from "./probe/consumer.js";
 import { createProbeTerminalFailureHook } from "./probe/terminal-failure-hook.js";
@@ -72,6 +73,28 @@ installCrashHandlers({
   dataDir: resolveWorkerDataDir(process.platform, process.env),
   version: LOOMBRE_VERSION_FULL,
   processName: "@loombre/worker",
+});
+
+// SPF-14: Node's process.exit() joins every live worker_thread
+// (Environment::stop_sub_worker_contexts → JoinThread), and a watcher
+// thread parked inside a native fs.watch open() the OS never answers cannot
+// be joined — measured on a Mac: process.exit(0) with such a thread never
+// returns, and a SIGTERM arriving afterwards runs no handler either. That
+// would hang every exit path — installCrashHandlers' exit(1) above,
+// installGracefulShutdown's exit(0) and its 10 s timeout exit(1), main()'s
+// catch — exactly where the old main-thread freeze did. 'exit' listeners
+// run BEFORE that join, so this is the one seam every path crosses. Only an
+// UNRESPONSIVE thread (abandoned by stop(), or silent past its heartbeat
+// grace) triggers it: a healthy thread is joinable and an ordinary exit
+// stays ordinary. By the time any exit reaches here the crash file is
+// written and shutdown() has flushed what it could, so nothing is lost by
+// ending the process the hard way; the supervisor sees a signal exit and
+// restarts as it would after any crash.
+process.on("exit", () => {
+  if (hasUnresponsiveWatcherThread()) {
+    console.error("worker: a filesystem watcher thread is unresponsive (blocked inside the OS?) and cannot be joined at exit — forcing process exit");
+    process.kill(process.pid, "SIGKILL");
+  }
 });
 
 // Resolution order lives in db-url.ts (P4.2 discovery seam): explicit
@@ -359,20 +382,68 @@ let watcherHandle: WatcherHandle | undefined;
 let stashWatcherHandle: WatcherHandle | undefined;
 let stashScheduleLoopHandle: StashScheduleLoopHandle | undefined;
 let pluginDeliveryLoopHandle: PluginDeliveryLoopHandle | undefined;
+let shuttingDown = false;
+/** Settles when both watcher starts have settled — main() never awaits it
+ *  (SPF-14); shutdown() waits on it briefly so the handles exist to stop. */
+let watchersBoot: Promise<void> = Promise.resolve();
 
-// P1.3: chokidar watch per library path (polling fallback auto-enabled for
-// network mounts — see ./scan/watcher.ts), debounced into incremental scan
-// jobs. Best-effort at boot: a watcher-start failure (e.g. a library path
-// that no longer exists) is logged, not fatal — the worker still serves
-// scan/probe/image jobs either way. startWatcher probes every path with a
-// bounded timeout BEFORE chokidar touches it (see its header: a blocked
-// fs.watch open() on a macOS privacy-protected folder froze this whole
-// process at boot), so an unreachable library can delay boot by at most
-// PATH_PROBE_TIMEOUT_MS per path and never wedge it.
+/** How long a watcher may take to finish its initial scan before the log
+ *  says so. Purely diagnostic — no job ever waits on a watcher. */
+const WATCHER_READY_NOTICE_MS = 30_000;
+
+// Ties a watcher's readiness to the log. `handle.ready` settles "ready" once
+// every watched library's initial scan finished and "gone" if the thread
+// exited first; it never settles while a native watch open is blocked
+// inside the OS (SPF-14), so the bounded notice below is the only
+// operator-visible trace of that state — and the hint it carries is the
+// fix. A shutdown that began while the watcher was still starting stops the
+// handle here (stop() is idempotent, so shutdown() stopping it too is
+// harmless): main() never awaits the watchers, so this is the one race the
+// ordering leaves open.
+function adoptWatcher(label: string, handle: WatcherHandle): WatcherHandle {
+  if (shuttingDown) {
+    void handle.stop();
+    return handle;
+  }
+  const count = handle.watchedLibraryIds.length;
+  if (count === 0) return handle;
+  const notice = setTimeout(() => {
+    console.warn(
+      `worker: ${label} has not finished its initial scan after ${WATCHER_READY_NOTICE_MS} ms — jobs are unaffected; ` +
+        "on macOS a library under Desktop, Documents or Downloads is privacy-protected: keep media outside those folders " +
+        "(e.g. ~/Media), or add Loombre's runtime node binary under System Settings → Privacy & Security → Full Disk Access " +
+        "(see the macOS install guide)",
+    );
+  }, WATCHER_READY_NOTICE_MS);
+  notice.unref();
+  void handle.ready.then((outcome) => {
+    clearTimeout(notice);
+    if (outcome === "ready") {
+      console.log(`worker: ${label} ready — ${count} ${count === 1 ? "library" : "libraries"} under watch`);
+    } else if (!shuttingDown) {
+      console.warn(`worker: ${label} thread is gone — nothing under watch; watch-triggered scans are off until the next worker start`);
+    }
+  });
+  return handle;
+}
+
+// P1.3: chokidar watch per library path — in its own worker_thread
+// (./scan/watcher.ts, SPF-14), polling fallback auto-enabled for network
+// mounts and macOS privacy-protected folders, debounced into incremental
+// scan jobs. Best-effort: a watcher-start failure (e.g. a library path that
+// no longer exists) is logged, not fatal — the worker serves scan/probe/
+// image jobs either way. Two guards stack here: startWatcher probes every
+// path with a bounded timeout BEFORE chokidar sees it (SPF-11 — a missing,
+// denied or silent path is skipped, PATH_PROBE_TIMEOUT_MS per path), and
+// chokidar itself runs off the main thread, so even a native fs.watch open
+// that blocks inside the OS on a path the probe passed (the SPF-11
+// residual — access() cannot predict an FSEvents open) wedges nothing but
+// that thread. main() never awaits this function: consumers are registered
+// and confirmed first (bootConsumersBeforeWatchers, ./boot-order.ts).
 async function startLibraryWatcher(): Promise<void> {
   try {
     const libraries = await listLibraries(db);
-    watcherHandle = await startWatcher(
+    const handle = await startWatcher(
       libraries.map((l) => ({ id: l.id, paths: l.paths })),
       {
         onChange: (libraryId) => {
@@ -382,6 +453,7 @@ async function startLibraryWatcher(): Promise<void> {
         },
       },
     );
+    watcherHandle = adoptWatcher("library watcher", handle);
   } catch (err) {
     console.error("worker: failed to start library watcher:", err);
   }
@@ -405,13 +477,14 @@ async function startStashLibraryWatcher(): Promise<void> {
     }
     if (connections.length === 0) return;
 
-    stashWatcherHandle = await startStashWatcher(connections, {
+    const handle = await startStashWatcher(connections, {
       onChange: (libraryId) => {
         queue.enqueue("stash-sync", { libraryId, mode: "incremental" }).catch((err: unknown) => {
           console.error(`worker: failed to enqueue watch-triggered stash-sync for library ${libraryId}:`, err);
         });
       },
     });
+    stashWatcherHandle = adoptWatcher("Stash library watcher", handle);
   } catch (err) {
     console.error("worker: failed to start Stash library watcher:", err);
   }
@@ -652,6 +725,7 @@ let keepAlive: NodeJS.Timeout | undefined;
 // it is exactly as safe to run concurrently with the others as
 // watcherHandle.stop() already was).
 async function shutdown(_signal: ShutdownSignal): Promise<void> {
+  shuttingDown = true;
   if (keepAlive) clearInterval(keepAlive);
 
   // Item C1 (process-lifecycle hardening wave (2026-08-11)), FIRST and awaited on its
@@ -675,6 +749,20 @@ async function shutdown(_signal: ShutdownSignal): Promise<void> {
     console.log(`worker: terminated ${terminated} in-flight transcode run(s) during shutdown`);
   }
 
+  // SPF-14: main() never awaits the watcher starts, so a shutdown can land
+  // while they are still probing paths or waiting on the thread's
+  // acknowledgement, with no handle assigned yet. Wait — briefly — for them
+  // to settle so their threads get a stop() below; a start that outlasts
+  // this bound (a thread wedged before acknowledging) is left to
+  // adoptWatcher's own stop and to the process 'exit' hook at the top of
+  // this file, which refuses to join an unresponsive thread.
+  await Promise.race([
+    watchersBoot,
+    new Promise<void>((resolve) => {
+      setTimeout(resolve, WATCHER_BOOT_SETTLE_ON_SHUTDOWN_MS).unref();
+    }),
+  ]);
+
   await Promise.all([
     queue.stop(),
     hashPool.terminate(),
@@ -685,6 +773,10 @@ async function shutdown(_signal: ShutdownSignal): Promise<void> {
     db.destroy(),
   ]);
 }
+
+/** How long shutdown() waits for a still-starting watcher before stopping
+ *  what exists. Inside the 10 s graceful budget alongside stop()'s own 2 s. */
+const WATCHER_BOOT_SETTLE_ON_SHUTDOWN_MS = 2_000;
 
 // STATE.md P4.2 (lane B): single-provisioner rule — only apps/server owns
 // the embedded-PostgreSQL child process (apps/server/src/bootstrap/
@@ -723,8 +815,48 @@ async function main(): Promise<void> {
   await waitForDatabaseReady();
   await reconcileStaleJobLedger();
   await reapOrphanedTranscodes();
-  await startLibraryWatcher();
-  await startStashLibraryWatcher();
+
+  // Assert the consumers ACTUALLY registered before saying so. The ten
+  // queue.work() calls at module scope are fire-and-forget, and they run at
+  // IMPORT time — before waitForDatabaseReady() above has had any chance to
+  // wait for anything. On the rc.2 Windows install the worker lost that race
+  // with the server's first-boot PostgreSQL provisioning by ~8 seconds, all
+  // ten registrations failed with ECONNREFUSED, and the "worker up" line
+  // below printed the full list of "registered" consumers anyway. The result
+  // was a live worker process with zero consumers: no job ever ran, hwprobe
+  // never reported, the setup wizard sat on "Worker not detected yet"
+  // forever, and because the process stayed alive no supervisor ever
+  // restarted it.
+  //
+  // @loombre/jobs now retries its pg-boss start (a database that is still
+  // coming up is "not yet", not "broken"), so this normally just resolves.
+  // If it does not, throwing is the correct outcome: main()'s catch exits
+  // non-zero, and every installer supervises this process (Windows SCM
+  // recovery actions, systemd Restart=, launchd KeepAlive) so it comes back
+  // once the database is genuinely reachable. A silent no-op worker is far
+  // worse than a loud restart.
+  //
+  // SPF-14 ordering law (./boot-order.ts, tested there): ready() is awaited
+  // BEFORE the filesystem watchers start, and the watchers are never
+  // awaited on this path. Live 2026-09-03: a native fs.watch open blocked
+  // inside macOS on a path the access() probe had passed, and because this
+  // function awaited the watchers first, no job ever ran. Now a watcher that
+  // never settles — blocked open, hung probe, silent thread — cannot delay
+  // job consumption by one tick; the watchers themselves run chokidar in a
+  // worker_thread (./scan/watcher.ts) so the block never reaches this loop.
+  const boot = await bootConsumersBeforeWatchers({
+    ready: () => queue.ready(),
+    startWatchers: async () => {
+      await startLibraryWatcher();
+      await startStashLibraryWatcher();
+    },
+  });
+  watchersBoot = boot.watchers;
+
+  console.log(
+    "worker up — pg-boss consumers registered: scan, probe, metadata, image, import, image-backfill, opengop-backfill, hwprobe, transcode, subtitle-extract, stash-inventory, stash-sync, mail-send",
+  );
+
   await enqueueImageBackfillIfNeeded();
   await enqueueOpenGopBackfillIfNeeded();
   await checkHwCapabilitiesAndEnqueueIfNeeded();
@@ -748,29 +880,6 @@ async function main(): Promise<void> {
     enqueueIncrementalSync: (libraryId) => queue.enqueue("stash-sync", { libraryId, mode: "incremental" }),
   });
 
-  // Assert the consumers ACTUALLY registered before saying so. The ten
-  // queue.work() calls at module scope are fire-and-forget, and they run at
-  // IMPORT time — before waitForDatabaseReady() above has had any chance to
-  // wait for anything. On the rc.2 Windows install the worker lost that race
-  // with the server's first-boot PostgreSQL provisioning by ~8 seconds, all
-  // ten registrations failed with ECONNREFUSED, and this line printed the
-  // full list of "registered" consumers anyway. The result was a live worker
-  // process with zero consumers: no job ever ran, hwprobe never reported, the
-  // setup wizard sat on "Worker not detected yet" forever, and because the
-  // process stayed alive no supervisor ever restarted it.
-  //
-  // @loombre/jobs now retries its pg-boss start (a database that is still
-  // coming up is "not yet", not "broken"), so this normally just resolves.
-  // If it does not, throwing is the correct outcome: main()'s catch exits
-  // non-zero, and every installer supervises this process (Windows SCM
-  // recovery actions, systemd Restart=, launchd KeepAlive) so it comes back
-  // once the database is genuinely reachable. A silent no-op worker is far
-  // worse than a loud restart.
-  await queue.ready();
-
-  console.log(
-    "worker up — pg-boss consumers registered: scan, probe, metadata, image, import, image-backfill, opengop-backfill, hwprobe, transcode, subtitle-extract, stash-inventory, stash-sync, mail-send",
-  );
   console.log("worker up — plugin-delivery loop started (LPP v1 event-subscriber fanout)");
   console.log("worker up — stash schedule-loop started (Stash SQLite metadata sync, trigger (b), default OFF)");
 

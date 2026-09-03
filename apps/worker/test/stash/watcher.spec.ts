@@ -65,9 +65,11 @@ describe("startStashWatcher", () => {
     });
 
     try {
-      // chokidar needs a beat to finish its initial scan before it will
-      // reliably report subsequent changes.
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      // chokidar treats anything it sees during its initial scan as
+      // pre-existing (ignoreInitial) — write only once the scan is done.
+      // The watcher now runs in a worker_thread (SPF-14), so a fixed sleep
+      // would race thread start-up; `ready` is the real signal.
+      await handle.ready;
       writeFileSync(libAPath, "changed-a");
 
       await waitFor(() => changed.includes("lib-a"), 5000);
