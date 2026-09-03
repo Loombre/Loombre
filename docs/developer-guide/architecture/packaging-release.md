@@ -13,8 +13,9 @@
      signing via GitHub OIDC — confirmed present in that workflow file.
      keys/README.md — three-location minisign public-key consistency
      check (checked in CI by scripts/release/check-pubkey-consistency.mjs).
-     Version 1.0.0-beta.1, no release published yet — root package.json,
-     CHANGELOG.md's "Convention note (pre-v1.0)". -->
+     Version 1.0.0-beta.1, published 2026-09-03 as a GitHub pre-release —
+     root package.json, CHANGELOG.md's convention note and its
+     "[1.0.0-beta.1]" header. -->
 
 Loombre ships as four independent artifact types from one source tree, all
 built from the same version-stamped source.

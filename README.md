@@ -14,7 +14,10 @@ organizes and streams your library — locally and remotely — to any device. I
 is not a fork, client, or compatible implementation of any other media server;
 it shares no API surface, schema, or naming with one.
 
-> **Status:** version `1.0.0-beta.1`, pre-release. No published release has shipped yet.
+> **Status:** version `1.0.0-beta.1`, pre-release — published for testers on
+> 2026-09-03 ([GitHub Releases](https://github.com/Loombre/Loombre/releases/tag/v1.0.0-beta.1)).
+> The line from here is `1.0.0-beta.N` → `1.0.0-rc.1` → `1.0.0`; there is no
+> stable release yet, and betas are not announced by the in-app update check.
 
 ## Screenshots
 

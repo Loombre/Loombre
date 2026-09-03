@@ -8,20 +8,22 @@ docs/PLAN.md §4.1's additive-only-within-a-major-version policy governs the
 API surface specifically (`oasdiff` enforces it in CI); this file is the
 human-readable history alongside that machine-enforced contract.
 
-**Convention note (pre-v1.0):** Loombre has not had a tagged public release
-yet — every entry below through Phase 4 documents *development-phase*
-history against the project's internal `STATE.md` phase tracking, not a
-shipped version (the root `package.json` version stayed effectively
-unreleased through Phases 0–3; STATE.md P4.11 introduced real single-source
-version stamping in Phase 4). Once a `v*` tag's GitHub Release is actually
-*published* — not merely drafted (the `v0.9.0-rc.*` tags pushed so far
-each produced only an unpublished draft) — entries below gain real semver
-headers and dates, and this note can be retired. Until then, phase names
-are the version axis.
+**Convention note:** `1.0.0-beta.1` (2026-09-03, a GitHub pre-release) is
+Loombre's first published release, so it is the first entry with a real
+semver header. Everything beneath that header is the development history
+that shipped in it: the `v0.9.0-rc.*` sections were tags whose drafts were
+never published, and the older sections document *development-phase*
+history against the project's internal `STATE.md` phase tracking rather
+than shipped versions (single-source version stamping arrived in Phase 4,
+STATE.md P4.11). Those sections keep their original names as the version
+axis; nothing before `1.0.0-beta.1` was ever released.
 
 ## [Unreleased]
 
-### v1.0.0-beta.1 draft (2026-09-03)
+## [1.0.0-beta.1] — 2026-09-03 (pre-release)
+
+Published as a GitHub pre-release for testers: the in-app update check
+reads `releases/latest` only, so betas are never announced to it.
 
 - First 1.0 beta, for testers — the v0.9.0-rc.12 dry-run tree plus the
   subtitle fixes below. The line from here: `1.0.0-beta.N` tester builds,

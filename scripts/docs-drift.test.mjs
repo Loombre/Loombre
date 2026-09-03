@@ -90,7 +90,7 @@ const VERSION_RESTATEMENTS = [
   { file: "README.md", pattern: /version `([^`]+)`, pre-release/ },
   {
     file: "docs/developer-guide/architecture/packaging-release.md",
-    pattern: /Version ([0-9][0-9A-Za-z.+-]*), no release published yet/,
+    pattern: /Version ([0-9][0-9A-Za-z.+-]*), published /,
   },
 ];
 
