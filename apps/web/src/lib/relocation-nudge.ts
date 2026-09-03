@@ -9,8 +9,9 @@
 // ~0.2 s, and the fold lands it in the served playlist on the next tick —
 // well under a second end to end. The client was the slow half: hls.js
 // re-reads a live playlist only on its own targetduration cadence, so run
-// DISCOVERY alone cost up to ~6 s of the observed seek latency. While
-// relocating, force a playlist re-read once per second instead.
+// DISCOVERY alone cost up to ~2 s of the observed seek latency (SPF-1's 2 s
+// segments, down from the original 6 s). While relocating, force a
+// playlist re-read once per second instead.
 //
 // The reload lever, in preference order (d4-a1.112):
 //
@@ -37,10 +38,23 @@
 //    deliberately suppresses — which is why the nudge names its reload
 //    position explicitly instead of passing -1 blind.
 //
-// The nudge never fires synchronously (the restarted run cannot be in the
-// playlist at 202 time), checks `isRelocating` per tick so a landing that
-// raced the timer goes quiet immediately, and is stopped by
-// clearLandingWatch (landing, timeout, re-seek, unmount).
+// SPF-4/SPF-5 (2026-09-03): the nudge's FIRST reload fires IMMEDIATELY when
+// armed, not after the first interval elapses. This used to be pointless —
+// the restarted run could not possibly be in the playlist yet at 202 time,
+// so an immediate reload just re-fetched the OLD playlist. SPF-4 changes
+// what that reload means: the server's manifest GET (hls-file.controller.ts
+// `serveMediaPlaylist`) now also blocks while a seek is pending (written by
+// the 202, not yet consumed by the worker) or in progress, long-polling the
+// session row instead of answering with the stale playlist. An immediate
+// reload therefore PARKS on the server and returns the moment the
+// restarted run is folded into the served playlist — collapsing discovery
+// latency from "wait up to one full nudge interval, then wait out the
+// server's own restart" down to one server poll tick. Every later tick
+// still fires on the usual `intervalMs` cadence as a fallback for whatever
+// the long-poll's own deadline doesn't cover. `isRelocating` is checked on
+// every tick (including the immediate one) so a landing that raced the
+// call goes quiet immediately, and the loop is stopped by clearLandingWatch
+// (landing, timeout, re-seek, unmount).
 
 /** The hls.js surface the nudge drives (structural, so tests need no
  *  hls.js instance): the stopLoad/startLoad fallback lever, the level
@@ -180,14 +194,18 @@ export function requestPlaylistOnlyReload(hls: PlaylistReloader): boolean {
  *  the element's current position when the caller provides it (identical
  *  load behavior to the old lastCurrentTime override on an untouched
  *  attach), the live edge otherwise — and never the media-seek side
- *  effect. */
+ *  effect.
+ *
+ *  SPF-4/SPF-5: the FIRST tick runs synchronously, before the interval is
+ *  even created — see the header comment above for why an immediate
+ *  reload is now worth firing. */
 export function startRelocationNudge(
   getReloader: () => PlaylistReloader | null,
   isRelocating: () => boolean,
   getResumePositionSec?: () => number,
   intervalMs: number = HARD_SEEK_REFRESH_NUDGE_MS,
 ): () => void {
-  const timer = setInterval(() => {
+  const tick = (): void => {
     if (!isRelocating()) return;
     const hls = getReloader();
     if (!hls) return;
@@ -205,6 +223,8 @@ export function startRelocationNudge(
       hls.stopLoad();
       hls.startLoad(getResumePositionSec ? getResumePositionSec() : -1, true);
     }
-  }, intervalMs);
+  };
+  tick();
+  const timer = setInterval(tick, intervalMs);
   return () => clearInterval(timer);
 }
