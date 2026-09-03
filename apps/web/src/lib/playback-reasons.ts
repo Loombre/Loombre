@@ -310,3 +310,66 @@ function itemUnavailableReason(): PlanReason {
 export function itemUnavailableReasons(): PlanReason[] {
   return [itemUnavailableReason()];
 }
+
+/**
+ * SPF-7 Phase B: `CLIENT_PLAYBACK_ERROR_CODE` above used to be the ONLY
+ * code a client-side unrecoverable failure could render — every hls.js
+ * error type/details/HTTP status, MediaError code, and stalled position
+ * dropped on the floor. `goFatal` (VideoPlayer.tsx) now renders one of
+ * these eight instead, whenever the session inspect confirms the failure
+ * isn't server-side (lib/playback-recovery.ts's `describeClientFailure`/
+ * `clientFailureReasons` build the {code, detail} pair; this map supplies
+ * the {title, detail-copy, severity} UnavailableScreen actually shows —
+ * same out-of-contract-enum precedent, same reason UnavailableScreen.tsx
+ * needs no separate rendering path). `CLIENT_PLAYBACK_ERROR_CODE` itself
+ * stays as the last-resort fallback for a media-error cause with no
+ * `MediaError` attached at all.
+ */
+FIXED_REASONS["client-media-aborted"] = {
+  title: "Playback was aborted",
+  detail: "Your browser aborted loading this stream. Retry.",
+  severity: "blocking",
+};
+
+FIXED_REASONS["client-media-network-error"] = {
+  title: "The browser lost the stream",
+  detail: "Your browser lost the stream mid-playback. Retry; check the connection.",
+  severity: "blocking",
+};
+
+FIXED_REASONS["client-media-decode-error"] = {
+  title: "Your browser couldn't decode this stream",
+  detail: "Your browser's decoder rejected this stream. Try another browser or device.",
+  severity: "blocking",
+};
+
+FIXED_REASONS["client-media-src-not-supported"] = {
+  title: "Your browser refused this stream format",
+  detail: "Your browser refused this stream format outright. Try another browser or device.",
+  severity: "blocking",
+};
+
+FIXED_REASONS["hls-network-error"] = {
+  title: "The stream stopped loading",
+  detail:
+    "Segments stopped arriving from the server — a 503 usually means it was restarting the converter for a seek and didn't finish in time. Retry, and if it keeps happening check the server's playback log.",
+  severity: "blocking",
+};
+
+FIXED_REASONS["hls-media-error"] = {
+  title: "Your browser couldn't decode a segment",
+  detail: "The player couldn't append or decode a video segment it received. Retry; if it recurs, try a different browser or quality level.",
+  severity: "blocking",
+};
+
+FIXED_REASONS["hls-fatal-error"] = {
+  title: "Playback failed",
+  detail: "The player hit an error it can't classify. Retry; report the detail if it recurs.",
+  severity: "blocking",
+};
+
+FIXED_REASONS["playback-stalled"] = {
+  title: "Playback stalled",
+  detail: "Playback stopped advancing for ten seconds and the player couldn't recover. Retry; check the connection and the server's load.",
+  severity: "blocking",
+};

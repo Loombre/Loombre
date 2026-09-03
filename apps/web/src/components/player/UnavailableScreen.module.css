@@ -151,6 +151,22 @@
   color: var(--color-text-muted);
 }
 
+/* SPF-7 Phase B: the code line plus its "Copy details" affordance —
+   .reasonCode keeps its own left margin (matches every existing row that
+   doesn't have this button), this row just gives the button room to sit
+   beside it and wrap onto its own line on narrow layouts. */
+.reasonCodeRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+}
+
+.reasonCodeRow button {
+  font-size: var(--text-xs);
+  padding: var(--space-3xs) var(--space-xs);
+}
+
 .fallbackBlock {
   display: flex;
   flex-direction: column;
@@ -177,10 +193,15 @@
   gap: var(--space-md);
 }
 
+.retryBlock {
+  display: flex;
+}
+
 /* Mobile hard line: touch targets never below 44px (see e.g.
    shell/MobileTabBar.module.css for the same per-component pattern). */
 @media (width <= 767.98px) {
-  .fallbackBlock button {
+  .fallbackBlock button,
+  .retryBlock button {
     min-height: 44px;
     width: 100%;
   }

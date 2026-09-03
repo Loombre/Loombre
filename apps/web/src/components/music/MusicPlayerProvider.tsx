@@ -87,7 +87,7 @@ export interface PlayableTrackInput {
  *  for), or null when the server sent no reasons at all — in which case
  *  the toast simply drops its reason clause. */
 function refusalReason(result: CreateSessionUnavailable): string | null {
-  const [first] = resolveUnavailableReasons(result.status, result.wouldBeReasons);
+  const [first] = resolveUnavailableReasons(result.status, result.reasons);
   return first === undefined ? null : describeReasonCode(first.code).title;
 }
 
@@ -326,7 +326,7 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }): Reac
       }
 
       if (!result.ok) {
-        console.warn(`[music] track ${track.itemId} unavailable for direct-play, skipping`, result.wouldBeReasons);
+        console.warn(`[music] track ${track.itemId} unavailable for direct-play, skipping`, result.reasons);
         failTrackLoad(slot, track, opts.preloadOnly === true, refusalReason(result));
         return;
       }

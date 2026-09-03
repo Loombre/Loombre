@@ -22,6 +22,7 @@ import type { components } from "@loombre/sdk";
 import { LoombreApiError } from "@loombre/sdk";
 import { HARD_SEEK_LANDING_TIMEOUT_MS } from "../../lib/source-time.js";
 import { HARD_SEEK_COALESCE_MS } from "../../lib/seek-coalesce.js";
+import { formatSeekFailedToast, formatSeekTimedOutToast } from "../../lib/seek-toast.js";
 import { describeSessionFailureCode, SESSION_ENDED_CODE } from "../../lib/playback-recovery.js";
 import { resetPlaybackSessionLeases } from "../../lib/playback-session-lease.js";
 import { VideoPlayer } from "./VideoPlayer.js";
@@ -957,24 +958,59 @@ describe("VideoPlayer", () => {
     const v = (view = await renderReady());
     const video = videoEl(v);
     const loadSpy = vi.spyOn(video, "load");
-    Object.defineProperty(video, "error", { configurable: true, get: () => ({ code: 3 /* MEDIA_ERR_DECODE */ }) });
+    Object.defineProperty(video, "error", { configurable: true, get: () => ({ code: 3 /* MEDIA_ERR_DECODE */, message: "" }) });
     await act(async () => {
       video.dispatchEvent(new Event("error"));
     });
     expect(loadSpy).not.toHaveBeenCalled();
-    expect(v.container.textContent).toContain("Playback failed in this browser");
+    // SPF-7 Phase B: goFatal renders the SPECIFIC client code — the
+    // MediaError code and message reach the screen, not the old generic
+    // "Playback failed in this browser" fallback — and no retry suffix
+    // (this branch bypasses bounded recovery entirely).
+    expect(v.container.textContent).toContain("Your browser couldn't decode this stream");
+    expect(v.container.textContent).toContain("client-media-decode-error");
+    expect(v.container.textContent).toContain("MediaError 3:");
+    expect(v.container.textContent).not.toContain("after");
   });
 
   it("a MEDIA_ERR_SRC_NOT_SUPPORTED error is unrecoverable too — same fatal path, no reattach attempted", async () => {
     const v = (view = await renderReady());
     const video = videoEl(v);
     const loadSpy = vi.spyOn(video, "load");
-    Object.defineProperty(video, "error", { configurable: true, get: () => ({ code: 4 /* MEDIA_ERR_SRC_NOT_SUPPORTED */ }) });
+    Object.defineProperty(video, "error", { configurable: true, get: () => ({ code: 4 /* MEDIA_ERR_SRC_NOT_SUPPORTED */, message: "" }) });
     await act(async () => {
       video.dispatchEvent(new Event("error"));
     });
     expect(loadSpy).not.toHaveBeenCalled();
-    expect(v.container.textContent).toContain("Playback failed in this browser");
+    expect(v.container.textContent).toContain("Your browser refused this stream format");
+    expect(v.container.textContent).toContain("client-media-src-not-supported");
+    expect(v.container.textContent).toContain("MediaError 4:");
+  });
+
+  it("SPF-7 Phase B: UnavailableScreen's 'Try again' re-creates the session and ends the old one", async () => {
+    createPlaybackSession
+      .mockReset()
+      .mockResolvedValueOnce({ ok: true, session: directPlaySession() })
+      .mockResolvedValueOnce({ ok: true, session: { ...directPlaySession(), id: SECOND_SESSION_ID } });
+    const v = (view = await renderReady());
+    const video = videoEl(v);
+    Object.defineProperty(video, "error", { configurable: true, get: () => ({ code: 3 /* MEDIA_ERR_DECODE */, message: "" }) });
+    await act(async () => {
+      video.dispatchEvent(new Event("error"));
+    });
+    expect(v.container.textContent).toContain("Your browser couldn't decode this stream");
+
+    const retryButton = Array.from(v.container.querySelectorAll("button")).find((b) => b.textContent?.trim() === "Try again");
+    if (!retryButton) throw new Error('no "Try again" button rendered');
+    await act(async () => retryButton.click());
+
+    // A fresh create, and the OLD (failed) session released — the SAME
+    // lease/unmount-cleanup lever selectSubtitle's re-create already
+    // exercises (browser-player-F5, AUD-A4v4-003), not a new teardown path.
+    expect(createPlaybackSession).toHaveBeenCalledTimes(2);
+    expect(endPlaybackSession).toHaveBeenCalledWith(SESSION_ID);
+    // The unavailable screen is gone — the new session is live.
+    expect(v.container.textContent).not.toContain("Your browser couldn't decode this stream");
   });
 
   it("the element's own 'playing' event resets the recovery budget — a stretch that reaches real playback again earns a fresh 3 attempts", async () => {
@@ -1731,7 +1767,7 @@ describe("VideoPlayer", () => {
         expect(
           document.body.textContent,
           "the landing consumed the 20 s timer — nothing bounds the post-landing stall (browser-player-F4)",
-        ).toContain("Seek timed out");
+        ).toContain(formatSeekTimedOutToast());
       });
 
       it("a seeked BELOW the landed start (UA clamped the landing on an ended stream) is NOT resume evidence — still toasts", async () => {
@@ -1803,8 +1839,11 @@ describe("VideoPlayer", () => {
       const nudgeCalls = hls.calls.slice(callsAtArm);
       expect(
         nudgeCalls.filter((c) => c === "trigger(hlsLevelLoading)"),
+        // R6: the extra 150 ms tick (relocation-nudge.ts) plus the 1 s and
+        // 2 s cadence ticks — the arm-time immediate tick already landed
+        // before `callsAtArm` was captured.
         "the nudge stopped re-reading the playlist — discovery latency regresses to hls.js's own cadence",
-      ).toHaveLength(2);
+      ).toHaveLength(3);
       expect(
         nudgeCalls.filter((c) => c === "stopLoad" || c.startsWith("startLoad")),
         "a nudge tick re-kicked the fragment pipeline — the at-EOF same-segment re-fetch loop returns (d4-a1.113)",
@@ -2522,7 +2561,6 @@ describe("VideoPlayer", () => {
   });
 
   describe("hard-seek failure surface (gap-F5)", () => {
-    const SEEK_FAILED = "Seek failed — check the connection and try again.";
 
     /** One listed fragment far from source 0 (PDT ms == source ms), so a
      *  small target is outside the listed window -> classified HARD. */
@@ -2572,7 +2610,7 @@ describe("VideoPlayer", () => {
       expect(
         document.body.textContent,
         "the hard-seek .catch never surfaced the failure — a silent seek loss",
-      ).toContain(SEEK_FAILED);
+      ).toContain(formatSeekFailedToast(null));
       // No stale pin: the failed target must not freeze the display — the
       // next timeupdate maps through the live window again.
       await liveTick(v);
@@ -2593,7 +2631,7 @@ describe("VideoPlayer", () => {
 
       await act(async () => button(v, "Forward 10 seconds").click());
 
-      expect(document.body.textContent).toContain(SEEK_FAILED);
+      expect(document.body.textContent).toContain(formatSeekFailedToast(500));
       await liveTick(v);
       expect(sliderNow(v)).toBe("3601000");
     });
@@ -2612,7 +2650,7 @@ describe("VideoPlayer", () => {
 
       await act(async () => button(v, "Forward 10 seconds").click());
 
-      expect(document.body.textContent).toContain(SEEK_FAILED);
+      expect(document.body.textContent).toContain(formatSeekFailedToast(429));
       await liveTick(v);
       expect(sliderNow(v)).toBe("3601000");
     });
@@ -2638,7 +2676,7 @@ describe("VideoPlayer", () => {
       apiPost.mockRejectedValueOnce(new TypeError("Failed to fetch"));
       await act(async () => button(v, "Forward 10 seconds").click());
 
-      expect(document.body.textContent).toContain(SEEK_FAILED);
+      expect(document.body.textContent).toContain(formatSeekFailedToast(null));
       // The failure releases the pin: the live clock repossesses the
       // scrubber instead of a dead target (111 111 or 121 111) holding it.
       await liveTick(v);
@@ -2776,7 +2814,11 @@ describe("VideoPlayer", () => {
     async function emitFatals(hls: MockHlsInstance, type: string, count: number): Promise<void> {
       for (let i = 0; i < count; i++) {
         await act(async () => {
-          hls.emit("hlsError", "hlsError", { fatal: true, type });
+          // SPF-7 Phase B: a real hls.js ErrorData always carries `details`
+          // (ErrorDetails is non-optional) — the mock supplies a plausible
+          // one per type so goFatal's client-cause classification renders
+          // real text instead of a literal "undefined".
+          hls.emit("hlsError", "hlsError", { fatal: true, type, details: `${type}Mock` });
         });
         await act(async () => {
           await vi.advanceTimersByTimeAsync(4_100);
@@ -2823,7 +2865,14 @@ describe("VideoPlayer", () => {
 
       await emitFatals(hls, "networkError", 5);
 
-      expect(document.body.textContent).toContain("Playback failed in this browser");
+      // SPF-7 Phase B: the generic "Playback failed in this browser"
+      // fallback is now the SPECIFIC hls.js network-fatal cause — the
+      // budget spent retrying it (3 attempts) reaches the screen too.
+      const text = document.body.textContent ?? "";
+      expect(text).toContain("The stream stopped loading");
+      expect(text).toContain("hls-network-error");
+      expect(text).toContain("networkErrorMock");
+      expect(text).toContain("after 3 retries");
     });
 
     it("fatal MEDIA_ERROR shares the same bounded budget via recoverMediaError()", async () => {
@@ -2918,7 +2967,11 @@ describe("VideoPlayer", () => {
     async function emitFatals(hls: MockHlsInstance, type: string, count: number): Promise<void> {
       for (let i = 0; i < count; i++) {
         await act(async () => {
-          hls.emit("hlsError", "hlsError", { fatal: true, type });
+          // SPF-7 Phase B: a real hls.js ErrorData always carries `details`
+          // (ErrorDetails is non-optional) — the mock supplies a plausible
+          // one per type so goFatal's client-cause classification renders
+          // real text instead of a literal "undefined".
+          hls.emit("hlsError", "hlsError", { fatal: true, type, details: `${type}Mock` });
         });
         await act(async () => {
           await vi.advanceTimersByTimeAsync(4_100);
@@ -2968,7 +3021,9 @@ describe("VideoPlayer", () => {
 
       await emitFatals(hls, "networkError", 5);
 
-      expect(document.body.textContent).toContain("Playback failed in this browser");
+      // SPF-7 Phase B: the specific client cause, not the generic fallback.
+      expect(document.body.textContent).toContain("The stream stopped loading");
+      expect(document.body.textContent).toContain("hls-network-error");
       expect(document.body.textContent).toContain("Session failed");
       expect(document.body.textContent).not.toContain("Session refused");
     });

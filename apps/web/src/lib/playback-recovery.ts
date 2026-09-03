@@ -22,6 +22,7 @@
 
 import type { components } from "@loombre/sdk";
 import type { ReasonCopy } from "./playback-reasons.js";
+import { CLIENT_PLAYBACK_ERROR_CODE } from "./playback-reasons.js";
 
 type PlanReason = components["schemas"]["PlanReason"];
 
@@ -99,6 +100,45 @@ export const SESSION_CREATE_FAILED_CODE = "playback-session-create-failed";
  * unrecognized-code fallback (raw code shown, "copy map may be behind").
  */
 const SESSION_FAILURE_COPY: Record<string, ReasonCopy> = {
+  // SPF-7 Phase B: the worker's ffmpeg failure classifier
+  // (packages/shared/src/ffmpeg-failure.ts) sub-codes `transcode-failed`
+  // used to fall back to unconditionally. Each of these five is a distinct
+  // failure mode with its own recovery instinct; `transcode-failed` stays
+  // as the classifier's own catch-all.
+  "transcode-input-missing": {
+    title: "The media file is missing",
+    detail:
+      "The server couldn't find this file where the library expects it — it may have moved or been deleted. Check the library on the server.",
+    severity: "blocking",
+  },
+  "transcode-input-unreadable": {
+    title: "The media file couldn't be read",
+    detail:
+      "The server found the file but couldn't read it — a permissions problem or a damaged file. Check the file and the server's read access to it.",
+    severity: "blocking",
+  },
+  "transcode-decoder-unsupported": {
+    title: "This format isn't supported by the server",
+    detail: "The server's transcoder can't decode this file's video or audio format. Check the server's codec support.",
+    severity: "blocking",
+  },
+  "transcode-encoder-init-failed": {
+    title: "The server's encoder failed to start",
+    detail:
+      "The video encoder (hardware or software) couldn't start for this session. Retrying may work; if it keeps happening, the server machine needs attention.",
+    severity: "blocking",
+  },
+  "transcode-disk-full": {
+    title: "The server ran out of disk space",
+    detail: "The server's conversion staging area is full. Free up space on the server and try again.",
+    severity: "blocking",
+  },
+  "transcode-killed": {
+    title: "The server stopped the conversion",
+    detail:
+      "The conversion process was killed, usually because the server ran out of memory. Retrying may work; if it keeps happening, the server may need more resources.",
+    severity: "blocking",
+  },
   "transcode-failed": {
     title: "Transcoding failed on the server",
     detail:
@@ -109,6 +149,15 @@ const SESSION_FAILURE_COPY: Record<string, ReasonCopy> = {
     title: "The server's video encoder is failing",
     detail:
       "The hardware video encoder kept dying and even the software fallback couldn't keep this session alive. Retrying may work; if it keeps happening, the server machine itself needs attention.",
+    severity: "blocking",
+  },
+  // SPF-9/R3 (peer review): the admission-time reclamation path — the
+  // server closed a paused/idle session to free its slot for another
+  // viewer. Framed as a routine consequence of stepping away, not a
+  // failure: the fix is simply to press play again.
+  "evicted-for-admission": {
+    title: "Session released for another viewer",
+    detail: "Your session was closed to free the server for another viewer — it had been paused or idle for a while. Press play to start again.",
     severity: "blocking",
   },
   [SESSION_FAILED_CODE]: {
@@ -157,9 +206,16 @@ export function describeSessionFailureCode(code: string): ReasonCopy | null {
  *  (so an unmapped future code still shows itself), or the synthesized
  *  code above when the server recorded none. The cast follows
  *  playback-reasons.ts's documented pattern for codes outside the closed
- *  contract enum. */
-export function sessionFailureReasons(errorCode: string | null | undefined): PlanReason[] {
-  return [{ code: errorCode ?? SESSION_FAILED_CODE, streamIndex: null, detail: null } as PlanReason];
+ *  contract enum.
+ *
+ *  SPF-7 Phase B: `errorDetail` — the worker's sanitized, path-stripped
+ *  stderr-tail line (packages/shared/src/ffmpeg-failure.ts, exposed
+ *  additively on `PlaybackSession`) — becomes the reason's own `detail`,
+ *  which UnavailableScreen.tsx's code line already renders (`reason.code ·
+ *  stream N · detail`). `null`/`undefined` (no detail recorded) keeps the
+ *  line exactly as before this field existed. */
+export function sessionFailureReasons(errorCode: string | null | undefined, errorDetail?: string | null): PlanReason[] {
+  return [{ code: errorCode ?? SESSION_FAILED_CODE, streamIndex: null, detail: errorDetail ?? null } as PlanReason];
 }
 
 /** The reasons array for a session the server ENDED (not failed) out from
@@ -175,4 +231,136 @@ export function sessionEndedReasons(): PlanReason[] {
  *  exists to inspect and no server reasons were ever produced. */
 export function sessionCreateFailedReasons(): PlanReason[] {
   return [{ code: SESSION_CREATE_FAILED_CODE, streamIndex: null, detail: null } as PlanReason];
+}
+
+// ── SPF-7 Phase B: client-side fatal-cause classification ──────────────────
+//
+// `goFatal` (VideoPlayer.tsx) used to render ONE generic code —
+// `client-playback-error` (lib/playback-reasons.ts) — for every
+// client-side unrecoverable failure, whichever attach mode raised it and
+// whatever the browser/hls.js actually said. That dropped the hls.js
+// error type/details/HTTP status, the MediaError code, and the segment
+// URI on the floor. `describeClientFailure` below is the pure classifier
+// that recovers them: goFatal calls it ONLY when the session inspect
+// confirms the session is NOT server-failed (still active/suspended —
+// see goFatal's own header), because a specific client code is honest
+// only when nothing on the server side already explains the failure.
+//
+// Structural (not hls.js-typed) causes, same pattern as
+// relocation-nudge.ts's `PlaylistReloader`: this module stays hls.js- and
+// DOM-import-free so it is unit-testable without either.
+
+/** `video.error` at the moment of an unrecoverable native media error, or
+ *  the moment bounded recovery exhausted its budget while retrying one.
+ *  `code: null` covers the (rare) case of an `error` event firing with no
+ *  `MediaError` attached. */
+export interface MediaErrorCause {
+  kind: "media-error";
+  code: number | null;
+  message: string;
+}
+
+/** hls.js `ErrorData` for a fatal `NETWORK_ERROR` — structural mirror of
+ *  the fields the detail line names (`data.details`, `data.response?.code`,
+ *  `data.frag?.relurl` or `data.url`). */
+export interface HlsNetworkErrorCause {
+  kind: "hls-network-error";
+  details: string;
+  httpStatus: number | null;
+  /** Basename of `data.frag?.relurl`, else `data.url`, else `null`. */
+  resource: string | null;
+}
+
+/** hls.js `ErrorData` for a fatal `MEDIA_ERROR`. */
+export interface HlsMediaErrorCause {
+  kind: "hls-media-error";
+  details: string;
+  reason: string | null;
+}
+
+/** hls.js `ErrorData` for any fatal type this module has no dedicated
+ *  branch for — the player's `default` switch case. */
+export interface HlsOtherFatalCause {
+  kind: "hls-fatal-error";
+  type: string;
+  details: string;
+}
+
+/** The direct-play/native-HLS attach effect's stall watchdog
+ *  (`STALL_WATCHDOG_MS` = 10 s) gave up waiting for progress. */
+export interface StalledCause {
+  kind: "playback-stalled";
+  positionSec: number;
+}
+
+export type ClientFailureCause = MediaErrorCause | HlsNetworkErrorCause | HlsMediaErrorCause | HlsOtherFatalCause | StalledCause;
+
+export interface ClientFailureDescription {
+  code: string;
+  detail: string;
+}
+
+const MEDIA_ERROR_CODE_NAMES: Record<number, string> = {
+  1: "client-media-aborted",
+  2: "client-media-network-error",
+  3: "client-media-decode-error",
+  4: "client-media-src-not-supported",
+};
+
+function classify(cause: ClientFailureCause): ClientFailureDescription {
+  switch (cause.kind) {
+    case "media-error": {
+      const name = cause.code !== null ? MEDIA_ERROR_CODE_NAMES[cause.code] : undefined;
+      if (!name) return { code: CLIENT_PLAYBACK_ERROR_CODE, detail: "No MediaError was recorded on the element." };
+      return { code: name, detail: `MediaError ${cause.code}: ${cause.message}` };
+    }
+    case "hls-network-error": {
+      const status = cause.httpStatus ?? "?";
+      return { code: "hls-network-error", detail: `${cause.details} · HTTP ${status} · ${cause.resource ?? "?"}` };
+    }
+    case "hls-media-error":
+      return { code: "hls-media-error", detail: cause.reason ? `${cause.details} · ${cause.reason}` : cause.details };
+    case "hls-fatal-error":
+      return { code: "hls-fatal-error", detail: `${cause.type}/${cause.details}` };
+    case "playback-stalled":
+      return { code: "playback-stalled", detail: `no progress for 10 s at ${cause.positionSec.toFixed(1)}s` };
+  }
+}
+
+/**
+ * Turns a client-side fatal cause into the {code, detail} goFatal renders
+ * as a synthesized `PlanReason` (see `clientFailureReasons` below).
+ * `retries`, when given, is the bounded-recovery attempt count spent
+ * before the budget was declared exhausted (`decideRecovery`'s `fatal`
+ * verdict) — appended to the detail so the code line shows how many
+ * in-place retries were tried before giving up. Omitted entirely for a
+ * cause that reached goFatal WITHOUT going through recovery at all (an
+ * unrecoverable MediaError, or an hls.js fatal type with no in-place
+ * lever) — the code line would otherwise falsely claim retries that never
+ * ran.
+ */
+export function describeClientFailure(cause: ClientFailureCause, retries?: number): ClientFailureDescription {
+  const described = classify(cause);
+  if (retries === undefined) return described;
+  return { code: described.code, detail: `${described.detail} · after ${retries} retries` };
+}
+
+/** Basename of a URL/path-like string — the last `/`-delimited segment,
+ *  query/hash stripped. Used to turn `data.frag.relurl` / `data.url` into
+ *  the short segment name the hls-network-error detail line names. */
+export function basename(pathOrUrl: string): string {
+  const withoutQuery = pathOrUrl.split(/[?#]/)[0] ?? pathOrUrl;
+  const segments = withoutQuery.split("/");
+  return segments[segments.length - 1] || pathOrUrl;
+}
+
+/** The reasons array UnavailableScreen renders for a client-side fatal
+ *  cause — goFatal's replacement for the old, always-generic
+ *  `clientPlaybackErrorReasons()` whenever the session inspect confirms
+ *  the failure isn't server-side. `describeClientFailure`'s `detail`
+ *  becomes the reason's `detail` (same seam `sessionFailureReasons` above
+ *  uses for `errorDetail`), so UnavailableScreen's code line shows it. */
+export function clientFailureReasons(cause: ClientFailureCause, retries?: number): PlanReason[] {
+  const { code, detail } = describeClientFailure(cause, retries);
+  return [{ code, streamIndex: null, detail } as PlanReason];
 }

@@ -198,7 +198,21 @@ export function requestPlaylistOnlyReload(hls: PlaylistReloader): boolean {
  *
  *  SPF-4/SPF-5: the FIRST tick runs synchronously, before the interval is
  *  even created — see the header comment above for why an immediate
- *  reload is now worth firing. */
+ *  reload is now worth firing.
+ *
+ *  R6 (peer review, SPF-2026-09-03 Phase B): the immediate arm-time tick
+ *  can still lose the race. hls.js's playlist-loader dedupes an in-flight
+ *  request by URL identity — if a cadence-driven reload issued BEFORE the
+ *  hard-seek POST is still in flight when the immediate tick fires, the
+ *  trigger is folded into that in-flight request and the response that
+ *  eventually resolves it is whatever the server was already serving at
+ *  request time (the stale, pre-seek playlist) — not a fresh read against
+ *  the now-pending/restarted run. One extra reload shortly after arming,
+ *  after the pre-existing in-flight request has had time to settle but
+ *  well before the next full-interval cadence tick, recovers a fresh read
+ *  without waiting out the whole interval. */
+export const HARD_SEEK_EXTRA_RELOAD_MS = 150;
+
 export function startRelocationNudge(
   getReloader: () => PlaylistReloader | null,
   isRelocating: () => boolean,
@@ -225,6 +239,10 @@ export function startRelocationNudge(
     }
   };
   tick();
+  const earlyTimer = setTimeout(tick, HARD_SEEK_EXTRA_RELOAD_MS);
   const timer = setInterval(tick, intervalMs);
-  return () => clearInterval(timer);
+  return () => {
+    clearTimeout(earlyTimer);
+    clearInterval(timer);
+  };
 }

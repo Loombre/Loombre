@@ -22,8 +22,8 @@
 // layers the OLD end-session-and-decline behavior back on top, now scoped
 // to exactly one caller and named for what it actually does.
 
-import type { components } from "@loombre/sdk";
-import { apiDelete, apiGet, apiPost, LoombreApiError } from "./api-client.js";
+import { LoombreApiError, type components } from "@loombre/sdk";
+import { apiDelete, apiGet, apiPost } from "./api-client.js";
 import { resolveSessionDeviceProfile } from "./device-profile-override.js";
 import { buildNetworkConditions } from "./network-conditions.js";
 import { getAuthStore } from "./auth-store.js";
@@ -38,19 +38,49 @@ export interface CreateSessionOk {
 }
 export interface CreateSessionUnavailable {
   ok: false;
-  wouldBeReasons: PlanReason[];
+  /** SPF-7 Phase B (peer review, confirmed bug): named `reasons` — the
+   *  problem body's ACTUAL extension member name (packages/contract/
+   *  openapi.yaml's createPlaybackSession 409 doc: "the problem body's
+   *  `reasons` extension member carries the plan's own (real, not
+   *  hypothetical) `PlanReason[]`", apps/server/src/playback/unplayable-
+   *  media.exception.ts sends `reasons`) — `wouldBeReasons` was never a
+   *  field either side of the wire actually sent, so every genuine 409
+   *  refusal rendered zero reasons ("No specific reason was reported.")
+   *  no matter what the server said. */
+  reasons: PlanReason[];
   status: number;
 }
 export type CreateSessionResult = CreateSessionOk | CreateSessionUnavailable;
 
 /** Extension member per openapi.yaml's createPlaybackSession 409 doc:
- *  "the problem body's `wouldBeReasons` extension member carries the same
+ *  "the problem body's `reasons` extension member carries the same
  *  reasons POST /playback/plan would have returned." Absent on a 429 (the
  *  transcode-slots-exhausted response documents no such extension) —
  *  lib/playback-reasons.ts's `resolveUnavailableReasons` covers that case
- *  with a client-synthesized reason. */
-interface ProblemWithWouldBeReasons {
+ *  with a client-synthesized reason. `wouldBeReasons` is kept as a legacy
+ *  fallback key only — the wire has never actually sent it (SPF-7 Phase B
+ *  peer review finding), but a stale/mismatched server build costs
+ *  nothing extra to also read defensively. */
+interface ProblemWithReasons {
+  reasons?: PlanReason[];
   wouldBeReasons?: PlanReason[];
+}
+
+/**
+ * SPF-7 Phase B: the pure core of `createPlaybackSession`'s error branch —
+ * given whatever the POST threw, decides whether it's a genuine plan
+ * refusal (409/422/429) to fold into a `CreateSessionUnavailable`, or
+ * `null` for anything else (the caller re-throws). Split out so the
+ * reasons-extraction bug is unit-testable without a network call — same
+ * "pure core, impure orchestration on top" pattern this file's header
+ * already documents for `applyDirectPlayOnlyGuard`.
+ */
+export function classifyCreateSessionError(err: unknown): CreateSessionUnavailable | null {
+  if (err instanceof LoombreApiError && (err.status === 409 || err.status === 422 || err.status === 429)) {
+    const problem = err.problem as ProblemWithReasons | undefined;
+    return { ok: false, reasons: problem?.reasons ?? problem?.wouldBeReasons ?? [], status: err.status };
+  }
+  return null;
 }
 
 /**
@@ -99,10 +129,8 @@ export async function createPlaybackSession(
     const session = await apiPost("/playback/sessions", { body });
     return { ok: true, session };
   } catch (err) {
-    if (err instanceof LoombreApiError && (err.status === 409 || err.status === 422 || err.status === 429)) {
-      const problem = err.problem as ProblemWithWouldBeReasons | undefined;
-      return { ok: false, wouldBeReasons: problem?.wouldBeReasons ?? [], status: err.status };
-    }
+    const classified = classifyCreateSessionError(err);
+    if (classified) return classified;
     throw err;
   }
 }
@@ -119,7 +147,7 @@ export function applyDirectPlayOnlyGuard(result: CreateSessionResult): CreateSes
   if (!result.ok) return result;
   const decision = result.session.plan?.decision;
   if (decision !== undefined && decision !== "direct-play") {
-    return { ok: false, wouldBeReasons: result.session.plan?.reasons ?? [], status: 409 };
+    return { ok: false, reasons: result.session.plan?.reasons ?? [], status: 409 };
   }
   return result;
 }
