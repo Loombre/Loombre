@@ -8,8 +8,25 @@
 // The retry is NOT unconditional: credential-validation endpoints answer
 // 401 to mean "the secret you just sent is wrong", where refreshing and
 // resending is useless and harmful. shouldRetryAfterUnauthorized()
-// (./credential-endpoints.ts — its own module because api-client.ts is
-// vi.mock()'d wholesale by dozens of component tests) owns that call.
+// (./credential-endpoints.ts — its own module because this file is
+// module-mocked wholesale by dozens of component tests) owns that call.
+//
+// RE-EXPORT TRAP (pinned by api-client.reexport.test.ts): LoombreApiError
+// is re-exported at the bottom with the `export { … } from` form, NOT
+// `import { X }; export { X }`. Under vitest, @vitest/mocker decides whether
+// to rewrite a module's static imports into dynamic bindings with a raw
+// text regex over the WHOLE source — comments included — that matches a
+// vi.mock / vi.hoisted call together with its opening paren. When it fires
+// it rewrites identifier references but not `export { name }` specifiers,
+// so an import-then-export of an imported binding is left pointing at a
+// local that no longer exists and resolves to `undefined` in every test
+// that does not mock this module wholesale. This header once carried the
+// trigger text itself. Keep both rules: (1) re-export imported bindings
+// with `export { … } from`, and (2) keep the trigger text out of this file.
+// The test asserts both. Production (Next/webpack) is unaffected — this is
+// a vitest-pipeline artifact — but the class identity the test pins is a
+// real production invariant: `instanceof LoombreApiError` across the
+// api-client boundary needs the ONE class the SDK throws.
 
 import {
   LoombreApiError,
@@ -171,5 +188,6 @@ export async function apiDelete<P extends PathsWithMethod<"delete">>(
 // apiErrorMessage moved to ./api-error-message.ts — see that file's header
 // for why it must NOT live behind the widely-mocked api-client surface.
 
-export { LoombreApiError };
+// `export { … } from` on purpose — see the RE-EXPORT TRAP note in the header.
+export { LoombreApiError } from "@loombre/sdk";
 export type { HttpMethod };
