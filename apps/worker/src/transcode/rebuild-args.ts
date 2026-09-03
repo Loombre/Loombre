@@ -39,7 +39,7 @@ function placeholderPlanInputTail(): Pick<PlanInput, "network" | "policy" | "cap
       audioTranscodeCodecPriority: ["opus", "aac"],
       maxSimultaneousTranscodes: 1,
       ladderRungs: [],
-      segmentDurationSec: 6,
+      segmentDurationSec: 2,
       hevcEncodePreferred: false,
       // Placeholder like every field around it — `buildFfmpegArgs` reads
       // `policy` not at all, and this path REBUILDS args for an

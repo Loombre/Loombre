@@ -20,7 +20,7 @@ t1-cpu-tonemap:
     - { heightPx: 720, videoBitrateBps: 3000000, audioBitrateBps: 160000, codec: h264 }
     - { heightPx: 480, videoBitrateBps: 1500000, audioBitrateBps: 160000, codec: h264 }
     - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
-  segmentDurationSec: 6
+  segmentDurationSec: 2
   hevcEncodePreferred: false
   av1EncodePreferred: false
 
@@ -40,7 +40,7 @@ t0-default:
     - { heightPx: 720, videoBitrateBps: 3000000, audioBitrateBps: 160000, codec: h264 }
     - { heightPx: 480, videoBitrateBps: 1500000, audioBitrateBps: 160000, codec: h264 }
     - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
-  segmentDurationSec: 6
+  segmentDurationSec: 2
   hevcEncodePreferred: false
   av1EncodePreferred: false
 
@@ -71,7 +71,7 @@ tonemap-never:
     - { heightPx: 720, videoBitrateBps: 3000000, audioBitrateBps: 160000, codec: h264 }
     - { heightPx: 480, videoBitrateBps: 1500000, audioBitrateBps: 160000, codec: h264 }
     - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
-  segmentDurationSec: 6
+  segmentDurationSec: 2
   hevcEncodePreferred: false
   av1EncodePreferred: false
 
@@ -98,7 +98,7 @@ tiergated-t1:
     - { heightPx: 720, videoBitrateBps: 3000000, audioBitrateBps: 160000, codec: h264 }
     - { heightPx: 480, videoBitrateBps: 1500000, audioBitrateBps: 160000, codec: h264 }
     - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
-  segmentDurationSec: 6
+  segmentDurationSec: 2
   hevcEncodePreferred: false
   av1EncodePreferred: false
 
@@ -122,7 +122,7 @@ aac-first-audio:
     - { heightPx: 720, videoBitrateBps: 3000000, audioBitrateBps: 160000, codec: h264 }
     - { heightPx: 480, videoBitrateBps: 1500000, audioBitrateBps: 160000, codec: h264 }
     - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
-  segmentDurationSec: 6
+  segmentDurationSec: 2
   hevcEncodePreferred: false
   av1EncodePreferred: false
 
@@ -147,7 +147,7 @@ text-burn-in-preferred:
     - { heightPx: 720, videoBitrateBps: 3000000, audioBitrateBps: 160000, codec: h264 }
     - { heightPx: 480, videoBitrateBps: 1500000, audioBitrateBps: 160000, codec: h264 }
     - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
-  segmentDurationSec: 6
+  segmentDurationSec: 2
   hevcEncodePreferred: false
   av1EncodePreferred: false
 
@@ -171,7 +171,7 @@ preserve-ass-styling:
     - { heightPx: 720, videoBitrateBps: 3000000, audioBitrateBps: 160000, codec: h264 }
     - { heightPx: 480, videoBitrateBps: 1500000, audioBitrateBps: 160000, codec: h264 }
     - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
-  segmentDurationSec: 6
+  segmentDurationSec: 2
   hevcEncodePreferred: false
   av1EncodePreferred: false
 
@@ -199,7 +199,7 @@ hevc-preferred:
     - { heightPx: 720, videoBitrateBps: 3000000, audioBitrateBps: 160000, codec: h264 }
     - { heightPx: 480, videoBitrateBps: 1500000, audioBitrateBps: 160000, codec: h264 }
     - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
-  segmentDurationSec: 6
+  segmentDurationSec: 2
   hevcEncodePreferred: true
   av1EncodePreferred: false
 
@@ -220,7 +220,7 @@ empty-ladder:
   audioTranscodeCodecPriority: [opus, aac]
   maxSimultaneousTranscodes: 1
   ladderRungs: []
-  segmentDurationSec: 6
+  segmentDurationSec: 2
   hevcEncodePreferred: false
   av1EncodePreferred: false
 
@@ -253,7 +253,7 @@ transcode-disabled:
     - { heightPx: 720, videoBitrateBps: 3000000, audioBitrateBps: 160000, codec: h264 }
     - { heightPx: 480, videoBitrateBps: 1500000, audioBitrateBps: 160000, codec: h264 }
     - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
-  segmentDurationSec: 6
+  segmentDurationSec: 2
   hevcEncodePreferred: false
   av1EncodePreferred: false
 
@@ -274,7 +274,7 @@ only-720p-ladder:
   maxSimultaneousTranscodes: 1
   ladderRungs:
     - { heightPx: 720, videoBitrateBps: 3000000, audioBitrateBps: 160000, codec: h264 }
-  segmentDurationSec: 6
+  segmentDurationSec: 2
   hevcEncodePreferred: false
   av1EncodePreferred: false
 
@@ -303,7 +303,7 @@ av1-preferred-t0:
     - { heightPx: 720, videoBitrateBps: 3000000, audioBitrateBps: 160000, codec: h264 }
     - { heightPx: 480, videoBitrateBps: 1500000, audioBitrateBps: 160000, codec: h264 }
     - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
-  segmentDurationSec: 6
+  segmentDurationSec: 2
   hevcEncodePreferred: false
   av1EncodePreferred: true
 
@@ -323,7 +323,7 @@ av1-preferred-t1:
     - { heightPx: 720, videoBitrateBps: 3000000, audioBitrateBps: 160000, codec: h264 }
     - { heightPx: 480, videoBitrateBps: 1500000, audioBitrateBps: 160000, codec: h264 }
     - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
-  segmentDurationSec: 6
+  segmentDurationSec: 2
   hevcEncodePreferred: false
   av1EncodePreferred: true
 
@@ -344,7 +344,7 @@ av1-and-hevc-preferred-t1:
     - { heightPx: 720, videoBitrateBps: 3000000, audioBitrateBps: 160000, codec: h264 }
     - { heightPx: 480, videoBitrateBps: 1500000, audioBitrateBps: 160000, codec: h264 }
     - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
-  segmentDurationSec: 6
+  segmentDurationSec: 2
   hevcEncodePreferred: true
   av1EncodePreferred: true
 
@@ -364,7 +364,7 @@ explicit-av1-ladder-t0:
     - { heightPx: 1080, videoBitrateBps: 6000000, audioBitrateBps: 384000, codec: av1 }
     - { heightPx: 720, videoBitrateBps: 2500000, audioBitrateBps: 160000, codec: av1 }
     - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
-  segmentDurationSec: 6
+  segmentDurationSec: 2
   hevcEncodePreferred: false
   av1EncodePreferred: false
 
@@ -388,7 +388,7 @@ t0-three-rung:
     - { heightPx: 1080, videoBitrateBps: 8000000, audioBitrateBps: 384000, codec: h264 }
     - { heightPx: 720, videoBitrateBps: 3000000, audioBitrateBps: 160000, codec: h264 }
     - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
-  segmentDurationSec: 6
+  segmentDurationSec: 2
   hevcEncodePreferred: false
   av1EncodePreferred: false
 
@@ -411,7 +411,7 @@ t2-default:
     - { heightPx: 720, videoBitrateBps: 3000000, audioBitrateBps: 160000, codec: h264 }
     - { heightPx: 480, videoBitrateBps: 1500000, audioBitrateBps: 160000, codec: h264 }
     - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
-  segmentDurationSec: 6
+  segmentDurationSec: 2
   hevcEncodePreferred: false
   av1EncodePreferred: false
 
@@ -429,6 +429,6 @@ explicit-av1-ladder-t2:
     - { heightPx: 1080, videoBitrateBps: 6000000, audioBitrateBps: 384000, codec: av1 }
     - { heightPx: 720, videoBitrateBps: 2500000, audioBitrateBps: 160000, codec: av1 }
     - { heightPx: 360, videoBitrateBps: 800000, audioBitrateBps: 160000, codec: h264 }
-  segmentDurationSec: 6
+  segmentDurationSec: 2
   hevcEncodePreferred: false
   av1EncodePreferred: false

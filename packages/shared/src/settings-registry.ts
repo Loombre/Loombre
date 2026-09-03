@@ -512,22 +512,22 @@ const UI_ENTRIES: SettingsRegistryEntry[] = [
   defineSetting({
     key: "transcode.segmentAheadSuspendThreshold",
     schema: z.number().int().min(1),
-    default: 10,
+    default: 30,
     category: "transcode",
-    description: "Advanced: how far ahead of what's currently playing Loombre is allowed to convert before it pauses conversion to save resources, measured in a few seconds of video at a time. Applies for the rest of the current viewing session — a change takes effect the next time someone starts watching something that needs converting.",
+    description: "Advanced: how far ahead of what's currently playing Loombre is allowed to convert before it pauses conversion to save resources, measured in 2-second chunks of video at a time. Applies for the rest of the current viewing session — a change takes effect the next time someone starts watching something that needs converting.",
     technicalDetails:
-      "Measured in HLS segments ahead of the playhead. Coupled to transcode.segmentAheadResumeThreshold: the resume value must stay BELOW this one, or saving is rejected.",
+      "Measured in HLS segments ahead of the playhead, each segment 2 seconds of video (SPF-1). Coupled to transcode.segmentAheadResumeThreshold: the resume value must stay BELOW this one, or saving is rejected.",
     requiresRestart: false,
     scope: "ui",
   }),
   defineSetting({
     key: "transcode.segmentAheadResumeThreshold",
     schema: z.number().int().min(0),
-    default: 5,
+    default: 15,
     category: "transcode",
-    description: "Advanced: how far the paused conversion (see 'Segment ahead suspend threshold') has to catch back down to before Loombre resumes it. Applies the same way — the next time someone starts watching something that needs converting.",
+    description: "Advanced: how far the paused conversion (see 'Segment ahead suspend threshold') has to catch back down to before Loombre resumes it, measured in 2-second chunks of video at a time. Applies the same way — the next time someone starts watching something that needs converting.",
     technicalDetails:
-      "Measured in HLS segments ahead of the playhead. Must stay BELOW transcode.segmentAheadSuspendThreshold, or saving is rejected.",
+      "Measured in HLS segments ahead of the playhead, each segment 2 seconds of video (SPF-1). Must stay BELOW transcode.segmentAheadSuspendThreshold, or saving is rejected.",
     requiresRestart: false,
     scope: "ui",
   }),

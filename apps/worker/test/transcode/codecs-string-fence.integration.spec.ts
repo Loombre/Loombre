@@ -163,7 +163,7 @@ describe.skipIf(!ffmpegAvailable || process.platform === "win32")("master-playli
         audioTranscodeCodecPriority: ["aac", "opus"],
         maxSimultaneousTranscodes: 1,
         ladderRungs: [],
-        segmentDurationSec: 6,
+        segmentDurationSec: 2,
         hevcEncodePreferred: false,
         av1EncodePreferred: false,
       },

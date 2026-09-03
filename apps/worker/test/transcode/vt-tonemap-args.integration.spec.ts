@@ -181,7 +181,7 @@ function makeInput(): PlanInput {
       audioTranscodeCodecPriority: ["opus", "aac"],
       maxSimultaneousTranscodes: 2,
       ladderRungs: [RUNG_2160P_HEVC, RUNG_1080P_H264],
-      segmentDurationSec: 6,
+      segmentDurationSec: 2,
       hevcEncodePreferred: false,
     },
     caps: {

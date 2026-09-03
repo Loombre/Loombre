@@ -290,7 +290,7 @@ describe.skipIf(!ffmpegAvailable)("transcode session runtime integration (real f
       audioTranscodeCodecPriority: ["opus", "aac"],
       maxSimultaneousTranscodes: 10,
       ladderRungs: [],
-      segmentDurationSec: 6,
+      segmentDurationSec: 2,
       hevcEncodePreferred: false,
     };
     const caps: VerifiedCapabilities = { backends: [] };
@@ -403,13 +403,31 @@ describe.skipIf(!ffmpegAvailable)("transcode session runtime integration (real f
       const sessionId = await createSession(fileId);
       let capturedPid: number | undefined;
       const runPromise = runTranscodeSession(
-        { db, stagingRoot, testReadrateMultiplier: 6, onRunSpawned: (pid) => { spawnedPids.push(pid); capturedPid = pid; } },
+        {
+          db,
+          stagingRoot,
+          testReadrateMultiplier: 6,
+          // SPF-1 raised the shared default thresholds to 30/15 (60 s / 30 s
+          // of lead at 2 s segments) — but this fixture's ACTUAL segment
+          // length is keyframe-bound at 10 s regardless of the nominal
+          // segmentDurationSec (COPY shape: ffmpeg can only cut where a
+          // real keyframe exists, and session_long.mp4 has one every 10 s),
+          // so its 150 s duration caps produced_segment at 14 (15 segments
+          // total). The throttle MECHANISM under test here (SIGSTOP, the
+          // produced_segment stall, SIGCONT on resume) is independent of
+          // the threshold's numeric value, so this test overrides it back
+          // to a value reachable well inside that ceiling rather than
+          // relying on the shared production default.
+          suspendAheadThresholdOverride: 10,
+          resumeAheadThresholdOverride: 5,
+          onRunSpawned: (pid) => { spawnedPids.push(pid); capturedPid = pid; },
+        },
         sessionId,
       );
 
       // requested_segment stays NULL (treated as 0) the whole time until we
       // bump it below — the throttle should suspend once produced races
-      // past ahead > 10.
+      // past ahead > 10 (this test's overridden threshold).
       const suspendedRow = await waitFor(
         async () => {
           const r = await readRow(sessionId);
@@ -433,7 +451,7 @@ describe.skipIf(!ffmpegAvailable)("transcode session runtime integration (real f
       expect(stillStalled.produced_segment).toBe(stalledValue);
       expect(stillStalled.status).toBe("suspended");
 
-      // Bump requested_segment well past produced -> ahead drops to <= 5 -> resume.
+      // Bump requested_segment well past produced -> ahead drops to <= 5 (this test's overridden threshold) -> resume.
       await updateRequestedSegment(db, ctx, sessionId, stalledValue! + 5, Date.now());
 
       const resumedRow = await waitFor(

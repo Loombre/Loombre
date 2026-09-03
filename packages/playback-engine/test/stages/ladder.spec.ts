@@ -146,7 +146,7 @@ function makePolicy(overrides: Partial<ServerPolicy> = {}): ServerPolicy {
     audioTranscodeCodecPriority: ["opus", "aac"],
     maxSimultaneousTranscodes: 1,
     ladderRungs: DEFAULT_LADDER,
-    segmentDurationSec: 6,
+    segmentDurationSec: 2,
     hevcEncodePreferred: false,
     // §2.4 (LD-7): the operator PREFERENCE, passed through verbatim — the
     // capability/tier law lives inside the engine (§7.2), not here.

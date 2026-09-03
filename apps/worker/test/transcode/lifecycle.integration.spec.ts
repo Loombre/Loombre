@@ -223,7 +223,7 @@ describe.skipIf(!ffmpegAvailable || process.platform === "win32")(
         audioTranscodeCodecPriority: ["opus", "aac"],
         maxSimultaneousTranscodes: 10,
         ladderRungs: [],
-        segmentDurationSec: 6,
+        segmentDurationSec: 2,
         hevcEncodePreferred: false,
       };
       const caps: VerifiedCapabilities = { backends: [] };
@@ -354,6 +354,17 @@ describe.skipIf(!ffmpegAvailable || process.platform === "win32")(
             db,
             stagingRoot,
             testReadrateMultiplier: 12,
+            // SPF-1 raised the shared default thresholds to 30/15 — but
+            // this COPY-shape fixture's ACTUAL segment length is
+            // keyframe-bound at 10 s (session_long.mp4 has a keyframe
+            // every 10 s regardless of the nominal segmentDurationSec),
+            // so its 150 s duration caps produced_segment at 14 (15
+            // segments total). What is under test here is the SIGCONT-
+            // before-SIGTERM shutdown ordering, not the threshold's
+            // numeric value, so this override keeps suspension reachable
+            // well inside that ceiling.
+            suspendAheadThresholdOverride: 10,
+            resumeAheadThresholdOverride: 5,
             onRunSpawned: (spawned) => {
               pid = spawned;
               if (spawned !== undefined) strayPids.push(spawned);

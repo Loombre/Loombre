@@ -96,7 +96,7 @@ const policy: ServerPolicy = {
     { heightPx: 480, videoBitrateBps: 1_500_000, audioBitrateBps: 160_000, codec: "h264" },
     { heightPx: 360, videoBitrateBps: 800_000, audioBitrateBps: 160_000, codec: "h264" },
   ],
-  segmentDurationSec: 6,
+  segmentDurationSec: 2,
   hevcEncodePreferred: false,
   av1EncodePreferred: false,
 };

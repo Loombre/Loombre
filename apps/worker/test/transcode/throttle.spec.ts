@@ -46,7 +46,7 @@ describe("reconcileThrottle — mechanism='suspend', not currently throttle-susp
     expect(action).toEqual({ kind: "suspend-for-throttle" });
   });
 
-  it("exactly at the threshold (ahead === 10) does NOT suspend (strictly greater-than)", () => {
+  it("exactly at the threshold (ahead === THROTTLE_SUSPEND_AHEAD) does NOT suspend (strictly greater-than)", () => {
     const action = reconcileThrottle({
       mechanism: "suspend",
       producedSegment: THROTTLE_SUSPEND_AHEAD,
@@ -61,7 +61,7 @@ describe("reconcileThrottle — mechanism='suspend', not currently throttle-susp
   it("requestedSegment null is treated as 0, not as unbounded", () => {
     const action = reconcileThrottle({
       mechanism: "suspend",
-      producedSegment: 11,
+      producedSegment: THROTTLE_SUSPEND_AHEAD + 1,
       requestedSegment: null,
       rowStatus: "active",
       suspendedByThrottle: false,
@@ -216,10 +216,11 @@ describe("reconcileThrottle — d3-f3: a SIGSTOP is bounded in time (the VT-deat
 
 describe("reconcileThrottle — V8 currentRunStartSegment floor (docs/PLAYBACK.md §9 throttle 'Lead arithmetic'; STATE.md 'Seek model V8')", () => {
   it("D-C pin (backward seek): requested pinned below the fresh run's start is a numbering artifact, not encoder lead — produced=200, requested=3, startSegment=201 -> none, never suspend", () => {
-    // Pre-V8 this read ahead = 200 - 3 = 197 > 10 and SIGSTOPped the
-    // seek-spawned run before its first segment; the resume condition
-    // (ahead <= 5) was then arithmetically unreachable ("buffers
-    // forever", QA 2026-08-12). With the floor: 200 - max(3, 201) = -1.
+    // Pre-V8 this read ahead = 200 - 3 = 197, which was > the then-current
+    // suspend threshold, and SIGSTOPped the seek-spawned run before its
+    // first segment; the resume condition was then arithmetically
+    // unreachable ("buffers forever", QA 2026-08-12). With the floor:
+    // 200 - max(3, 201) = -1.
     const action = reconcileThrottle({
       mechanism: "suspend",
       producedSegment: 200,
@@ -265,7 +266,7 @@ describe("reconcileThrottle — V8 currentRunStartSegment floor (docs/PLAYBACK.m
   it("floor is a no-op in steady state (requested >= startSegment): decisions identical with and without it", () => {
     const base = {
       mechanism: "suspend" as const,
-      producedSegment: 30,
+      producedSegment: 50,
       requestedSegment: 12,
       rowStatus: "active" as const,
       suspendedByThrottle: false,

@@ -84,20 +84,20 @@ The set of quality levels Loombre can switch between while converting, best firs
 
 <small>Setting key: `transcode.segmentAheadSuspendThreshold`</small>
 
-Advanced: how far ahead of what's currently playing Loombre is allowed to convert before it pauses conversion to save resources, measured in a few seconds of video at a time. Applies for the rest of the current viewing session — a change takes effect the next time someone starts watching something that needs converting.
+Advanced: how far ahead of what's currently playing Loombre is allowed to convert before it pauses conversion to save resources, measured in 2-second chunks of video at a time. Applies for the rest of the current viewing session — a change takes effect the next time someone starts watching something that needs converting.
 
-- **Technical details:** Measured in HLS segments ahead of the playhead. Coupled to transcode.segmentAheadResumeThreshold: the resume value must stay BELOW this one, or saving is rejected.
-- **Default:** 10
+- **Technical details:** Measured in HLS segments ahead of the playhead, each segment 2 seconds of video (SPF-1). Coupled to transcode.segmentAheadResumeThreshold: the resume value must stay BELOW this one, or saving is rejected.
+- **Default:** 30
 - **Applies:** immediately — no restart needed.
 
 ### Resume conversion after pausing
 
 <small>Setting key: `transcode.segmentAheadResumeThreshold`</small>
 
-Advanced: how far the paused conversion (see 'Segment ahead suspend threshold') has to catch back down to before Loombre resumes it. Applies the same way — the next time someone starts watching something that needs converting.
+Advanced: how far the paused conversion (see 'Segment ahead suspend threshold') has to catch back down to before Loombre resumes it, measured in 2-second chunks of video at a time. Applies the same way — the next time someone starts watching something that needs converting.
 
-- **Technical details:** Measured in HLS segments ahead of the playhead. Must stay BELOW transcode.segmentAheadSuspendThreshold, or saving is rejected.
-- **Default:** 5
+- **Technical details:** Measured in HLS segments ahead of the playhead, each segment 2 seconds of video (SPF-1). Must stay BELOW transcode.segmentAheadSuspendThreshold, or saving is rejected.
+- **Default:** 15
 - **Applies:** immediately — no restart needed.
 
 ## Library scanning

@@ -216,8 +216,8 @@ export interface ServerPolicy {
   maxSimultaneousTranscodes: number;
   /** instance ladder table (§7) */
   ladderRungs: LadderRung[];
-  /** fixed v1 */
-  segmentDurationSec: 6;
+  /** fixed v1; 2 s = the GOP the builder already emits (SPF-1) */
+  segmentDurationSec: 2;
   /** true when caps verify hevc encode */
   hevcEncodePreferred: boolean;
   /**

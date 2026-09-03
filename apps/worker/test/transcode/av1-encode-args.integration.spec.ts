@@ -140,7 +140,7 @@ function makePolicy(overrides: Partial<ServerPolicy> = {}): ServerPolicy {
     // A single 240p rung: the source's own height, so no rescale, and small
     // enough that a real libsvtav1 encode of a 2s clip is quick.
     ladderRungs: [{ heightPx: 240, videoBitrateBps: 400_000, audioBitrateBps: 160_000, codec: "h264" }],
-    segmentDurationSec: 6,
+    segmentDurationSec: 2,
     hevcEncodePreferred: false,
     av1EncodePreferred: true,
     ...overrides,

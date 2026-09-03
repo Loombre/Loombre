@@ -110,7 +110,7 @@ function policy(overrides: Partial<ServerPolicy> = {}): ServerPolicy {
     audioTranscodeCodecPriority: ["opus", "aac"],
     maxSimultaneousTranscodes: 1,
     ladderRungs: [],
-    segmentDurationSec: 6,
+    segmentDurationSec: 2,
     hevcEncodePreferred: false,
     av1EncodePreferred: false,
     ...overrides,

@@ -261,7 +261,7 @@ describe("seek-restart de-duplication (continuation item 1: livelock)", () => {
       audioTranscodeCodecPriority: ["opus", "aac"],
       maxSimultaneousTranscodes: 10,
       ladderRungs: [],
-      segmentDurationSec: 6,
+      segmentDurationSec: 2,
       hevcEncodePreferred: false,
     };
     const caps: VerifiedCapabilities = { backends: [] };

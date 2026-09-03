@@ -159,7 +159,7 @@ function makeInput(video: VideoStream): PlanInput {
       audioTranscodeCodecPriority: ["opus", "aac"],
       maxSimultaneousTranscodes: 2,
       ladderRungs: [{ heightPx: 1080, videoBitrateBps: 4_000_000, audioBitrateBps: 160_000, codec: "h264" }],
-      segmentDurationSec: 6,
+      segmentDurationSec: 2,
       hevcEncodePreferred: false,
     },
     caps: {

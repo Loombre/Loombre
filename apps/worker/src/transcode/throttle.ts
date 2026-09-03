@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 /**
  * Segment-ahead throttle (docs/PLAYBACK.md §9 — MANDATORY: "ahead > 10
- * segments (60s) suspend encode ... resume at ahead <= 5") and the P3.8
- * platform-mechanism decision (this step's binding constraints 2 and 4).
+ * segments (60s) suspend encode ... resume at ahead <= 5", stated there in
+ * the original 6 s-segment terms; SPF-1 re-bases the SECONDS meaning onto
+ * 2 s segments, so the thresholds below read "ahead > 30 segments (60s)
+ * ... resume at ahead <= 15 (30s)") and the P3.8 platform-mechanism
+ * decision (this step's binding constraints 2 and 4).
  *
  * ---------------------------------------------------------------------------
  * MECHANISM DECISION (P3.8, STATE.md): POSIX (darwin/linux) uses REAL
@@ -48,7 +51,7 @@
  * ---------------------------------------------------------------------------
  * THE STOP IS BOUNDED IN TIME (d3-f3, QA 2026-08-24). Everything above
  * decides WHETHER the encoder should be stopped; nothing in it bounded HOW
- * LONG. For a paused viewer the resume condition (lead <= 5) never arrives,
+ * LONG. For a paused viewer the resume condition (lead <= 15) never arrives,
  * so a stopped process stayed stopped for the whole pause — minutes — and a
  * stopped process still owns every out-of-process resource it opened. A
  * VideoToolbox compression session held that way is the leading suspected
@@ -81,8 +84,12 @@ export function throttleMechanismForPlatform(platform: NodeJS.Platform): Throttl
  *  axis specifically (STATE.md is the authoritative record of the
  *  supersession; docs/PLAYBACK.md itself is out of this lane's edit scope
  *  — flagged in this lane's final report). */
-export const THROTTLE_SUSPEND_AHEAD = 10;
-export const THROTTLE_RESUME_AHEAD = 5;
+/** 60 s at 2 s segments (SPF-1; was 10 segments = 60 s at the old 6 s
+ *  segment size — the SECONDS meaning is preserved, not the count). */
+export const THROTTLE_SUSPEND_AHEAD = 30;
+/** 30 s at 2 s segments (SPF-1; was 5 segments = 30 s at the old 6 s
+ *  segment size). */
+export const THROTTLE_RESUME_AHEAD = 15;
 
 export type ThrottleAction =
   | { kind: "none" }
@@ -90,7 +97,7 @@ export type ThrottleAction =
    *  — this session's own throttle newly kicking in. */
   | { kind: "suspend-for-throttle" }
   /** Issue SIGCONT AND write status='active' + suspendedByThrottle=false
-   *  — this session's own throttle resuming (ahead dropped to <= 5). */
+   *  — this session's own throttle resuming (ahead dropped to <= 15). */
   | { kind: "resume-for-throttle" }
   /** Physical SIGSTOP only, no row write — the row is ALREADY
    *  status='suspended' for some other cause (heartbeat staleness); the
@@ -150,7 +157,7 @@ export interface ThrottleInputs {
    *  source of truth for what it last told the process to do). */
   processStopped: boolean;
   /** transcode.segmentAheadSuspendThreshold (Addendum A registry) —
-   *  defaults to THROTTLE_SUSPEND_AHEAD (10) when omitted. Resolved by the
+   *  defaults to THROTTLE_SUSPEND_AHEAD (30) when omitted. Resolved by the
    *  caller (runner.ts) ONCE per transcode session at session start (the
    *  natural "per transcode admission" boundary — see runner.ts's header)
    *  and passed in on every poll-tick call, so it never changes mid-poll
@@ -158,7 +165,7 @@ export interface ThrottleInputs {
    *  up the new value. */
   suspendAheadThreshold?: number;
   /** transcode.segmentAheadResumeThreshold — see suspendAheadThreshold's
-   *  comment immediately above. Defaults to THROTTLE_RESUME_AHEAD (5). */
+   *  comment immediately above. Defaults to THROTTLE_RESUME_AHEAD (15). */
   resumeAheadThreshold?: number;
   /** d3-f3: how long the process has been PHYSICALLY stopped, in ms
    *  (`undefined`/0 when it is running or the caller does not track it).
