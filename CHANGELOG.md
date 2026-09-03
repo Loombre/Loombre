@@ -21,6 +21,14 @@ are the version axis.
 
 ## [Unreleased]
 
+### v1.0.0-beta.1 draft (2026-09-03)
+
+- First 1.0 beta, for testers — the v0.9.0-rc.12 dry-run tree renamed;
+  no code changes from rc.12. The line from here: `1.0.0-beta.N` tester
+  builds, then `1.0.0-rc.1` (the build intended to ship unchanged), then
+  `1.0.0` on the same code. 1.0.0 is where docs/PLAN.md §4.1's
+  additive-only API policy becomes a public promise.
+
 ### v0.9.0-rc.12 draft (2026-09-03)
 
 - Twelfth release candidate — a pipeline dry run, the first tagged build
