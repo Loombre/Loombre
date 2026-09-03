@@ -6,9 +6,12 @@
 // transcode sessions (packages/db's countActiveTranscodeSessions — any
 // non-terminal status whose stored plan's decision isn't 'direct-play')
 // already meets or exceeds the resolved policy's
-// `maxSimultaneousTranscodes`. Clients are expected to fall back to a
-// lower-bitrate direct attempt or queue (docs/PLAYBACK.md §9's own
-// language).
+// `maxSimultaneousTranscodes` — AND, SPF-9, admission's own attempt to
+// reclaim a slot from a viewer who paused and walked away
+// (transcode-admission.ts's `reclaim`,
+// evictStalestSuspendedTranscodeSession) found nothing eligible either.
+// Clients are expected to fall back to a lower-bitrate direct attempt or
+// queue (docs/PLAYBACK.md §9's own language).
 
 import { HttpException, HttpStatus } from "@nestjs/common";
 
@@ -20,7 +23,7 @@ export class TranscodeSlotsExhaustedException extends HttpException {
         title: "Transcode slots exhausted",
         status: HttpStatus.TOO_MANY_REQUESTS,
         detail:
-          "The maximum number of simultaneous transcoding sessions is already in use. Try again shortly, or fall back to a lower-bitrate direct attempt.",
+          "The maximum number of simultaneous transcoding sessions is already in use, and no slot could be reclaimed from a viewer who left before their session ended. Try again shortly, or fall back to a lower-bitrate direct attempt.",
         instance,
         code: "transcode-slots-exhausted",
       },

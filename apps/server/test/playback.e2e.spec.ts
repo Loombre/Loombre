@@ -164,13 +164,14 @@ const REAL_FILE_SIZE = 10_000;
 beforeAll(async () => {
   process.env["LOOMBRE_JWT_SECRET"] = "playback-e2e-test-secret-not-for-production";
   // Generous default admission cap for this whole suite — the real
-  // tier-0 default is 1 (resolve-policy.ts), which every OTHER describe
-  // block in this file would immediately exhaust the moment more than one
-  // non-direct-play session accumulates (none of them ever DELETE the
-  // sessions they create). Only the dedicated 429 test below deliberately
-  // narrows this, and restores it in a `finally`. 64 (not 1000 — security
-  // review F9 gave transcode.maxSimultaneousTranscodes a schema ceiling of
-  // 64) is still far more than this suite ever needs concurrently.
+  // tier-0 default is 2 (resolve-policy.ts, SPF-8), which every OTHER
+  // describe block in this file would immediately exhaust the moment more
+  // than two non-direct-play sessions accumulate (none of them ever
+  // DELETE the sessions they create). Only the dedicated 429 test below
+  // deliberately narrows this, and restores it in a `finally`. 64 (not
+  // 1000 — security review F9 gave transcode.maxSimultaneousTranscodes a
+  // schema ceiling of 64) is still far more than this suite ever needs
+  // concurrently.
   process.env["LOOMBRE_MAX_TRANSCODES"] = "64";
 
   const databaseUrl = await ensureTestDatabase(BASE_DATABASE_URL, "playback_test");
@@ -619,6 +620,211 @@ describe("POST /playback/sessions (Phase 3 §11 step 6b: admission control + rea
   it("bodyless -> 422", async () => {
     const res = await admin().post("/playback/sessions").send();
     expect(res.status).toBe(422);
+  });
+});
+
+describe("SPF-9 admission-time reclamation — a heartbeat-suspended transcode session can be reclaimed to admit a new request at the cap", () => {
+  /** Same lift-the-env-pin-then-write-through-SettingsService dance the
+   *  429 test above uses (LOOMBRE_MAX_TRANSCODES is env-pinned suite-wide
+   *  — a pinned key 409s on updateSetting). Pins the cap to EXACTLY the
+   *  current baseline + 1, so the ONE session this test creates itself is
+   *  what puts admission at the cap — never a hardcoded `1` racing this
+   *  file's other (never-cleaned-up) sessions. */
+  async function pinCapToBaselinePlusOne(settingsService: SettingsService, adminId: string): Promise<number> {
+    const db = createDb(process.env["DATABASE_URL"]!);
+    let baseline: number;
+    try {
+      baseline = await countActiveTranscodeSessions(db);
+    } finally {
+      await db.destroy();
+    }
+    delete process.env["LOOMBRE_MAX_TRANSCODES"];
+    await settingsService.reload();
+    await settingsService.updateSetting({
+      key: "transcode.maxSimultaneousTranscodes",
+      value: baseline + 1,
+      actorUserId: adminId,
+      nowMs: Date.now(),
+    });
+    return baseline + 1;
+  }
+
+  async function restoreGenerousCap(settingsService: SettingsService): Promise<void> {
+    process.env["LOOMBRE_MAX_TRANSCODES"] = "64";
+    await settingsService.reload();
+  }
+
+  it("evicts the stalest heartbeat-suspended session (suspended_by_throttle=false) to admit a new create at the cap", async () => {
+    const settingsService = app.get(SettingsService);
+    const db = createDb(process.env["DATABASE_URL"]!);
+    let adminId: string;
+    try {
+      const adminUser = await getUserByUsername(db, "admin");
+      if (!adminUser) throw new Error("seed did not create an admin user");
+      adminId = adminUser.id;
+    } finally {
+      await db.destroy();
+    }
+
+    try {
+      await pinCapToBaselinePlusOne(settingsService, adminId);
+
+      const first = await admin()
+        .post("/playback/sessions")
+        .send({
+          itemId: harborLightsItemId,
+          device: incompatibleDeviceProfile(),
+          network: { maxBitrateBps: 5_000_000, isLocal: false },
+          mode: "stream",
+        });
+      expect(first.status, JSON.stringify(first.body)).toBe(201);
+      const firstId = first.body.id as string;
+
+      // Simulate the sweeper's own 90s heartbeat-stale suspend having
+      // already happened (no real client is heartbeating in this suite —
+      // same seam-level-mock rationale as the sweeper describe block
+      // above): status suspended, suspended_by_throttle FALSE (a
+      // heartbeat cause, never the worker's throttle), last_heartbeat_ms
+      // safely past the default 90s cutoff.
+      const backdateDb = createDb(process.env["DATABASE_URL"]!);
+      try {
+        await backdateDb
+          .updateTable("playback_sessions")
+          .set({
+            status: "suspended",
+            suspended_by_throttle: false,
+            last_heartbeat_ms: Date.now() - HEARTBEAT_SUSPEND_CUTOFF_MS - 5_000,
+          })
+          .where("id", "=", firstId)
+          .execute();
+      } finally {
+        await backdateDb.destroy();
+      }
+
+      // The cap is exactly at capacity (first occupies the +1 slot) — a
+      // bare admission would 429 here without SPF-9's reclaim.
+      const second = await admin()
+        .post("/playback/sessions")
+        .send({
+          itemId: harborLightsItemId,
+          device: incompatibleDeviceProfile(),
+          network: { maxBitrateBps: 5_000_000, isLocal: false },
+          mode: "stream",
+        });
+      expect(second.status, JSON.stringify(second.body)).toBe(201);
+
+      const firstAfter = await admin().get(`/playback/sessions/${firstId}`);
+      expect(firstAfter.status).toBe(200);
+      expect(firstAfter.body.status).toBe("failed");
+      expect(firstAfter.body.errorCode).toBe("evicted-for-admission");
+    } finally {
+      await restoreGenerousCap(settingsService);
+    }
+  });
+
+  it("does NOT reclaim an ACTIVE session — a second create at the cap still 429s", async () => {
+    const settingsService = app.get(SettingsService);
+    const db = createDb(process.env["DATABASE_URL"]!);
+    let adminId: string;
+    try {
+      const adminUser = await getUserByUsername(db, "admin");
+      if (!adminUser) throw new Error("seed did not create an admin user");
+      adminId = adminUser.id;
+    } finally {
+      await db.destroy();
+    }
+
+    try {
+      await pinCapToBaselinePlusOne(settingsService, adminId);
+
+      const first = await admin()
+        .post("/playback/sessions")
+        .send({
+          itemId: harborLightsItemId,
+          device: incompatibleDeviceProfile(),
+          network: { maxBitrateBps: 5_000_000, isLocal: false },
+          mode: "stream",
+        });
+      expect(first.status, JSON.stringify(first.body)).toBe(201);
+      const firstId = first.body.id as string;
+
+      // ACTIVE, not suspended, and well past any staleness cutoff — the
+      // A5 law (no admission decision may drop an active session) means
+      // this is never an eviction candidate no matter how stale its
+      // heartbeat looks.
+      const backdateDb = createDb(process.env["DATABASE_URL"]!);
+      try {
+        await backdateDb
+          .updateTable("playback_sessions")
+          .set({ status: "active", last_heartbeat_ms: Date.now() - HEARTBEAT_SUSPEND_CUTOFF_MS - 5_000 })
+          .where("id", "=", firstId)
+          .execute();
+      } finally {
+        await backdateDb.destroy();
+      }
+
+      const second = await admin()
+        .post("/playback/sessions")
+        .send({
+          itemId: harborLightsItemId,
+          device: incompatibleDeviceProfile(),
+          network: { maxBitrateBps: 5_000_000, isLocal: false },
+          mode: "stream",
+        });
+      expect(second.status, JSON.stringify(second.body)).toBe(429);
+      expect(second.body.code).toBe("transcode-slots-exhausted");
+
+      const firstAfter = await admin().get(`/playback/sessions/${firstId}`);
+      expect(firstAfter.status).toBe(200);
+      expect(firstAfter.body.status).toBe("active");
+    } finally {
+      await restoreGenerousCap(settingsService);
+    }
+  });
+
+  it("direct-play creates are unaffected: they never enter the gate, so a full transcode cap never blocks one", async () => {
+    const settingsService = app.get(SettingsService);
+    const db = createDb(process.env["DATABASE_URL"]!);
+    let adminId: string;
+    try {
+      const adminUser = await getUserByUsername(db, "admin");
+      if (!adminUser) throw new Error("seed did not create an admin user");
+      adminId = adminUser.id;
+    } finally {
+      await db.destroy();
+    }
+
+    try {
+      await pinCapToBaselinePlusOne(settingsService, adminId);
+
+      const first = await admin()
+        .post("/playback/sessions")
+        .send({
+          itemId: harborLightsItemId,
+          device: incompatibleDeviceProfile(),
+          network: { maxBitrateBps: 5_000_000, isLocal: false },
+          mode: "stream",
+        });
+      expect(first.status, JSON.stringify(first.body)).toBe(201);
+
+      const backdateDb = createDb(process.env["DATABASE_URL"]!);
+      try {
+        await backdateDb
+          .updateTable("playback_sessions")
+          .set({ status: "active", last_heartbeat_ms: Date.now() })
+          .where("id", "=", first.body.id)
+          .execute();
+      } finally {
+        await backdateDb.destroy();
+      }
+
+      const directPlay = await createDirectPlaySession();
+      const gotDirectPlay = await admin().get(`/playback/sessions/${directPlay}`);
+      expect(gotDirectPlay.status).toBe(200);
+      expect(gotDirectPlay.body.status).toBe("active");
+    } finally {
+      await restoreGenerousCap(settingsService);
+    }
   });
 });
 

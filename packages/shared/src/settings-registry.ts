@@ -35,10 +35,12 @@
 // tierDefaults (A8): LOOMBRE_TIER (0/1/2, read at the call site — this
 // package does not itself decide the running instance's tier) selects among
 // a PER-TIER default for the few knobs whose sane default genuinely depends
-// on hardware class (today: only maxSimultaneousTranscodes, matching
-// apps/server/src/playback/resolve-policy.ts's historical
-// TIER_DEFAULT_MAX_TRANSCODES table verbatim — lane S3 removed that
-// now-redundant constant from resolve-policy.ts itself once
+// on hardware class (today: only maxSimultaneousTranscodes, currently
+// { 0: 2, 1: 2, 2: 4 } — SPF-8 raised tier 0 from 1 so a single background
+// transcode can never occupy the only slot and block a viewer's own
+// playback — matching apps/server/src/playback/resolve-policy.ts's
+// historical TIER_DEFAULT_MAX_TRANSCODES table verbatim — lane S3 removed
+// that now-redundant constant from resolve-policy.ts itself once
 // maxSimultaneousTranscodes moved to this registry, since
 // SettingsService.getEffective() already resolves the tier-aware default
 // from THIS table; see resolve-policy.ts's own header). `default` alone
@@ -448,8 +450,8 @@ const UI_ENTRIES: SettingsRegistryEntry[] = [
     // any real hardware this product targets — a ceiling, not a realistic
     // operating point.
     schema: z.number().int().min(1).max(64),
-    default: 1,
-    tierDefaults: { 0: 1, 1: 2, 2: 4 },
+    default: 2,
+    tierDefaults: { 0: 2, 1: 2, 2: 4 },
     category: "transcode",
     description: "How many videos this server will convert at the same time. Lowering it never interrupts anything already playing — it only makes the next person wait for a free slot.",
     caution: "Setting this too high can overload the server if several videos convert at once — raise it gradually and keep an eye on how the machine handles it.",

@@ -390,6 +390,9 @@ export {
   listHeartbeatStalePlaybackSessions,
   suspendStalePlaybackSession,
   countActiveTranscodeSessions,
+  // SPF-9 — admission-time reclamation: the packages/db half of
+  // transcode-admission.ts's optional `reclaim` callback.
+  evictStalestSuspendedTranscodeSession,
   getTranscodeRunForSegment,
   listTranscodeRuns,
 } from './query/playback-sessions.js';

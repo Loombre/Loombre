@@ -14,16 +14,12 @@
 // whole point is proving QSV (or whatever backend this N100 verified)
 // actually engaged, not just that transcoding happened at all.
 //
-// IMPORTANT — read before running: docs/PLAYBACK.md's tier-0 default
-// maxSimultaneousTranscodes is 1 (apps/server/src/playback/resolve-policy.ts
-// TIER_DEFAULT_MAX_TRANSCODES[0] = 1), NOT auto-detected from hardware. The
-// second POST /playback/sessions call below WILL 429
-// (transcode-slots-exhausted) against a default-configured T0 install. Set
-// `LOOMBRE_MAX_TRANSCODES=2` (or higher) in /etc/loombre/loombre.env and
-// restart loombre-server BEFORE running this script — see the runbook's
-// "Step D pre-flight" section. This is expected/by-design (the T0 default
-// is intentionally conservative for small installs), not a bug this script
-// works around.
+// NOTE: docs/PLAYBACK.md's tier-0 default maxSimultaneousTranscodes is 2
+// (packages/shared/src/settings-registry.ts's tierDefaults, SPF-8), NOT
+// auto-detected from hardware — so a stock T0 install already admits the
+// two sessions this script starts. `LOOMBRE_MAX_TRANSCODES` remains
+// available if you want a different ceiling for this run — see the
+// runbook's "Step D pre-flight" section.
 //
 // Usage:
 //   node scripts/t0-audit/dual-transcode.mjs \
@@ -183,9 +179,10 @@ async function startSession(baseUrl, accessToken, itemId, device, network) {
   if (res.status === 429) {
     const body = await res.text().catch(() => "");
     throw new Error(
-      `t0-audit: POST /playback/sessions for ${itemId} -> HTTP 429 transcode-slots-exhausted. This is almost ` +
-        "certainly the tier-0 default maxSimultaneousTranscodes=1 — set LOOMBRE_MAX_TRANSCODES=2 in " +
-        "/etc/loombre/loombre.env and `sudo systemctl restart loombre-server`, then re-run this script. " +
+      `t0-audit: POST /playback/sessions for ${itemId} -> HTTP 429 transcode-slots-exhausted. The tier-0 ` +
+        "default maxSimultaneousTranscodes is 2, which this test should fit under — check for another " +
+        "session already occupying a slot, or a LOOMBRE_MAX_TRANSCODES pin lower than 2 in " +
+        "/etc/loombre/loombre.env, then re-run this script. " +
         `Server response: ${body.slice(0, 500)}`,
     );
   }

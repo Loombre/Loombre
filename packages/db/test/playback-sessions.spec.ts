@@ -11,7 +11,7 @@
 // Connection: DATABASE_URL env var, default
 //   postgres://loombre:loombre@localhost:5442/loombre
 
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
@@ -27,6 +27,7 @@ import {
   createPlaybackSession,
   endPlaybackSession,
   endStalePlaybackSession,
+  evictStalestSuspendedTranscodeSession,
   getMediaFileForPlaybackSession,
   getPlaybackSessionForUser,
   heartbeatPlaybackSession,
@@ -1152,5 +1153,169 @@ describe('countActiveTranscodeSessions', () => {
       await rawClient.query("UPDATE playback_sessions SET status = 'ended' WHERE id = $1", [id]);
     }
     expect(await countActiveTranscodeSessions(db)).toBe(baseline);
+  });
+});
+
+// SPF-9 — admission-time reclamation (docs/PLAYBACK.md §9's A5 law: no
+// setting/admission decision may drop an ACTIVE session; a
+// heartbeat-suspended one, by contrast, has no viewer left watching it).
+describe('evictStalestSuspendedTranscodeSession', () => {
+  // This file's other describe blocks (listStalePlaybackSessions widened,
+  // countActiveTranscodeSessions) leave their own heartbeat-suspended
+  // transcode sessions lying around (sequential file execution, same DB —
+  // module header's known shared-state convention), which would otherwise
+  // be silently eligible candidates for THIS block's eviction calls and
+  // make an "expect undefined"/"expect exactly this id" assertion flaky.
+  // Retiring every pre-existing eligible-shaped row before each test here
+  // gives each test a clean, deterministic candidate set — never touches
+  // an active session, a throttle-suspended one, or a direct-play one,
+  // matching exactly what the function itself is forbidden to touch.
+  beforeEach(async () => {
+    await rawClient.query(
+      "UPDATE playback_sessions SET status = 'ended', updated_at_ms = $1 " +
+        "WHERE status = 'suspended' AND suspended_by_throttle = false AND plan ->> 'decision' != 'direct-play'",
+      [Date.now()],
+    );
+  });
+
+  async function newSuspendedTranscodeSession(input: {
+    lastHeartbeatMs: number | null;
+    startedAtMs: number;
+    suspendedByThrottle?: boolean;
+  }): Promise<string> {
+    const session = await createPlaybackSession(db, adminCtx, {
+      itemId: harborLightsItemId,
+      fileId: harborLightsFileId,
+      deviceId: adminDeviceId,
+      plan: { decision: 'transcode', reasons: [] },
+      engineVersion: 'test',
+      nowMs: input.startedAtMs,
+    });
+    await rawClient.query(
+      "UPDATE playback_sessions SET status = 'suspended', suspended_by_throttle = $2, last_heartbeat_ms = $3, started_at_ms = $4 WHERE id = $1",
+      [session!.id, input.suspendedByThrottle ?? false, input.lastHeartbeatMs, input.startedAtMs],
+    );
+    return session!.id;
+  }
+
+  it('returns undefined when no session qualifies', async () => {
+    const cutoffMs = Date.now() - 90_000;
+    // A fresh (recently-heartbeated) suspended session is not stale enough.
+    await newSuspendedTranscodeSession({ lastHeartbeatMs: Date.now(), startedAtMs: Date.now() - 60_000 });
+    const evicted = await evictStalestSuspendedTranscodeSession(db, { cutoffMs, nowMs: Date.now() });
+    expect(evicted).toBeUndefined();
+  });
+
+  it('evicts the stalest heartbeat-suspended transcode session, marking it failed with evicted-for-admission', async () => {
+    const nowMs = Date.now();
+    const cutoffMs = nowMs - 90_000;
+
+    // Two eligible candidates at different staleness; the OLDER heartbeat
+    // must be the one reclaimed.
+    const newerId = await newSuspendedTranscodeSession({ lastHeartbeatMs: nowMs - 100_000, startedAtMs: nowMs - 200_000 });
+    const olderId = await newSuspendedTranscodeSession({ lastHeartbeatMs: nowMs - 500_000, startedAtMs: nowMs - 600_000 });
+
+    const evicted = await evictStalestSuspendedTranscodeSession(db, { cutoffMs, nowMs });
+    expect(evicted?.id).toBe(olderId);
+    expect(evicted?.status).toBe('failed');
+    expect(evicted?.errorCode).toBe('evicted-for-admission');
+
+    const untouched = await rawClient.query<{ status: string }>('SELECT status FROM playback_sessions WHERE id = $1', [newerId]);
+    expect(untouched.rows[0]?.status).toBe('suspended');
+
+    const evictedEvent = await eventForSession('playback.ended', olderId);
+    expect(evictedEvent).toBeDefined();
+    expect(evictedEvent!.payload).toMatchObject({ reason: 'admission-eviction', errorCode: 'evicted-for-admission' });
+  });
+
+  it('a null last_heartbeat_ms (never heartbeated) uses started_at_ms and sorts FIRST (NULLS FIRST)', async () => {
+    const nowMs = Date.now();
+    const cutoffMs = nowMs - 90_000;
+
+    // Has a heartbeat, but still stale.
+    const withHeartbeatId = await newSuspendedTranscodeSession({ lastHeartbeatMs: nowMs - 200_000, startedAtMs: nowMs - 300_000 });
+    // Never heartbeated at all — NULLS FIRST means this is picked even
+    // though its started_at_ms is more recent than the row above.
+    const neverHeartbeatedId = await newSuspendedTranscodeSession({ lastHeartbeatMs: null, startedAtMs: nowMs - 100_000 });
+
+    const evicted = await evictStalestSuspendedTranscodeSession(db, { cutoffMs, nowMs });
+    expect(evicted?.id).toBe(neverHeartbeatedId);
+
+    const untouched = await rawClient.query<{ status: string }>('SELECT status FROM playback_sessions WHERE id = $1', [withHeartbeatId]);
+    expect(untouched.rows[0]?.status).toBe('suspended');
+  });
+
+  it('never evicts an ACTIVE session, even a stale one (only suspended is eligible)', async () => {
+    const nowMs = Date.now();
+    const cutoffMs = nowMs - 90_000;
+    const session = await createPlaybackSession(db, adminCtx, {
+      itemId: harborLightsItemId,
+      fileId: harborLightsFileId,
+      deviceId: adminDeviceId,
+      plan: { decision: 'transcode', reasons: [] },
+      engineVersion: 'test',
+      nowMs: nowMs - 600_000,
+    });
+    await rawClient.query(
+      "UPDATE playback_sessions SET status = 'active', last_heartbeat_ms = $2 WHERE id = $1",
+      [session!.id, nowMs - 500_000],
+    );
+
+    const evicted = await evictStalestSuspendedTranscodeSession(db, { cutoffMs, nowMs });
+    expect(evicted).toBeUndefined();
+
+    const stillActive = await rawClient.query<{ status: string }>('SELECT status FROM playback_sessions WHERE id = $1', [session!.id]);
+    expect(stillActive.rows[0]?.status).toBe('active');
+  });
+
+  it('never evicts a THROTTLE-suspended session (suspended_by_throttle = true) — that encoder is deliberately parked mid-watch, not abandoned', async () => {
+    const nowMs = Date.now();
+    const cutoffMs = nowMs - 90_000;
+    const throttleId = await newSuspendedTranscodeSession({
+      lastHeartbeatMs: nowMs - 500_000,
+      startedAtMs: nowMs - 600_000,
+      suspendedByThrottle: true,
+    });
+
+    const evicted = await evictStalestSuspendedTranscodeSession(db, { cutoffMs, nowMs });
+    expect(evicted).toBeUndefined();
+
+    const stillSuspended = await rawClient.query<{ status: string }>('SELECT status FROM playback_sessions WHERE id = $1', [throttleId]);
+    expect(stillSuspended.rows[0]?.status).toBe('suspended');
+  });
+
+  it('never evicts a DIRECT-PLAY session (never occupies a slot in the first place)', async () => {
+    const nowMs = Date.now();
+    const cutoffMs = nowMs - 90_000;
+    const session = await createPlaybackSession(db, adminCtx, {
+      itemId: harborLightsItemId,
+      fileId: harborLightsFileId,
+      deviceId: adminDeviceId,
+      plan: { decision: 'direct-play', reasons: [] },
+      engineVersion: 'test',
+      nowMs: nowMs - 600_000,
+    });
+    await rawClient.query(
+      "UPDATE playback_sessions SET status = 'suspended', suspended_by_throttle = false, last_heartbeat_ms = $2 WHERE id = $1",
+      [session!.id, nowMs - 500_000],
+    );
+
+    const evicted = await evictStalestSuspendedTranscodeSession(db, { cutoffMs, nowMs });
+    expect(evicted).toBeUndefined();
+
+    const stillSuspended = await rawClient.query<{ status: string }>('SELECT status FROM playback_sessions WHERE id = $1', [session!.id]);
+    expect(stillSuspended.rows[0]?.status).toBe('suspended');
+  });
+
+  it('is idempotent under a re-check: the evicted session is no longer a candidate on a second call', async () => {
+    const nowMs = Date.now();
+    const cutoffMs = nowMs - 90_000;
+    const id = await newSuspendedTranscodeSession({ lastHeartbeatMs: nowMs - 500_000, startedAtMs: nowMs - 600_000 });
+
+    const first = await evictStalestSuspendedTranscodeSession(db, { cutoffMs, nowMs });
+    expect(first?.id).toBe(id);
+
+    const second = await evictStalestSuspendedTranscodeSession(db, { cutoffMs, nowMs });
+    expect(second).toBeUndefined();
   });
 });

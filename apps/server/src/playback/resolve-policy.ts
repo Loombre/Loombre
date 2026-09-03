@@ -145,7 +145,7 @@ export function resolveServerPolicyFromSettings(settingsService: SettingsService
   const allowTranscode = process.env["LOOMBRE_ALLOW_TRANSCODE"];
 
   const maxSimultaneousTranscodes =
-    (settingsService.getEffective("transcode.maxSimultaneousTranscodes")?.value as number | undefined) ?? 1;
+    (settingsService.getEffective("transcode.maxSimultaneousTranscodes")?.value as number | undefined) ?? 2;
   const hevcEncodePreferred =
     (settingsService.getEffective("transcode.hevcEncodePreferred")?.value as boolean | undefined) ?? true;
   const allowToneMapCpu =

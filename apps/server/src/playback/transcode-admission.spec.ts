@@ -10,7 +10,7 @@
 // Every test below therefore drives the gate CONCURRENTLY (Promise.all) —
 // a sequential await can never catch this.
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { TranscodeAdmissionGate } from "./transcode-admission.js";
 
 /**
@@ -77,6 +77,77 @@ describe("TranscodeAdmissionGate", () => {
 
     expect(first).toEqual({ admitted: true, created: { id: "session-1" } });
     expect(second).toEqual({ admitted: false });
+  });
+
+  it("SPF-9: reclaim is never called while under the cap", async () => {
+    const store = fakeSessionStore();
+    const gate = new TranscodeAdmissionGate();
+    const reclaim = vi.fn(async () => true);
+
+    const result = await gate.admit({ cap: 2, countActive: store.countActive, create: store.create, reclaim });
+
+    expect(result.admitted).toBe(true);
+    expect(reclaim).not.toHaveBeenCalled();
+  });
+
+  it("SPF-9: reclaim is called at the cap, and a true result admits after a recount", async () => {
+    const store = fakeSessionStore();
+    const gate = new TranscodeAdmissionGate();
+    // Pre-fill the store to the cap so the very next admit() attempt is
+    // already at capacity.
+    await store.create();
+    let active = 1;
+    const reclaim = vi.fn(async () => {
+      active -= 1; // simulate evictStalestSuspendedTranscodeSession freeing a slot
+      return true;
+    });
+    const countActive = async () => active;
+
+    const result = await gate.admit({ cap: 1, countActive, create: store.create, reclaim });
+
+    expect(reclaim).toHaveBeenCalledTimes(1);
+    expect(result.admitted).toBe(true);
+  });
+
+  it("SPF-9: a false reclaim result still refuses admission (no recount, no false positive)", async () => {
+    const store = fakeSessionStore();
+    const gate = new TranscodeAdmissionGate();
+    await store.create(); // at cap
+    const reclaim = vi.fn(async () => false);
+
+    const result = await gate.admit({ cap: 1, countActive: store.countActive, create: store.create, reclaim });
+
+    expect(reclaim).toHaveBeenCalledTimes(1);
+    expect(result.admitted).toBe(false);
+    expect(store.active).toBe(1); // create() never called
+  });
+
+  it("SPF-9: omitting reclaim entirely preserves pre-SPF-9 behavior — refused at the cap, no crash", async () => {
+    const store = fakeSessionStore();
+    const gate = new TranscodeAdmissionGate();
+    await store.create(); // at cap
+
+    const result = await gate.admit({ cap: 1, countActive: store.countActive, create: store.create });
+
+    expect(result.admitted).toBe(false);
+  });
+
+  it("SPF-9: a true reclaim that did NOT actually clear the cap (still at/over cap on recount) still refuses", async () => {
+    const store = fakeSessionStore();
+    const gate = new TranscodeAdmissionGate();
+    // cap of 1, two already-active sessions — a single reclaimed slot still
+    // isn't enough.
+    await store.create();
+    let active = 2;
+    const reclaim = vi.fn(async () => {
+      active -= 1;
+      return true;
+    });
+    const countActive = async () => active;
+
+    const result = await gate.admit({ cap: 1, countActive, create: store.create, reclaim });
+
+    expect(result.admitted).toBe(false);
   });
 
   it("a create() that rejects releases the slot AND leaves the gate usable", async () => {
