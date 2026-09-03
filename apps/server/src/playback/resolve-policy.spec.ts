@@ -102,6 +102,56 @@ describe("resolveServerPolicy", () => {
     ).toBe(false); // caps say yes, but operator preference says no
   });
 
+  // ==========================================================================
+  // SPF-10 (peer review finding): the OLD `hevcVerified` treated ANY
+  // backend's hevc encode as verified, including the always-present
+  // `software` fallback — true on every box regardless of hardware. See
+  // resolve-policy.ts's `hevcVerified` header for the two measured costs.
+  // ==========================================================================
+
+  describe("hevcVerified capability gate (SPF-10)", () => {
+    const SOFTWARE_ONLY_CAPS: VerifiedCapabilities = {
+      backends: [{ backend: "software", decode: ["h264", "hevc"], encode: ["h264", "hevc"], toneMap: [], verifiedAtMs: 0 }],
+    };
+    const HW_H264_ONLY_CAPS: VerifiedCapabilities = {
+      backends: [
+        { backend: "nvenc", decode: ["h264"], encode: ["h264"], toneMap: [], verifiedAtMs: 1 },
+        { backend: "software", decode: ["h264", "hevc"], encode: ["h264", "hevc"], toneMap: [], verifiedAtMs: 0 },
+      ],
+    };
+
+    it("software-only caps, tier 0 -> false (a Tier-0 box never prefers the 2-4x software hevc cost)", () => {
+      const policy = resolveServerPolicy({ tier: "0" }, SOFTWARE_ONLY_CAPS, DEFAULT_SETTINGS_INPUTS);
+      expect(policy.hevcEncodePreferred).toBe(false);
+    });
+
+    it("software-only caps, tier 1 -> true (real CPU headroom, no hardware route at all)", () => {
+      const policy = resolveServerPolicy({ tier: "1" }, SOFTWARE_ONLY_CAPS, DEFAULT_SETTINGS_INPUTS);
+      expect(policy.hevcEncodePreferred).toBe(true);
+    });
+
+    it("a non-software backend verifying hevc encode -> true on any tier", () => {
+      for (const tier of ["0", "1", "2"]) {
+        const policy = resolveServerPolicy({ tier }, HEVC_CAPS, DEFAULT_SETTINGS_INPUTS);
+        expect(policy.hevcEncodePreferred, `tier=${tier}`).toBe(true);
+      }
+    });
+
+    it("a hardware backend that only encodes h264 (+ software verifying hevc), tier 1 -> false (the working hardware h264 route must win over a software hevc swap)", () => {
+      const policy = resolveServerPolicy({ tier: "1" }, HW_H264_ONLY_CAPS, DEFAULT_SETTINGS_INPUTS);
+      expect(policy.hevcEncodePreferred).toBe(false);
+    });
+
+    it("operator preference off -> false regardless of caps or tier", () => {
+      const policy = resolveServerPolicy(
+        { tier: "1" },
+        SOFTWARE_ONLY_CAPS,
+        { ...DEFAULT_SETTINGS_INPUTS, hevcEncodePreferred: false },
+      );
+      expect(policy.hevcEncodePreferred).toBe(false);
+    });
+  });
+
   it("ladderRungs/allowToneMapCpu are always whatever settings hands in", () => {
     const policy = resolveServerPolicy({ tier: "2" }, HEVC_CAPS, DEFAULT_SETTINGS_INPUTS);
     expect(policy.ladderRungs).toEqual(DEFAULT_LADDER_RUNGS);
