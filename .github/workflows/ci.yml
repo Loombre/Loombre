@@ -365,7 +365,7 @@ jobs:
   # the full gate on the CURRENT (non-LTS) Node line, NON-BLOCKING by
   # design — its job is to accumulate months of green (or red-with-
   # evidence) history so the October-2026 Node 26 LTS switch is a routine
-  # Renovate PR, not a project. continue-on-error keeps a red run from
+  # dependency-bump PR, not a project. continue-on-error keeps a red run from
   # failing the workflow; push-to-main only (not PRs) per the
   # matrix-economy note above — ubuntu only, ~one extra gate run per
   # batched push. When Node 26 goes LTS and the pins move to it, point this job at

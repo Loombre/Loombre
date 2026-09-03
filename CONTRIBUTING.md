@@ -141,11 +141,11 @@ consistent with `LICENSE-INTENT.md`'s contributor-provenance rule.
 
 - Fill out the PR template (`.github/PULL_REQUEST_TEMPLATE.md`) honestly
   — every box is something CI or a reviewer will actually check.
-- Record a real decision in `reports/state/DECISIONS.md` (the project's
-  live, append-only decision ledger), and close any open item your change
-  settles in `reports/state/OPEN.md` — that tier is the living record of
-  what's been decided and why. The root `STATE.md` is the frozen
-  historical ledger; never append to it.
+- If your change settles a design decision, state it explicitly in the PR
+  description — what was decided and why. The maintainers keep the
+  project's live decision ledger and open-items list outside the public
+  tree and record it there. The root `STATE.md` is the frozen historical
+  ledger; never append to it.
 - Small, focused PRs over large ones where the two are actually
   equivalent in risk — a contract change plus its conformance tests plus
   its SDK regeneration is normally one PR; unrelated refactors are not.

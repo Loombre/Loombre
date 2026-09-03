@@ -22,8 +22,8 @@
 //     placement rules (e.g. an XML declaration MUST be a document's
 //     first token, .md conventionally carries no header at all). A
 //     follow-up can extend this script format-by-format if the owner
-//     wants full REUSE-spec (reuse.software) coverage; flagged in
-//     reports/agpl-readiness.md rather than silently done here.
+//     wants full REUSE-spec (reuse.software) coverage; flagged in the
+//     AGPL readiness audit (internal record) rather than silently done here.
 //
 // FILE DISCOVERY: `git ls-files`, not a directory walk. This means the
 // script only ever sees tracked, non-gitignored files — vendor/, dist/,

@@ -9,7 +9,7 @@
 - [ ] New decision rules in `packages/playback-engine` land with matrix cases in this PR (`matrix/burnup.json` updated too)
 - [ ] Schema changes follow expand → migrate → contract pattern
 - [ ] No `pg`/`kysely` imports outside `packages/db`
-- [ ] `reports/state/DECISIONS.md` updated if a decision was made (the append-only decision ledger — root `STATE.md` is the frozen historical record)
+- [ ] Any design decision this PR makes is stated in *What / Why* above (the maintainers record it in the project's internal decision ledger — root `STATE.md` is the frozen historical record)
 - [ ] Provenance recorded in LICENSE-INTENT.md for any third-party code
 - [ ] Docs updated if user/admin/operator-visible behavior changed (right guide, right register — see each guide's audience statement)
 - [ ] Mobile `@media` blocks added or edited in this PR are complete axis resets — each states the whole `display`/`flex-flow`/`position`/`inset` set it overrides, rather than one property inheriting the rest from the desktop rule (LD-21 (rc.6); `design/phosphor/README.md` → *Responsive strategy*)

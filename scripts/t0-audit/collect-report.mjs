@@ -4,8 +4,11 @@
 //
 // The "measurement-collector" the mission names: reads every JSON artifact
 // the other scripts/t0-audit/*.mjs scripts wrote into --results-dir and
-// stamps reports/t0-audit.md's `MEASURE:<key>` placeholders with the real
-// numbers + a mechanically-derived PASS/FAIL verdict. Never invents a
+// stamps the report's `MEASURE:<key>` placeholders with the real numbers +
+// a mechanically-derived PASS/FAIL verdict. The report lives at
+// reports/t0-audit.md — LOCAL, gitignored scratch output — and is seeded on
+// first run from the tracked template scripts/t0-audit/t0-audit.template.md
+// (reports/ holds nothing tracked). Never invents a
 // number for a measurement that wasn't run — a missing artifact leaves its
 // placeholder(s) untouched (still reading `MEASURE:...` afterward), logged
 // as a warning, not silently marked PASS.
@@ -30,18 +33,21 @@
 //                                    # oversight (see the runbook).
 //
 // Idempotent — re-run any measurement script and re-run this collector to
-// refresh the report; it always re-reads the template's CURRENT `MEASURE:`
+// refresh the report; it always re-reads the report's CURRENT `MEASURE:`
 // placeholders (so if you've already stamped a value and want to redo it,
-// restore that cell to `MEASURE:<key>` by hand first, or start from a fresh
-// git checkout of reports/t0-audit.md).
+// restore that cell to `MEASURE:<key>` by hand first, or delete
+// reports/t0-audit.md and re-run — it is re-seeded from the template).
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs, fmtMiB, log, warn, fail, resultsDir } from "./lib/common.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
+/** The tracked report template. The stamped report itself is written under
+ *  reports/ (gitignored) and seeded from this file when absent. */
+const TEMPLATE_PATH = path.join(__dirname, "t0-audit.template.md");
 
 function readJsonIfExists(filePath) {
   if (!existsSync(filePath)) return null;
@@ -80,7 +86,12 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const reportPath = args["report-path"] ?? path.join(REPO_ROOT, "reports", "t0-audit.md");
   if (!existsSync(reportPath)) {
-    throw new Error(`t0-audit: ${reportPath} not found — expected the template from reports/t0-audit.md`);
+    if (!existsSync(TEMPLATE_PATH)) {
+      throw new Error(`t0-audit: template ${TEMPLATE_PATH} not found — the tracked template is missing`);
+    }
+    mkdirSync(path.dirname(reportPath), { recursive: true });
+    copyFileSync(TEMPLATE_PATH, reportPath);
+    log("collect-report", `seeded ${reportPath} from ${path.relative(REPO_ROOT, TEMPLATE_PATH)}`);
   }
   let text = readFileSync(reportPath, "utf8");
   const dir = resultsDir(args);

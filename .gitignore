@@ -40,18 +40,17 @@ test-fixtures/media/
 # STATE.md Stash SQLite metadata sync S10) — regenerated on demand by
 # scripts/stash-scale-proof.mjs, never committed.
 test-fixtures/stash/
-.claude/worktrees/
 
-# local Claude agent definitions + their accumulated memory — per-machine
-# tooling state, not part of the codebase
-.claude/agents/
-.claude/agent-memory/
+# Claude Code tooling state — settings.json (machine-specific
+# additionalDirectories grants), agents, agent memory, worktrees, scheduled
+# tasks. Per-machine, never part of the codebase.
+.claude/
 
-# local evidence artifacts (screenshots, perf runs). reports/ is ignored
-# WHOLESALE: the tracked reports/* files (292 as of 2026-08-30, mostly the
-# curated reports/state/** tier) were each added deliberately via
-# `git add -f` — and the flip side is that every NEW file under reports/
-# is invisible to `git status` until force-added the same way.
+# local evidence artifacts (screenshots, perf runs) and the maintainers'
+# internal state tier (reports/state/**). reports/ is local-only: nothing
+# under it is tracked — root STATE.md is the public historical record.
+# Tooling that WRITES under reports/ (scripts/t0-audit/collect-report.mjs)
+# treats it as scratch output and seeds from a tracked template.
 reports/
 apps/worker/data/
 

@@ -23,7 +23,10 @@ Nothing in this runbook changes those budgets — it only measures against
 them on the reference hardware plan §9.1 names.
 
 **Every number that ends up in `reports/t0-audit.md` must come from
-actually running the commands below.** No measurement is estimated,
+actually running the commands below.** (That report is local, gitignored
+output — `collect-report.mjs` seeds it from the tracked template
+`scripts/t0-audit/t0-audit.template.md` on first run; nothing under
+`reports/` is committed.) No measurement is estimated,
 extrapolated from CI, or copied from a different machine. Where a script
 cannot determine something safely (e.g. whether `--hdd-tmp-dir` is really
 HDD-backed), it says so explicitly rather than guessing.
@@ -39,7 +42,7 @@ HDD-backed), it says so explicitly rather than guessing.
 | C | §9.2 measurement battery — idle RSS, p95 @ 50k, cold start, scan throughput | `rss-sample.mjs`, `run-perf-t0.mjs`, `cold-start.mjs` |
 | D | **Headline test** — two simultaneous 1080p hardware transcodes, sustained 30 min | `dual-transcode.mjs`, `sustained-monitor.mjs` |
 | E | §9.3 web budgets, verified on the N100's own hardware | `pnpm perf:web-budget`, `pnpm perf:lighthouse` |
-| F | Assemble `reports/t0-audit.md` | `collect-report.mjs` |
+| F | Assemble `reports/t0-audit.md` (seeded from `scripts/t0-audit/t0-audit.template.md`) | `collect-report.mjs` |
 
 Every step is also runnable end-to-end via `scripts/t0-audit/run-all.sh`
 (§8 below) once you've done Step A by hand once. Read Step A and Step D in
@@ -721,4 +724,6 @@ path.
   `run-perf-t0.mjs` wraps rather than replaces.
 - `docs/PLAN.md` §9 — the budgets themselves (source of truth; this
   runbook never restates a number it doesn't also cite from there).
-- `reports/t0-audit.md` — this runbook's output.
+- `scripts/t0-audit/t0-audit.template.md` — the tracked report template.
+- `reports/t0-audit.md` — this runbook's output (local, gitignored; seeded
+  from the template by `collect-report.mjs`).

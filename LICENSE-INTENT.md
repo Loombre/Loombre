@@ -15,8 +15,12 @@ network use once distributed.
 
 Before 2026-07-24 this repository was private and proprietary, carrying this
 file as the declared intent to relicense to AGPL-3.0 at launch. Everything
-below kept that relicense a clean one-commit event — which it was; the
-readiness checklist is in `reports/agpl-readiness.md`.
+below kept that relicense a clean one-commit event — which it was. The
+readiness audit that preceded it (the dependency graph scanned per workspace
+and found AGPL-compatible, the vendored-binary aggregation posture confirmed,
+the provenance ledger confirmed empty-and-plausible, the header script
+verified) is a dated internal record; its durable conclusions are the rules
+and tables below.
 
 ## Rules in force from commit one
 

@@ -51,9 +51,9 @@ coverage/
 **/coverage/
 
 # db local data, generated fixtures, local evidence/reports trees and
-# perf result artifacts — never part of a build. (reports/ is local
-# evidence plus the curated tracked reports/state/** tier, not
-# regenerated output — either way it is never a build input.)
+# perf result artifacts — never part of a build. (reports/ is local-only:
+# evidence artifacts plus the maintainers' internal state notes, none of
+# it tracked — either way it is never a build input.)
 .pgdata/
 test-fixtures/media/
 reports/
