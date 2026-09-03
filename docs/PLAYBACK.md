@@ -1157,7 +1157,13 @@ State machine: `created → starting → active ⇄ suspended → seeking → ac
     (`status = 'seeking'`), `GET …/hls/media.m3u8` is HELD (100 ms poll,
     the same 8 s deadline as the initial-segment block) rather than
     answered with the stale pre-seek playlist (SPF-4) — so the client's
-    reload at 202 time returns the moment the restarted run is listed. WHY a first-class
+    reload at 202 time returns the moment the restarted run is listed. The
+    hold ends when the RESTARTED run is listed, not on the first tick after
+    the restart: the worker keeps `status = 'seeking'` until the new run's
+    own playlist has a segment (`produced_segment` still advances
+    meanwhile), because the union produced count is already defined from
+    the old run and releasing on it handed the client the pre-seek
+    playlist and a full nudge tick of extra discovery (peer AFTER pass). WHY a first-class
     call: hls.js only requests URIs the playlist lists, and the UA clamps
     `currentTime` writes to `video.seekable`, so an out-of-window target
     could never reach the segment-GET trigger at all — the restart

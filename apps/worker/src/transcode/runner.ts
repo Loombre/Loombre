@@ -651,7 +651,20 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
     }
 
     if (producedSegment !== undefined) {
-      if (row.status === "starting" || row.status === "seeking") {
+      // starting/seeking -> active ONLY once the CURRENT run has listed its
+      // first segment. `producedSegment` is the union over every run the
+      // served playlist still lists, so on the first tick after a seek
+      // restart it is already defined from the OLD run's segments — and
+      // flipping to active then released the server's held manifest GET
+      // (SPF-4) with the pre-seek playlist, leaving the client to wait for
+      // its next 1 Hz nudge (measured live: discovery pinned at ~2.05 s on a
+      // box whose restart was ready in 0.5 s). Holding 'seeking' until this
+      // run's own playlist has a segment makes the held GET return exactly
+      // when the restarted run is listed. Run 0 is unchanged: its produced
+      // extent IS the current run's. produced_segment still advances while
+      // we wait so the throttle and the server keep a truthful edge.
+      const currentRunListed = currentRun.producedMs > 0;
+      if ((row.status === "starting" || row.status === "seeking") && currentRunListed) {
         await markSessionActive(db, sessionId, { producedSegment, nowMs: now() });
       } else if (row.produced_segment !== producedSegment) {
         await updateProducedSegment(db, sessionId, producedSegment, now());

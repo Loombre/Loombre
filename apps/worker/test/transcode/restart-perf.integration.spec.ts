@@ -296,6 +296,20 @@ describe("SPF-2026-09-03 lane w2: restart-path performance properties", () => {
    *  (retention-viewer-floor.integration.spec.ts's `fabricateRunPlaylist`).
    *  ATOMIC (temp + rename) because the poll loop may read it at any
    *  instant. */
+  async function readStatus(sessionId: string): Promise<{ status: string }> {
+    const res = await raw.query<{ status: string }>("SELECT status FROM playback_sessions WHERE id = $1", [sessionId]);
+    return { status: res.rows[0]?.status ?? "missing" };
+  }
+
+  async function waitForStatus(sessionId: string, status: string, timeoutMs: number): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      if ((await readStatus(sessionId)).status === status) return;
+      if (Date.now() > deadline) throw new Error(`timed out waiting for status ${status} (now ${(await readStatus(sessionId)).status})`);
+      await new Promise((r) => setTimeout(r, 20));
+    }
+  }
+
   function fabricateRunPlaylist(sessionId: string, runIndex: number, segmentCount: number, firstSegmentIndex = 0): void {
     const lines = ["#EXTM3U", "#EXT-X-VERSION:7", "#EXT-X-TARGETDURATION:6", "#EXT-X-MEDIA-SEQUENCE:0", "#EXT-X-PLAYLIST-TYPE:EVENT", '#EXT-X-MAP:URI="init.mp4"'];
     for (let i = 0; i < segmentCount; i += 1) {
@@ -413,6 +427,46 @@ describe("SPF-2026-09-03 lane w2: restart-path performance properties", () => {
       await waitForProducedSegment(sessionId, 2, 10_000 * TIME_SCALE);
       const text3 = await waitForServedPlaylist(sessionId, (t) => t.includes("s000002.m4s"), 10_000 * TIME_SCALE);
       expect(text3).not.toBe(text2);
+
+      await endPlaybackSession(db, ctx, sessionId, Date.now());
+      await runPromise;
+    },
+  );
+
+  it(
+    "SPF-4 hold: after a seek restart the row stays 'seeking' until the RESTARTED run lists a segment, then flips to active",
+    { timeout: 30_000 * TIME_SCALE },
+    async () => {
+      installFakeProcessTable();
+      const sessionId = await createSession();
+      const runPromise = runTranscodeSession(
+        {
+          db,
+          stagingRoot,
+          pollIntervalMs: 25,
+          ffmpegPath: "/nonexistent/ffmpeg-never-executed",
+          spawnFn: fakeSpawnFn(),
+        },
+        sessionId,
+      );
+      await waitForSpawnCount(1, 10_000 * TIME_SCALE);
+      // Run 0 produces two segments -> the session goes active.
+      fabricateRunPlaylist(sessionId, 0, 2);
+      await waitForStatus(sessionId, "active", 10_000 * TIME_SCALE);
+
+      // A seek restart: run 1 spawns but has produced NOTHING yet. The union
+      // produced count is still defined (run 0's segments are listed), and
+      // before the fix that alone flipped the row back to active on the first
+      // tick — releasing the server's held manifest GET with the pre-seek
+      // playlist. The row must stay 'seeking'.
+      await requestSeek(db, ctx, sessionId, 60_000, Date.now());
+      await waitForSpawnCount(2, 10_000 * TIME_SCALE);
+      await new Promise((r) => setTimeout(r, 300 * TIME_SCALE));
+      expect((await readStatus(sessionId)).status, "flipped to active on the OLD run's segments").toBe("seeking");
+
+      // Run 1's first segment lands -> now, and only now, active.
+      fabricateRunPlaylist(sessionId, 1, 1, 2);
+      await waitForStatus(sessionId, "active", 10_000 * TIME_SCALE);
 
       await endPlaybackSession(db, ctx, sessionId, Date.now());
       await runPromise;

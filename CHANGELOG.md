@@ -28,8 +28,8 @@ are the version axis.
   seek needs a third of the encoded content it used to (a 1×-realtime
   server: ~7 s → ~3 s; Apple Silicon hardware encode: 0.9 s → 0.4 s),
   soft seeks fetch three-times-smaller fragments, and the server holds
-  the playlist request while a seek is in flight so the player lands the
-  moment the restarted run exists. Windows servers no longer pace the
+  the playlist request while a seek is in flight (until the restarted run
+  is actually listed) so the player lands the moment it exists. Windows servers no longer pace the
   head of every run (`-readrate_initial_burst 30`), which alone was
   costing ~6 s per seek there. Rapid seeks coalesce client-side; the
   worker reacts in 100 ms and no longer rewrites unchanged playlists; and
