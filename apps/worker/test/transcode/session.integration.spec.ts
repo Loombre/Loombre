@@ -588,7 +588,9 @@ describe.skipIf(!ffmpegAvailable)("transcode session runtime integration (real f
 
     const row = await readRow(sessionId);
     expect(row.status).toBe("failed");
-    expect(row.error_code).toBe("transcode-failed");
+    // SPF-7: the shared ffmpeg-failure classifier names the cause — a missing
+    // input is transcode-input-missing, never the generic transcode-failed.
+    expect(row.error_code).toBe("transcode-input-missing");
     expect(row.stderr_tail).toBeTruthy();
     expect(row.stderr_tail!.length).toBeGreaterThan(0);
     if (row.staging_dir) {
