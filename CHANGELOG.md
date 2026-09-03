@@ -21,8 +21,16 @@ are the version axis.
 
 ## [Unreleased]
 
-### v1.0.0-beta.2 draft (2026-09-03)
+### v1.0.0-beta.1 draft (2026-09-03)
 
+- First 1.0 beta, for testers — the v0.9.0-rc.12 dry-run tree plus the
+  subtitle fixes below. The line from here: `1.0.0-beta.N` tester builds,
+  then `1.0.0-rc.1` (the build intended to ship unchanged), then `1.0.0`
+  on the same code. 1.0.0 is where docs/PLAN.md §4.1's additive-only API
+  policy becomes a public promise. (The tag was cut twice before this and
+  discarded unpublished each time — first ahead of the subtitle fix,
+  then ahead of the seek-performance work below — along with every
+  rc.* tag; none of them ever had a published release.)
 - Player: seeking is fast. Every transcode/remux session now serves
   2-second HLS segments (was 6 s): the first playable segment after a
   seek needs a third of the encoded content it used to (a 1×-realtime
@@ -75,15 +83,6 @@ are the version axis.
   ones that don't answer, so scans, probes and transcodes keep running.
   Found live on a stale Desktop library: every job silently stalled.
 
-### v1.0.0-beta.1 draft (2026-09-03)
-
-- First 1.0 beta, for testers — the v0.9.0-rc.12 dry-run tree plus the
-  subtitle fixes below. The line from here: `1.0.0-beta.N` tester builds,
-  then `1.0.0-rc.1` (the build intended to ship unchanged), then `1.0.0`
-  on the same code. 1.0.0 is where docs/PLAN.md §4.1's additive-only API
-  policy becomes a public promise. (The first beta.1 draft was cut before
-  the subtitle fix and discarded unpublished, tag included, along with
-  every rc.* tag — none of them ever had a published release.)
 - Player: text subtitles can actually be turned on. The track picker still
   rendered every subtitle as "requires transcoding (Phase 3)", a Phase-2
   stub left behind after the server grew its WebVTT side-track
