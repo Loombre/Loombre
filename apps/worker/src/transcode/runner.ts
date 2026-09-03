@@ -74,6 +74,7 @@ import { createRunDir, createSessionDir, deleteRunDir, deleteSessionDir, runDirF
 import {
   reconcileThrottle,
   throttleMechanismForPlatform,
+  WIN32_READRATE_BURST_SEC,
   WIN32_READRATE_MULTIPLIER,
   THROTTLE_SUSPEND_AHEAD,
   THROTTLE_RESUME_AHEAD,
@@ -97,6 +98,15 @@ export interface RunSessionDeps {
   /** Overrides the platform-derived throttle mechanism (tests only —
    *  never set in production wiring, consumer.ts). */
   mechanismOverride?: ThrottleMechanism;
+  /** TEST-ONLY override for the platform `applyPlatformPacing` believes it
+   *  is running on (SPF-2's win32 pacing-burst branch) — never set by
+   *  consumer.ts's production wiring. Exists so a test can exercise the
+   *  win32 argv shape without mutating the process-wide `process.platform`
+   *  global, which is unsafe here: worker integration suites run several
+   *  sessions' poll loops concurrently (other lanes' tests included), and
+   *  a global platform flip would leak into all of them for as long as it
+   *  was set. */
+  platformOverride?: NodeJS.Platform;
   /** Decides what an unexpected ffmpeg exit MEANS (exit-classify.ts).
    *  Injectable and pure by design: the hardware-encode-session recovery
    *  below is driven entirely by this function's answer, so a CI runner
@@ -300,6 +310,15 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
   const isFmp4 = plan.container === "fmp4-hls";
   let servedState: ServedPlaylistState = emptyServedPlaylistState(SEGMENT_DURATION_SEC, isFmp4);
 
+  /** SPF-3b (2026-09-03): the served-playlist text this runtime last
+   *  actually wrote to disk — `undefined` until the first write. Read by
+   *  the poll loop below to skip a rewrite whose rendered text would be
+   *  byte-identical to what is already there (a tick that folded nothing
+   *  new — the common case once a run is caught up). `undefined`'s only
+   *  job is to make the FIRST render always differ from it, so the first
+   *  write is never skipped by this check. */
+  let lastWrittenPlaylistText: string | undefined;
+
   /**
    * THE VIEWER FLOOR (d3-f1): the highest segment index this session has
    * evidence the CLIENT actually reached. `undefined` until the client has
@@ -349,10 +368,14 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
 
   function applyPlatformPacing(args: string[]): string[] {
     if (deps.testReadrateMultiplier !== undefined) return injectReadrate(args, deps.testReadrateMultiplier);
+    const platform = deps.platformOverride ?? process.platform;
     // P3.8: win32 is paced unconditionally, which is why the copy-shape
     // runaway was never reachable there — its cap is strictly tighter than
-    // the one below, so it wins rather than stacking.
-    if (process.platform === "win32") return injectReadrate(args, WIN32_READRATE_MULTIPLIER);
+    // the one below, so it wins rather than stacking. SPF-2: the burst
+    // covers the client's forward-buffer target (throttle.ts's
+    // WIN32_READRATE_BURST_SEC header), so EVERY run's head — including a
+    // seek-restart's — is unpaced; only the steady-state tail is.
+    if (platform === "win32") return injectReadrate(args, WIN32_READRATE_MULTIPLIER, WIN32_READRATE_BURST_SEC);
     if (copyShapeReadrate > 0 && isCopyShapePlan(plan)) {
       return injectReadrate(args, copyShapeReadrate, copyShapeBurstSec);
     }
@@ -482,9 +505,21 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
    * The sequencing is what makes §9.1.4's PROCESS-CENSUS INVARIANT ("at
    * every instant a session has <= 1 live ffmpeg") structural rather than
    * policed: `terminate()` resolves only on observed exit, and the spawn is
-   * strictly after that `await`. There is no code path that can start a
-   * second encoder while the first is alive — not "forbidden", but
-   * inexpressible.
+   * strictly after BOTH `terminate()` and `rebuildSeekArgs` resolve. There
+   * is no code path that can start a second encoder while the first is
+   * alive — not "forbidden", but inexpressible.
+   *
+   * SPF-3a (2026-09-03): `terminate()` and `rebuildSeekArgs` run
+   * CONCURRENTLY rather than sequentially — neither depends on the other's
+   * result (`rebuildSeekArgs` only re-reads the media/device rows;
+   * `terminate()` only waits on the dying process's own exit), so the
+   * previous sequencing paid their SUM in wall clock for no reason. The
+   * invariant above is unaffected: `currentRun` is not reassigned, and
+   * nothing spawns, until `Promise.all` resolves — i.e. until both have
+   * finished — so the "<= 1 live ffmpeg" property still holds at every
+   * instant. If `rebuildSeekArgs` rejects while `terminate()` is still
+   * pending, the old process is not abandoned: the catch block below still
+   * awaits `terminatePromise` before failing the session.
    */
   async function restartAt(
     nextIndex: number,
@@ -492,15 +527,20 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
     originMs: number,
     ladderRungIndex: number | undefined,
   ): Promise<boolean> {
+    const dyingRun = currentRun;
+    const terminatePromise = dyingRun.handle.terminate().then(() => {
+      dyingRun.unregister();
+    });
     try {
-      await currentRun.handle.terminate();
-      currentRun.unregister();
-      const args = await rebuildSeekArgs(db, {
-        fileId: sessionRow!.file_id!,
-        deviceId: sessionRow!.device_id ?? "",
-        plan,
-        ...(ladderRungIndex !== undefined ? { ladderRungIndex } : {}),
-      });
+      const [, args] = await Promise.all([
+        terminatePromise,
+        rebuildSeekArgs(db, {
+          fileId: sessionRow!.file_id!,
+          deviceId: sessionRow!.device_id ?? "",
+          plan,
+          ...(ladderRungIndex !== undefined ? { ladderRungIndex } : {}),
+        }),
+      ]);
       currentRun = await spawnRun(nextIndex, startSeg, args, originMs, ladderRungIndex);
       // V8 restart hygiene (docs/PLAYBACK.md §9): the fresh process is by
       // definition not throttle-stopped — a stale flag would route the
@@ -517,7 +557,11 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
       // 'seeking' row. §9.1.4's failure table, row 1: old process dead, new
       // never started, session -> failed -> terminal -> the admission slot
       // frees only via that terminal status, and the client's existing
-      // fatal path surfaces it.
+      // fatal path surfaces it. The old process is STILL awaited here
+      // (never abandoned) even though the failure was `rebuildSeekArgs`'s,
+      // not `terminate()`'s — the process-census invariant holds on every
+      // exit from this function, not only the success path.
+      await terminatePromise.catch(() => undefined);
       await markSessionFailed(db, sessionId, {
         errorCode: TRANSCODE_ERROR_CODE_FAILED,
         stderrTail: err instanceof Error ? err.message : String(err),
@@ -645,9 +689,11 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
         await deleteRunDir(stagingRoot, sessionDir, join(sessionDir, runDirName)).catch(() => undefined);
       }
       // ATOMIC rewrite (write-temp-then-rename), not a plain writeFile:
-      // this served playlist is rewritten on EVERY loop iteration while a
-      // real client is polling GET /playback/sessions/{id}/hls/media.m3u8.
-      // writeFile opens with O_TRUNC, so a concurrent reader can observe
+      // this served playlist is rewritten on every tick that actually
+      // folds something new (SPF-3b narrowed that from "every loop
+      // iteration" — see below) while a real client is polling
+      // GET /playback/sessions/{id}/hls/media.m3u8. writeFile opens with
+      // O_TRUNC, so a concurrent reader can observe
       // the file empty (between truncate and write) or partially written.
       // apps/server's hls-file.controller.ts already refuses a zero-length
       // read and re-polls, which is why this never surfaced as a client
@@ -660,14 +706,28 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
       // next one — never a torn state.
       // A FROZEN playlist is also never rewritten: the ENDLIST-bearing
       // render was written once, on the tick ENDLIST first appeared, and
-      // an ended playlist must not change (§9.1.5 rule 4). Re-writing the
-      // same bytes every tick would be harmless but is pointless I/O on a
-      // Tier-0 box.
+      // an ended playlist must not change (§9.1.5 rule 4).
+      //
+      // SPF-3b (2026-09-03): beyond that, the render is compared against
+      // `lastWrittenPlaylistText` and skipped when it is byte-identical —
+      // this used to rewrite unconditionally on EVERY tick a run was
+      // producing, which at the 100ms poll interval (config.ts) is mostly
+      // re-writing the exact same bytes: nothing folds on a tick between a
+      // run's segments (every ~2-6s of content), and a fully caught-up,
+      // steady-state session folds nothing at all once its whole run has
+      // landed. `undefined` never equals a rendered string, so the FIRST
+      // write and the ENDLIST-arrival write (both cases the design calls
+      // out) still always happen — this is one plain equality check, not
+      // special-cased for either.
       if (!playlistFrozen) {
-        const playlistPath = join(sessionDir, "media.m3u8");
-        const playlistTmpPath = `${playlistPath}.tmp`;
-        await writeFile(playlistTmpPath, renderServedPlaylist(servedState), "utf8");
-        await rename(playlistTmpPath, playlistPath);
+        const rendered = renderServedPlaylist(servedState);
+        if (rendered !== lastWrittenPlaylistText) {
+          const playlistPath = join(sessionDir, "media.m3u8");
+          const playlistTmpPath = `${playlistPath}.tmp`;
+          await writeFile(playlistTmpPath, rendered, "utf8");
+          await rename(playlistTmpPath, playlistPath);
+          lastWrittenPlaylistText = rendered;
+        }
       }
     }
 

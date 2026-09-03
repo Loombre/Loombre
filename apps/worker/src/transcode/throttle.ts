@@ -12,11 +12,18 @@
  * available for job-object-based suspension (this step's binding
  * constraint 4 tried the no-new-dependency route FIRST and that is as far
  * as it goes without one) — the documented P3.8 fallback is `-readrate`
- * pacing: `injectReadrate(args, 1.2)` (args.ts) is applied to EVERY win32
- * ffmpeg run unconditionally, pacing the encode at ~1.2x realtime so it
- * structurally never races far enough ahead to need suspending in the
- * first place. Consequence, reported as a real behavioral difference (not
- * hidden): a win32 worker NEVER writes `suspended_by_throttle = true` and
+ * pacing: `injectReadrate(args, 1.2, WIN32_READRATE_BURST_SEC)` (args.ts)
+ * is applied to EVERY win32 ffmpeg run unconditionally, pacing the encode
+ * at ~1.2x realtime so it structurally never races far enough ahead to
+ * need suspending in the first place. SPF-2 (2026-09-03) added the burst:
+ * the first `WIN32_READRATE_BURST_SEC` of EACH RUN's own output — which
+ * covers the client's forward-buffer target — encode at full speed before
+ * the 1.2x pacing engages, so a win32 seek-restart's first segment is no
+ * longer paced at all (measured: 6.4s -> 0.3s to first segment on a
+ * synthetic 1x-realtime source) while the steady-state lead bound is
+ * exactly what it was before. Consequence, reported as a real behavioral
+ * difference (not hidden): a win32 worker NEVER writes
+ * `suspended_by_throttle = true` and
  * NEVER SIGSTOPs anything — `reconcileThrottle` below always returns
  * `{ action: 'none' }` when `mechanism === 'readrate'`. If a future native
  * suspension helper lands, swapping it in only requires changing
@@ -66,6 +73,18 @@ export type ThrottleMechanism = "suspend" | "readrate";
 /** Fallback pacing multiplier for the win32 `-readrate` mechanism (P3.8,
  *  this step's binding constraint 4, verbatim value). */
 export const WIN32_READRATE_MULTIPLIER = 1.2;
+
+/**
+ * SPF-2: how many seconds of EACH win32 run's own output encode at full
+ * speed (ffmpeg's `-readrate_initial_burst`, injected alongside the
+ * multiplier above) before the 1.2x pacing engages at all. Sized to the
+ * client's forward-buffer target (30s, apps/web's buffer-cap constant) —
+ * a fresh start and every seek-restart fill that whole target at full
+ * speed, then 1.2x pacing bounds the lead exactly as it did before this
+ * existed. The head of every run is what a viewer is waiting on; the tail
+ * is what the pacing exists to bound, and those are disjoint.
+ */
+export const WIN32_READRATE_BURST_SEC = 30;
 
 export function throttleMechanismForPlatform(platform: NodeJS.Platform): ThrottleMechanism {
   return platform === "win32" ? "readrate" : "suspend";

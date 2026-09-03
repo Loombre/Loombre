@@ -40,15 +40,21 @@ export function resolveTranscodeWorkerConcurrency(): number {
 
 /** Poll interval for the worker's own per-session control loop (docs/
  *  PLAYBACK.md §9 / binding constraint 1: "polls its own sessions' rows at
- *  a short interval (<=1s)"). 250ms keeps throttle/seek reactions snappy
- *  well inside that bound while staying cheap (one row read + a directory
- *  scan per tick, per active session). Overridable for tests that want a
- *  tighter loop without waiting on the production default. */
+ *  a short interval (<=1s)"). SPF-3b (2026-09-03) tightened the default
+ *  from 250ms to 100ms: BOTH seek detection (how soon a written
+ *  `seek_target_ms` is noticed) and the fold that publishes a run's FIRST
+ *  segment (how soon `markSessionActive` fires once ffmpeg has one) ride
+ *  this same tick, so shrinking it takes ~300ms of ticks-and-waiting off
+ *  every hard-seek restart at the cost of one extra primary-key read per
+ *  tick per active session — a Tier-0-cheap trade against a
+ *  perceived-latency win. Still well inside the <=1s spec bound.
+ *  Overridable for tests that want a tighter loop without waiting on the
+ *  production default. */
 export function resolveTranscodePollIntervalMs(): number {
   const raw = process.env["LOOMBRE_TRANSCODE_POLL_MS"];
-  if (!raw) return 250;
+  if (!raw) return 100;
   const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 && parsed <= 1000 ? parsed : 250;
+  return Number.isFinite(parsed) && parsed > 0 && parsed <= 1000 ? parsed : 100;
 }
 
 // Segment-ahead throttle thresholds used to live here as fixed constants
