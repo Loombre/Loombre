@@ -1688,6 +1688,185 @@ describe("VideoPlayer", () => {
       });
     });
 
+    // ── SPF-10: the seek must read as a jump — freeze at the 202, land,
+    // resume — never the PRE-seek run playing on (audible) under the
+    // relocating spinner while hls.js keeps fetching its doomed next
+    // fragments (the stale-run 503 storms). The element is paused the
+    // moment the POST is issued (leading edge and coalesced trailing
+    // dispatch alike) and, if play intent was captured, resumed once the
+    // landing actually lands (never on the 20 s timeout — the toast stands,
+    // the viewer presses play).
+    describe("hard-seek pause/resume (SPF-10)", () => {
+      /** Lands the currently-armed hard seek (target 10 000) by listing the
+       *  seek-spawned run's fragment, exactly like `armAndLand` above but
+       *  local to this describe (no shared timer/toast assertions). */
+      function land(hls: MockHlsInstance, details: { fragments: unknown[] }): void {
+        details.fragments = [
+          farListedFragment(),
+          { programDateTime: 10_000, start: 6, duration: 6, relurl: "run1/s000001.m4s" },
+        ];
+        hls.emit("hlsLevelUpdated");
+      }
+
+      it("a hard seek issued while PLAYING pauses the element at dispatch and resumes it once the landing lands", async () => {
+        const { v, hls } = await renderHlsReady();
+        view = v;
+        const details = { live: true, fragments: [farListedFragment()] };
+        hls.levels = [{ details }];
+        const video = videoEl(v);
+        mediaState(video).paused = false;
+        apiPost.mockResolvedValueOnce({ targetMs: 10_000 });
+
+        await act(async () => button(v, "Forward 10 seconds").click());
+        expect(
+          mediaState(video).paused,
+          "the PRE-seek run kept playing under the relocating spinner instead of freezing at the 202 — audible stutter, and hls.js keeps fetching the doomed run's next fragments",
+        ).toBe(true);
+
+        await act(async () => land(hls, details));
+        expect(video.currentTime, "the landing never seeked the element to the run's start").toBe(6);
+        expect(mediaState(video).paused, "the captured play intent never resumed the landed seek").toBe(false);
+      });
+
+      it("a hard seek issued while PAUSED never calls play() — stays paused throughout the lifecycle", async () => {
+        const { v, hls } = await renderHlsReady();
+        view = v;
+        const details = { live: true, fragments: [farListedFragment()] };
+        hls.levels = [{ details }];
+        const video = videoEl(v);
+        mediaState(video).paused = true; // precondition: the default state
+        apiPost.mockResolvedValueOnce({ targetMs: 10_000 });
+
+        await act(async () => button(v, "Forward 10 seconds").click());
+        expect(mediaState(video).paused).toBe(true);
+
+        await act(async () => land(hls, details));
+        expect(video.currentTime).toBe(6);
+        expect(
+          mediaState(video).paused,
+          "a hard seek issued while paused must stay paused — the viewer never chose to play",
+        ).toBe(true);
+      });
+
+      it("the TIMEOUT path leaves the element paused — the toast stands, the viewer presses play", async () => {
+        const { v, hls } = await renderHlsReady();
+        view = v;
+        vi.useFakeTimers();
+        hls.levels = [{ details: { live: true, fragments: [farListedFragment()] } }];
+        const video = videoEl(v);
+        mediaState(video).paused = false; // was playing — captured intent is TRUE
+        apiPost.mockResolvedValueOnce({ targetMs: 10_000 });
+
+        await act(async () => button(v, "Forward 10 seconds").click());
+        expect(mediaState(video).paused).toBe(true);
+
+        // No landing ever arrives — the 20 s lifecycle timer fires.
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(HARD_SEEK_LANDING_TIMEOUT_MS + 500);
+        });
+        expect(document.body.textContent).toContain("Seek timed out");
+        expect(
+          mediaState(video).paused,
+          "a captured play intent must never resolve into a play() on the timeout path — no landing ever happened",
+        ).toBe(true);
+      });
+
+      it("a coalesced (superseding) hard seek keeps the ORIGINAL play intent, not whatever the element looks like mid-lifecycle", async () => {
+        const { v, hls } = await renderHlsReady();
+        view = v;
+        vi.useFakeTimers();
+        const details = { live: true, fragments: [farListedFragment()] };
+        hls.levels = [{ details }];
+        const video = videoEl(v);
+        mediaState(video).paused = false; // playing — the ORIGINAL intent this whole lifecycle must keep
+
+        // Priming dispatch: the leading edge, dispatches immediately and
+        // captures the play intent (true) — the element is paused for it,
+        // same as the isolated case above.
+        apiPost.mockResolvedValueOnce({ targetMs: 5_000 });
+        await act(async () => button(v, "Forward 10 seconds").click());
+        expect(apiPost).toHaveBeenCalledTimes(1);
+        expect(mediaState(video).paused).toBe(true);
+        apiPost.mockClear();
+
+        // A superseding seek arrives inside the coalescing window: it must
+        // defer to the trailing timer, not dispatch (or recapture) on its
+        // own — the SAME open lifecycle, so hardSeekPlayIntentRef must
+        // still read `true` from the priming dispatch, not `false` from
+        // reading an element THIS lifecycle already paused.
+        await act(async () => button(v, "Forward 10 seconds").click());
+        expect(apiPost, "the superseding seek must coalesce, not dispatch its own POST").not.toHaveBeenCalled();
+
+        apiPost.mockResolvedValueOnce({ targetMs: 25_000 });
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(HARD_SEEK_COALESCE_MS);
+        });
+        expect(apiPost).toHaveBeenCalledTimes(1);
+        expect(
+          mediaState(video).paused,
+          "the coalesced dispatch's own pause() call must stay a no-op, never a re-capture that drops the original intent",
+        ).toBe(true);
+
+        // Land the SUPERSEDING (newest) target.
+        details.fragments = [
+          farListedFragment(),
+          { programDateTime: 25_000, start: 6, duration: 6, relurl: "run1/s000001.m4s" },
+        ];
+        await act(async () => {
+          hls.emit("hlsLevelUpdated");
+        });
+        expect(video.currentTime).toBe(6);
+        expect(
+          mediaState(video).paused,
+          "the superseding dispatch dropped the ORIGINAL (priming) play intent — a coalesced seek must never silently downgrade playing to paused",
+        ).toBe(false);
+      });
+
+      it("the ABSORBED-202 landing (no new run) resumes too, not only the fragment-match landing", async () => {
+        const { v, hls } = await renderHlsReady();
+        view = v;
+        vi.useFakeTimers();
+        const video = videoEl(v);
+        mediaState(video).paused = false; // playing before the seek
+        // The window covers source 100.0-106.0s; the viewer sits at 100.5s.
+        const details = {
+          live: true,
+          fragments: [{ programDateTime: 100_000, start: 0, duration: 6, relurl: "run0/s000016.m4s" }],
+        };
+        hls.levels = [{ details }];
+        // First refresh consumes the one-shot queued-start router
+        // (browser-player-F9), as on a real session.
+        await act(async () => {
+          hls.emit("hlsLevelUpdated");
+        });
+        await act(async () => {
+          video.currentTime = 0.5;
+          video.dispatchEvent(new Event("timeupdate"));
+        });
+        // Forward 10s -> target 110_500: NOT listed (just ahead of the
+        // produced edge) -> HARD. The server absorbs it into run0 (202, no
+        // restart) and simply produces on toward it.
+        apiPost.mockResolvedValueOnce({ targetMs: 110_500 });
+        await act(async () => button(v, "Forward 10 seconds").click());
+        expect(mediaState(video).paused, "the dispatch must pause even an absorbed-shaped seek — it cannot know yet that no restart will happen").toBe(true);
+
+        // Next refresh: run0 itself now lists the target — no run1 ever
+        // will. `landAbsorbedTarget` lands via the element directly.
+        details.fragments = [
+          { programDateTime: 100_000, start: 0, duration: 6, relurl: "run0/s000016.m4s" },
+          { programDateTime: 106_000, start: 6, duration: 6.006, relurl: "run0/s000017.m4s" },
+        ];
+        await act(async () => {
+          hls.emit("hlsLevelUpdated");
+        });
+        expect(video.currentTime).toBeCloseTo(10.5, 3);
+        expect(
+          mediaState(video).paused,
+          "the absorbed-202 landing never resumed the captured play intent — only the fragment-match landing did",
+        ).toBe(false);
+      });
+    });
+
     // ── browser-player-F4: the EOF-seek wedge ─────────────────────────────
     // QA 2026-08-20/21 (P1): a hard seek to/at durationMs landed (the
     // seek-spawned run showed up and matched the watch), the LEVEL_UPDATED
