@@ -48,6 +48,22 @@ are the version axis.
   paused-and-left session (no heartbeat for 90 s, `evicted-for-admission`)
   instead of refusing — a viewer who walked away no longer blocks the
   next one. (SPF-8, SPF-9.)
+- Server: a viewer who comes back after the 90 s idle suspend is revived
+  by their next heartbeat (status back to active, encoder resumed) instead
+  of staying frozen until the 15-minute sweep — and is therefore never an
+  eviction candidate while watching. (Peer review R1.)
+- Server: HEVC is only preferred for conversion when a hardware encoder
+  actually verifies it (or, on tier 1/2, when the box has no hardware
+  encode route at all). The always-present software encoder used to
+  satisfy the check, so tier-0 machines software-encoded libx265 at 2–4×
+  the cost of H.264 and h264-only hardware encoders were bypassed for
+  full software — a plausible cause of stutter on software boxes.
+  (SPF-10, peer finding.)
+- Worker: a library whose folder is missing, blocked by a macOS privacy
+  prompt, or otherwise unreachable can no longer freeze the worker at
+  boot — the file watcher probes every path with a timeout and skips the
+  ones that don't answer, so scans, probes and transcodes keep running.
+  Found live on a stale Desktop library: every job silently stalled.
 
 ### v1.0.0-beta.1 draft (2026-09-03)
 
