@@ -84,7 +84,7 @@ Pins **[Maximum simultaneous conversions](/admin-guide/settings-reference#maximu
 
 How many videos this server will convert at the same time. Lowering it never interrupts anything already playing — it only makes the next person wait for a free slot.
 
-- **Default when unset:** 1 (Tier 0) / 2 (Tier 1) / 4 (Tier 2) (or whatever was last saved from the settings screen)
+- **Default when unset:** 2 (Tier 0) / 2 (Tier 1) / 4 (Tier 2) (or whatever was last saved from the settings screen)
 - **Caution:** Setting this too high can overload the server if several videos convert at once — raise it gradually and keep an eye on how the machine handles it.
 
 ### `LOOMBRE_SCAN_CONCURRENCY`
