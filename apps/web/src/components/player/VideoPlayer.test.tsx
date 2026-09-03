@@ -21,6 +21,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { components } from "@loombre/sdk";
 import { LoombreApiError } from "@loombre/sdk";
 import { HARD_SEEK_LANDING_TIMEOUT_MS } from "../../lib/source-time.js";
+import { HARD_SEEK_COALESCE_MS } from "../../lib/seek-coalesce.js";
 import { describeSessionFailureCode, SESSION_ENDED_CODE } from "../../lib/playback-recovery.js";
 import { resetPlaybackSessionLeases } from "../../lib/playback-session-lease.js";
 import { VideoPlayer } from "./VideoPlayer.js";
@@ -1582,6 +1583,11 @@ describe("VideoPlayer", () => {
       const { v, hls } = await renderHlsReady();
       view = v;
       hls.levels = [{ details: { live: true, fragments: [farListedFragment()] } }];
+      // SPF-5: a hard seek issued within HARD_SEEK_COALESCE_MS of the
+      // previous DISPATCH is deferred and coalesced — this test is about
+      // TWO INDEPENDENT dispatches racing, so the clicks must be spaced
+      // past the coalescing window (fake timers make that deterministic).
+      vi.useFakeTimers();
 
       let resolveFirst: ((r: { targetMs: number }) => void) | null = null;
       let resolveSecond: ((r: { targetMs: number }) => void) | null = null;
@@ -1590,6 +1596,9 @@ describe("VideoPlayer", () => {
         .mockImplementationOnce(() => new Promise((r) => { resolveSecond = r; }));
 
       await act(async () => button(v, "Forward 10 seconds").click());
+      await act(async () => {
+        vi.advanceTimersByTime(HARD_SEEK_COALESCE_MS);
+      });
       await act(async () => button(v, "Forward 10 seconds").click());
       // The owner-pinned contract: a re-seek while relocating issues its
       // OWN POST — the first swallow shape was "one POST, not two".
@@ -1605,6 +1614,78 @@ describe("VideoPlayer", () => {
         slider.getAttribute("aria-valuenow"),
         "the stale FIRST 202 re-armed the landing watch — the newest hard seek must supersede regardless of response order",
       ).toBe("222222");
+    });
+
+    // ── SPF-5: hard-seek coalescing ────────────────────────────────────────
+    // Each hard-seek POST is a real worker restart (docs/PLAYBACK.md
+    // §9.1.9) — a rapid mash of the seek control used to spawn one restart
+    // per click, most thrown away before their first segment ever encoded.
+    // lib/seek-coalesce.ts's decideHardSeekDispatch is the pure policy; these
+    // two tests pin its observable effect through hardSeek/dispatchHardSeek.
+    describe("hard-seek coalescing (SPF-5)", () => {
+      it("a single, isolated hard seek dispatches immediately — no coalescing timer needed", async () => {
+        const { v } = await renderHlsReady();
+        view = v;
+        apiPost.mockResolvedValueOnce({ targetMs: 10_000 });
+
+        await act(async () => button(v, "Forward 10 seconds").click());
+
+        expect(
+          apiPost,
+          "the leading edge dispatches synchronously — an isolated hard seek pays no coalescing delay, exactly as before SPF-5",
+        ).toHaveBeenCalledTimes(1);
+        expect(apiPost).toHaveBeenCalledWith(
+          "/playback/sessions/{id}/seek",
+          expect.objectContaining({ body: expect.objectContaining({ targetMs: 10_000 }) }),
+        );
+      });
+
+      it("two hard seeks 50 ms apart coalesce into exactly ONE POST carrying the newest (second) target", async () => {
+        const { v } = await renderHlsReady();
+        view = v;
+        vi.useFakeTimers();
+
+        // Prime the coalescing baseline with an ordinary, isolated hard
+        // seek — the leading edge, dispatched immediately (unaffected by
+        // SPF-5) — so the pair below both land inside ITS coalescing
+        // window instead of one of them being its own leading edge.
+        apiPost.mockResolvedValueOnce({ targetMs: 5_000 });
+        await act(async () => button(v, "Forward 10 seconds").click());
+        expect(apiPost).toHaveBeenCalledTimes(1);
+        apiPost.mockClear();
+
+        // The pair: 0 ms and 50 ms after the priming dispatch. Both fall
+        // inside HARD_SEEK_COALESCE_MS (150) of it, so both defer onto the
+        // SAME trailing timer — the second call just replaces the pending
+        // target (newest wins), it does not start a second timer.
+        await act(async () => button(v, "Forward 10 seconds").click());
+        expect(apiPost, "the first of the pair is still inside the coalescing window — it must defer, not dispatch").not.toHaveBeenCalled();
+
+        await act(async () => {
+          vi.advanceTimersByTime(50);
+        });
+        await act(async () => button(v, "Forward 10 seconds").click());
+        expect(
+          apiPost,
+          "the second of the pair must coalesce onto the SAME pending dispatch, not fire its own POST",
+        ).not.toHaveBeenCalled();
+
+        // The trailing timer fires once the full window has elapsed since
+        // the PRIMING dispatch (100 ms remaining after the 50 ms above).
+        apiPost.mockResolvedValueOnce({ targetMs: 25_000 });
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(100);
+        });
+
+        expect(apiPost).toHaveBeenCalledTimes(1);
+        expect(
+          apiPost,
+          "the coalesced dispatch must carry the NEWEST (second) target, not the first of the pair",
+        ).toHaveBeenCalledWith(
+          "/playback/sessions/{id}/seek",
+          expect.objectContaining({ body: expect.objectContaining({ targetMs: 25_000 }) }),
+        );
+      });
     });
 
     // ── browser-player-F4: the EOF-seek wedge ─────────────────────────────
@@ -1836,12 +1917,18 @@ describe("VideoPlayer", () => {
       it("one rebuild per poisoning: the next hard seek on the rebuilt pipeline does not tear the buffer down again", async () => {
         const { v, hls } = await renderHlsReady();
         view = v;
+        vi.useFakeTimers();
         hls.levels = [{ details: { live: true, fragments: [farListedFragment()] } }];
         await act(async () => emitEndlistParse(hls, [farListedFragment()]));
         apiPost.mockResolvedValueOnce({ targetMs: 10_000 });
         await act(async () => button(v, "Forward 10 seconds").click());
         expect(detachCount(hls)).toBe(1);
 
+        // SPF-5: past the coalescing window, so this second hard seek
+        // dispatches (and rebuild-checks) immediately, same as before.
+        await act(async () => {
+          vi.advanceTimersByTime(HARD_SEEK_COALESCE_MS);
+        });
         // No ENDLIST parse since the rebuild — a fresh MediaSource and a
         // clean tracker have nothing to rebuild away from.
         apiPost.mockResolvedValueOnce({ targetMs: 20_000 });
@@ -2196,8 +2283,8 @@ describe("VideoPlayer", () => {
         ).toBe(2);
         expect(
           hls.calls.filter((c) => c === "startLoad(6,true)"),
-          "the repair must reload at the LANDED run's start (the viewer's chosen position), like every rebuild: skipSeekToStartPosition, park at the landed start",
-        ).toHaveLength(2);
+          "the repair must reload at the LANDED run's start (the viewer's chosen position), like every rebuild: skipSeekToStartPosition, park at the landed start (2 explicit rebuilds + SPF-4/5's immediate arm-time nudge tick, which falls back to stopLoad/startLoad since this mock level carries no uri)",
+        ).toHaveLength(3);
         expect(video.currentTime, "the repair parks the element at the landed start").toBe(6);
         // Play resumes only once the fresh attach has data — a play()
         // inside the rebuild is aborted by the attach's own load request
@@ -2232,7 +2319,9 @@ describe("VideoPlayer", () => {
           detachCount(hls),
           "the landing assigned into an EOS-truncated pipeline — the clamped no-op fires no 'seeking' and nothing ever leaves State.ENDED",
         ).toBe(2);
-        expect(hls.calls.filter((c) => c === "startLoad(6,true)")).toHaveLength(2);
+        // 2 explicit rebuilds + SPF-4/5's immediate arm-time nudge tick
+        // (falls back to stopLoad/startLoad — this mock level carries no uri).
+        expect(hls.calls.filter((c) => c === "startLoad(6,true)")).toHaveLength(3);
         expect(mediaState(video).paused, "play waits for the fresh attach's data").toBe(true);
         mediaState(video).ended = false;
         await act(async () => {
@@ -2531,6 +2620,7 @@ describe("VideoPlayer", () => {
     it("a failed re-seek UNPINS a predecessor's relocating scrubber — no stale pin at either target", async () => {
       const { v } = await renderHlsReady();
       view = v;
+      vi.useFakeTimers();
       // Seek #1 succeeds: the 202 pins the scrubber at the clamped target
       // and freezes the display while relocating.
       apiPost.mockResolvedValueOnce({ targetMs: 111_111 });
@@ -2539,6 +2629,11 @@ describe("VideoPlayer", () => {
       await liveTick(v);
       expect(sliderNow(v)).toBe("111111");
 
+      // SPF-5: past the coalescing window, so seek #2 below dispatches
+      // immediately instead of coalescing into seek #1.
+      await act(async () => {
+        vi.advanceTimersByTime(HARD_SEEK_COALESCE_MS);
+      });
       // Seek #2 (the newest epoch owner) fails at the network layer.
       apiPost.mockRejectedValueOnce(new TypeError("Failed to fetch"));
       await act(async () => button(v, "Forward 10 seconds").click());
@@ -4043,6 +4138,11 @@ describe("VideoPlayer", () => {
         hls.emit("hlsLevelUpdated");
       });
       expect(video.currentTime, "seek #1's discovery landing never seeked the element").toBe(6);
+      // SPF-5: past the coalescing window, so seek #2 below dispatches
+      // immediately as its own independent POST instead of coalescing.
+      await act(async () => {
+        vi.advanceTimersByTime(HARD_SEEK_COALESCE_MS);
+      });
       // Seek #2 goes out while #1 awaits resume evidence — hold its 202.
       let resolve202: ((r: { targetMs: number }) => void) | null = null;
       apiPost.mockImplementationOnce(() => new Promise((r) => { resolve202 = r; }));

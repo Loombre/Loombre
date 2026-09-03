@@ -79,6 +79,7 @@ import {
   type SourceClockState,
 } from "../../lib/source-clock.js";
 import { reopenEndedLevels, startRelocationNudge } from "../../lib/relocation-nudge.js";
+import { decideHardSeekDispatch } from "../../lib/seek-coalesce.js";
 import { listedWindowEndSec, rebuildMsePipelineForHardSeek } from "../../lib/post-endlist-rebuild.js";
 import { startEndlistEosWatch } from "../../lib/endlist-eos-watch.js";
 import { decideRecovery, sessionCreateFailedReasons, sessionEndedReasons, sessionFailureReasons } from "../../lib/playback-recovery.js";
@@ -408,6 +409,17 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   // playlist re-read once per second (lib/relocation-nudge.ts) instead of
   // waiting out hls.js's own live-refresh cadence. Holds the stop fn.
   const nudgeStopRef = useRef<(() => void) | null>(null);
+  // SPF-5: hard-seek coalescing. A hard seek issued within
+  // HARD_SEEK_COALESCE_MS of the previous DISPATCH (lib/seek-coalesce.ts's
+  // decideHardSeekDispatch) is deferred to this ONE trailing timer instead
+  // of dispatching (POSTing + arming a landing) immediately; a further hard
+  // seek arriving before the timer fires just replaces the pending target
+  // — newest wins, same rule as the epoch below, one restart instead of
+  // several. The leading edge (nothing dispatched recently) always
+  // dispatches synchronously, so an isolated hard seek is unchanged.
+  const hardSeekLastDispatchAtRef = useRef<number | null>(null);
+  const hardSeekCoalesceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hardSeekPendingTargetRef = useRef<number | null>(null);
   // gap-F4: hard-seek supersession epoch. Each hardSeek() takes a fresh
   // epoch BEFORE its POST, and only the response whose epoch is still
   // current may arm the landing watch — "newest wins" must hold on SEEK
@@ -554,6 +566,15 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
       nudgeStopRef.current();
       nudgeStopRef.current = null;
     }
+    // SPF-5: whatever cleared the watch — a landing, timeout, soft seek,
+    // unmount — a still-deferred hard seek is no longer wanted either; a
+    // stale trailing dispatch firing after the fact would POST a target
+    // nobody is waiting on any more.
+    if (hardSeekCoalesceTimerRef.current) {
+      clearTimeout(hardSeekCoalesceTimerRef.current);
+      hardSeekCoalesceTimerRef.current = null;
+    }
+    hardSeekPendingTargetRef.current = null;
     setRelocating(null);
   }, []);
 
@@ -2104,7 +2125,11 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
   }, []);
   repairWedgedLandingRef.current = repairWedgedLanding;
 
-  const hardSeek = useCallback(
+  /** The actual hard-seek dispatch: the POST + the whole landing/nudge
+   *  lifecycle arm, unchanged by SPF-5. Called either synchronously (the
+   *  coalescing wrapper's leading edge, below) or from the trailing
+   *  coalesce timer once it fires. */
+  const dispatchHardSeek = useCallback(
     (targetMs: number): void => {
       const sessionId = session?.id;
       if (!sessionId) {
@@ -2239,11 +2264,15 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
           if (hls && reopenEndedLevels(hls)) {
             hls.startLoad();
           }
-          // Discovery-latency fix (2026-08-20): the worker folds the
-          // restarted run's first segment into the served playlist well
-          // under a second after this 202, but hls.js re-reads a live
-          // playlist only on its own targetduration cadence (up to ~6 s).
-          // Nudge a re-read once per second while relocating; the landing
+          // Discovery-latency fix (2026-08-20, SPF-4/SPF-5 2026-09-03): the
+          // worker folds the restarted run's first segment into the served
+          // playlist well under a second after this 202. The nudge's FIRST
+          // reload fires immediately (relocation-nudge.ts) — the server
+          // manifest GET now blocks while this seek is pending or in
+          // progress (SPF-4), so an immediate reload parks server-side and
+          // returns the moment the restart is listed, instead of waiting
+          // out hls.js's own targetduration cadence (up to ~2 s). Every
+          // later tick repeats once per second as a fallback; the landing
           // listener's clearLandingWatch stops it.
           if (hls) {
             nudgeStopRef.current?.();
@@ -2299,6 +2328,61 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
         });
     },
     [session?.id, listedFragments, landAbsorbedTarget, clearLandingWatch, showToast],
+  );
+
+  /** SPF-5: the coalescing wrapper every caller (the seek buttons, the
+   *  scrubber, deep-link/resume routing) actually calls. Decides — via the
+   *  pure `decideHardSeekDispatch` — whether THIS call is far enough past
+   *  the previous dispatch to fire `dispatchHardSeek` immediately (the
+   *  leading edge; an isolated hard seek is byte-for-byte the pre-SPF-5
+   *  behavior) or must wait out the trailing timer with the newest target.
+   */
+  const hardSeek = useCallback(
+    (targetMs: number): void => {
+      const now = Date.now();
+      const decision = decideHardSeekDispatch(hardSeekLastDispatchAtRef.current, now);
+      if (decision.immediate) {
+        // No pending trailing dispatch should ever coexist with an
+        // immediate one (a pending timer's window always elapses before
+        // `decideHardSeekDispatch` can return immediate again) — cleared
+        // defensively anyway so a fresh dispatch never races a stale one.
+        if (hardSeekCoalesceTimerRef.current) {
+          clearTimeout(hardSeekCoalesceTimerRef.current);
+          hardSeekCoalesceTimerRef.current = null;
+        }
+        hardSeekPendingTargetRef.current = null;
+        hardSeekLastDispatchAtRef.current = now;
+        dispatchHardSeek(targetMs);
+        return;
+      }
+      // Deferred: reflect the newest intent right away, the same pre-202
+      // pin `dispatchHardSeek`'s no-session branch uses (positionRef/
+      // setPositionMs), plus the relocating pin itself (relocatingRef/
+      // setRelocating) so the scrubber shows the seek is already "in
+      // flight" for the whole coalescing window instead of looking
+      // unresponsive. One timer only: a newer hard seek arriving before it
+      // fires replaces the pending target — it does NOT restart the
+      // timer's remaining delay, which already counts down to the same
+      // fixed instant (the previous dispatch + the coalesce window)
+      // regardless of how many calls land in between.
+      const queued = Math.max(0, Math.round(targetMs));
+      positionRef.current = queued;
+      setPositionMs(queued);
+      relocatingRef.current = { targetMs: queued };
+      setRelocating({ targetMs: queued });
+      hardSeekPendingTargetRef.current = targetMs;
+      if (hardSeekCoalesceTimerRef.current === null) {
+        hardSeekCoalesceTimerRef.current = setTimeout(() => {
+          hardSeekCoalesceTimerRef.current = null;
+          const pending = hardSeekPendingTargetRef.current;
+          hardSeekPendingTargetRef.current = null;
+          if (pending === null) return;
+          hardSeekLastDispatchAtRef.current = Date.now();
+          dispatchHardSeek(pending);
+        }, decision.deferMs);
+      }
+    },
+    [dispatchHardSeek],
   );
   hardSeekRef.current = hardSeek;
 

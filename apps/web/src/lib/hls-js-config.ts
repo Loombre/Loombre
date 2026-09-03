@@ -133,7 +133,7 @@ export function resolveStartLevel(ladder: readonly StartLevelRung[]): number {
  * probe far-ahead indices with ZERO user seeks involved — observed live as
  * a fresh, untouched session churning run0→run7, wedged at 0:00 with a
  * doubled duration label. The ceiling therefore sits strictly INSIDE the
- * 120s live window (90s = 15 six-second segments, well under the server's
+ * 120s live window (90s = 45 two-second segments, well under the server's
  * out-of-window threshold), so nothing hls.js does on its own can ever
  * look like an out-of-window jump. The target stays at hls.js's own 30 —
  * pinned explicitly so a future hls.js default bump cannot silently

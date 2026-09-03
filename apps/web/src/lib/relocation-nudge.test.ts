@@ -30,14 +30,22 @@ describe("startRelocationNudge", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  it("nudges stopLoad-then-startLoad(-1, skipSeek) once per interval while relocating", () => {
+  it("fires immediately on arm (SPF-4/SPF-5), then once per interval while relocating", () => {
     const hls = makeReloader();
     const stop = startRelocationNudge(() => hls, () => true);
-    expect(hls.calls, "no synchronous nudge — the restarted run cannot exist yet at 202 time").toEqual([]);
+    expect(
+      hls.calls,
+      "SPF-4: the server now parks the manifest GET while a seek is pending/in-progress, so the first reload fires the moment the nudge is armed instead of waiting out an interval",
+    ).toEqual(["stopLoad", "startLoad(-1,true)"]);
     vi.advanceTimersByTime(HARD_SEEK_REFRESH_NUDGE_MS);
-    expect(hls.calls).toEqual(["stopLoad", "startLoad(-1,true)"]);
+    expect(hls.calls).toEqual(["stopLoad", "startLoad(-1,true)", "stopLoad", "startLoad(-1,true)"]);
     vi.advanceTimersByTime(HARD_SEEK_REFRESH_NUDGE_MS * 2);
-    expect(hls.calls).toEqual(["stopLoad", "startLoad(-1,true)", "stopLoad", "startLoad(-1,true)", "stopLoad", "startLoad(-1,true)"]);
+    expect(hls.calls).toEqual([
+      "stopLoad", "startLoad(-1,true)",
+      "stopLoad", "startLoad(-1,true)",
+      "stopLoad", "startLoad(-1,true)",
+      "stopLoad", "startLoad(-1,true)",
+    ]);
     stop();
   });
 
@@ -53,8 +61,9 @@ describe("startRelocationNudge", () => {
   it("reloads from the caller-provided resume position (still with the media-seek side effect suppressed)", () => {
     const hls = makeReloader();
     const stop = startRelocationNudge(() => hls, () => true, () => 42.5);
+    expect(hls.calls, "the immediate arm-time tick also uses the caller's resume position").toEqual(["stopLoad", "startLoad(42.5,true)"]);
     vi.advanceTimersByTime(HARD_SEEK_REFRESH_NUDGE_MS);
-    expect(hls.calls).toEqual(["stopLoad", "startLoad(42.5,true)"]);
+    expect(hls.calls).toEqual(["stopLoad", "startLoad(42.5,true)", "stopLoad", "startLoad(42.5,true)"]);
     stop();
   });
 
@@ -62,21 +71,23 @@ describe("startRelocationNudge", () => {
     const hls = makeReloader();
     let relocating = true;
     const stop = startRelocationNudge(() => hls, () => relocating);
+    expect(hls.calls, "the immediate arm-time tick still checks isRelocating").toHaveLength(2);
     vi.advanceTimersByTime(HARD_SEEK_REFRESH_NUDGE_MS);
-    expect(hls.calls).toHaveLength(2);
+    expect(hls.calls).toHaveLength(4);
     relocating = false;
     vi.advanceTimersByTime(HARD_SEEK_REFRESH_NUDGE_MS * 3);
-    expect(hls.calls).toHaveLength(2);
+    expect(hls.calls).toHaveLength(4);
     stop();
   });
 
   it("stop() ends the nudging permanently", () => {
     const hls = makeReloader();
     const stop = startRelocationNudge(() => hls, () => true);
+    expect(hls.calls).toHaveLength(2);
     vi.advanceTimersByTime(HARD_SEEK_REFRESH_NUDGE_MS);
     stop();
     vi.advanceTimersByTime(HARD_SEEK_REFRESH_NUDGE_MS * 5);
-    expect(hls.calls).toHaveLength(2);
+    expect(hls.calls).toHaveLength(4);
   });
 
   it("a vanished hls instance (detach/recovery mid-relocation) is skipped, not crashed on", () => {
@@ -93,11 +104,10 @@ describe("startRelocationNudge", () => {
   // inert, the un-ended playlist is never re-read, the landing watch can
   // never fire, and the seek is swallowed into the 20 s timeout. The tick
   // must first flip the frozen level(s) back to live.
-  it("re-opens an ENDLIST-frozen level (details.live=false -> true) before pulling the reload lever", () => {
+  it("re-opens an ENDLIST-frozen level (details.live=false -> true) before pulling the reload lever, on the immediate arm-time tick", () => {
     const details = { live: false };
     const hls = makeReloader([{ details }]);
     const stop = startRelocationNudge(() => hls, () => true);
-    vi.advanceTimersByTime(HARD_SEEK_REFRESH_NUDGE_MS);
     expect(
       details.live,
       "hls.js shouldLoadPlaylist refuses to reload a VOD (ENDLIST) level — the tick must re-open it or stopLoad/startLoad reload nothing",
@@ -110,7 +120,8 @@ describe("startRelocationNudge", () => {
     const details = { live: false };
     const hls = makeReloader([{ details }]);
     const stop = startRelocationNudge(() => hls, () => true);
-    vi.advanceTimersByTime(HARD_SEEK_REFRESH_NUDGE_MS);
+    // The immediate arm-time tick already re-opened it.
+    expect(details.live).toBe(true);
     // The re-read landed BEFORE the worker's next control tick appended the
     // seek run: the served playlist still ends, hls.js re-parses it as VOD.
     details.live = false;
@@ -149,7 +160,8 @@ describe("startRelocationNudge", () => {
     };
     const stop = startRelocationNudge(() => hls, () => true, () => 42.5);
     vi.advanceTimersByTime(HARD_SEEK_REFRESH_NUDGE_MS * 2);
-    expect(calls, "each tick must re-read the playlist WITHOUT aborting/re-kicking fragment loads").toEqual([
+    expect(calls, "each tick (including the immediate arm-time one) must re-read the playlist WITHOUT aborting/re-kicking fragment loads").toEqual([
+      `trigger(${LEVEL_LOADING_EVENT})`,
       `trigger(${LEVEL_LOADING_EVENT})`,
       `trigger(${LEVEL_LOADING_EVENT})`,
     ]);
