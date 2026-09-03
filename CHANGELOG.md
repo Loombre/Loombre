@@ -32,7 +32,11 @@ are the version axis.
   moment the restarted run exists. Windows servers no longer pace the
   head of every run (`-readrate_initial_burst 30`), which alone was
   costing ~6 s per seek there. Rapid seeks coalesce client-side; the
-  worker reacts in 100 ms and no longer rewrites unchanged playlists.
+  worker reacts in 100 ms and no longer rewrites unchanged playlists; and
+  the player's forced playlist reloads no longer push its next natural
+  refresh out by one interval each (the 10–40 s freeze right after a seek
+  landed on the old build). The video pauses at the seek and resumes at
+  the landing instead of playing the abandoned run under the spinner.
   (docs/PLAYBACK.md §9 "Segment duration"; reports/state/DECISIONS.md
   SPF-1–SPF-6.)
 - Player: playback failures name their cause. Every unavailable screen

@@ -652,7 +652,7 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
     apiGet("/playback/sessions/{id}", { params: { path: { id: sessionId } } })
       .then((current) => {
         if (current.status === "failed") {
-          setUnavailableReasons(sessionFailureReasons(current.errorCode));
+          setUnavailableReasons(sessionFailureReasons(current.errorCode, current.errorDetail));
           setUnavailableStatus(undefined);
           setUnavailableVariant("failed");
           setPhase("unavailable");

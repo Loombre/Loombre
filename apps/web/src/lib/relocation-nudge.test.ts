@@ -15,6 +15,7 @@ import {
   requestPlaylistOnlyReload,
   startRelocationNudge,
   type PlaylistReloader,
+  resetReloadAnchors,
 } from "./relocation-nudge.js";
 
 function makeReloader(levels: { details?: { live: boolean } }[] = []): PlaylistReloader & { calls: string[] } {
@@ -277,6 +278,47 @@ describe("requestPlaylistOnlyReload (d4-a1.112)", () => {
   it("LEVEL_LOADING_EVENT matches the real hls.js Events enum", async () => {
     const { default: Hls } = await import("hls.js");
     expect(LEVEL_LOADING_EVENT).toBe(Hls.Events.LEVEL_LOADING);
+  });
+});
+
+describe("resetReloadAnchors (peer live finding — nudge loads must not drift hls.js's reload schedule)", () => {
+  it("sets every loaded level's requestScheduled to -1 and leaves unloaded levels alone", () => {
+    const loaded: { live: boolean; requestScheduled?: number } = { live: true, requestScheduled: 987_654 };
+    const other: { live: boolean; requestScheduled?: number } = { live: true, requestScheduled: 12 };
+    const hls = { levels: [{ details: loaded }, {}, { details: other }] };
+    expect(resetReloadAnchors(hls)).toBe(2);
+    expect(loaded.requestScheduled).toBe(-1);
+    expect(other.requestScheduled).toBe(-1);
+  });
+
+  it("the playlist-only reload re-anchors BEFORE triggering LEVEL_LOADING (hls.js then schedules the next refresh from this load's own start, not from an accumulated future anchor)", () => {
+    const details: { live: boolean; requestScheduled?: number } = { live: true, requestScheduled: 555_000 };
+    const seen: number[] = [];
+    const hls: PlaylistReloader = {
+      levels: [{ details, uri: "http://localhost:3001/hls/v0/media.m3u8" }],
+      stopLoad: () => undefined,
+      startLoad: () => undefined,
+      trigger: () => {
+        seen.push(details.requestScheduled ?? Number.NaN);
+        return undefined;
+      },
+    };
+    expect(requestPlaylistOnlyReload(hls)).toBe(true);
+    expect(seen).toEqual([-1]);
+  });
+
+  it("the stopLoad/startLoad fallback tick re-anchors too", () => {
+    vi.useFakeTimers();
+    try {
+      const details: { live: boolean; requestScheduled?: number } = { live: true, requestScheduled: 555_000 };
+      const hls = makeReloader([{ details }]);
+      const stop = startRelocationNudge(() => hls, () => true);
+      expect(details.requestScheduled).toBe(-1);
+      expect(hls.calls).toContain("stopLoad");
+      stop();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

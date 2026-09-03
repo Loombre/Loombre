@@ -85,6 +85,39 @@ export interface ReloaderLevelDetails {
   /** hls.js `LevelDetails.live` — false once the parsed playlist carried
    *  `#EXT-X-ENDLIST`. */
   live: boolean;
+  /** hls.js `LevelDetails.requestScheduled` (public, level-details.ts):
+   *  the anchor its live-reload timer is computed from. See
+   *  `resetReloadAnchors` for why every nudge load resets it. */
+  requestScheduled?: number;
+}
+
+/**
+ * Re-anchor hls.js's playlist reload schedule before a NUDGE load.
+ *
+ * hls.js advances `details.requestScheduled` by one reload interval on
+ * EVERY completed playlist load (base-playlist-controller.ts,
+ * `requestScheduled += reloadInterval` unless the anchor already sits more
+ * than an interval in the past), and its next natural refresh fires at
+ * `requestScheduled − now`. A 1 Hz nudge therefore pushed the anchor one
+ * interval further into the future per tick, and after the landing the
+ * client slept off the accumulated drift — measured live on the pre-SPF
+ * build by the peer session: 12.3 s to the first post-landing refresh
+ * with 12 s buffered, i.e. a guaranteed freeze right after every hard
+ * seek that took more than a couple of ticks, independent of segment
+ * length. Setting the anchor to -1 makes hls.js re-anchor the load to
+ * its own start time (`requestScheduled === -1` branch), so the last
+ * nudge before the landing schedules the next refresh exactly one
+ * targetduration later. Returns how many levels were re-anchored.
+ */
+export function resetReloadAnchors(hls: Pick<PlaylistReloader, "levels">): number {
+  let reset = 0;
+  for (const level of hls.levels) {
+    if (level.details) {
+      level.details.requestScheduled = -1;
+      reset += 1;
+    }
+  }
+  return reset;
 }
 
 /**
@@ -172,6 +205,7 @@ export function requestPlaylistOnlyReload(hls: PlaylistReloader): boolean {
   const index = pickReloadLevelIndex(hls);
   if (index < 0) return false;
   const level = hls.levels[index]!;
+  resetReloadAnchors(hls);
   hls.trigger(LEVEL_LOADING_EVENT, {
     url: level.uri!,
     level: index,
@@ -234,6 +268,7 @@ export function startRelocationNudge(
     // at exactly this cadence; the verify-A 503 hammer). The fallback
     // remains for reloaders without the trigger/uri surface.
     if (!requestPlaylistOnlyReload(hls)) {
+      resetReloadAnchors(hls);
       hls.stopLoad();
       hls.startLoad(getResumePositionSec ? getResumePositionSec() : -1, true);
     }

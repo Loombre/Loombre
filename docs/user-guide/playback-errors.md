@@ -37,7 +37,7 @@ These come from the conversion (transcoding) pipeline on the server.
 | `transcode-disk-full` | The server ran out of space in its conversion staging folder. | Free disk space (or move staging to a bigger disk) on the server. |
 | `transcode-killed` | The conversion process was killed by the operating system, usually for running out of memory. | Retry; lower the quality ladder or the simultaneous-conversions setting if it recurs. |
 | `transcode-failed` | The conversion stopped for a reason the server didn't recognise. | Retry; the detail line and the server logs have the specifics. |
-| `evicted-for-admission` | Your paused session was released to make room for another viewer. | Press play — you'll pick up where you left off. |
+| `evicted-for-admission` | Your session was closed to free the server for another viewer — it had been paused or idle for a while. | Press play to start again. |
 | `heartbeat-timeout` | The server stopped hearing from this player and closed the session as idle. | Press play to start a fresh session. |
 | `playback-session-ended` | The server closed the session — another device or tab took over, or an administrator ended it. | Press play to start a fresh session. |
 | `playback-session-failed` | The server marked the session failed without recording a reason. | Retry; check the server logs. |
