@@ -76,7 +76,7 @@ describe("resolveServerPolicy", () => {
     expect(policy.audioTranscodeCodecPriority).toEqual(["opus", "aac"]);
     expect(policy.maxSimultaneousTranscodes).toBe(1); // tier-0 default
     expect(policy.ladderRungs).toEqual(DEFAULT_LADDER_RUNGS);
-    expect(policy.segmentDurationSec).toBe(6);
+    expect(policy.segmentDurationSec).toBe(2); // SPF-1: 6 -> 2
     expect(policy.hevcEncodePreferred).toBe(false); // NO_CAPS never verifies hevc encode
   });
 

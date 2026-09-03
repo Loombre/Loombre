@@ -114,7 +114,9 @@ export function resolveServerPolicy(
     audioTranscodeCodecPriority: ["opus", "aac"],
     maxSimultaneousTranscodes: settings.maxSimultaneousTranscodes,
     ladderRungs: settings.ladderRungs,
-    segmentDurationSec: 6,
+    // SPF-1: 6 -> 2 (see packages/playback-engine/src/types.ts's
+    // `ServerPolicy.segmentDurationSec` literal, which this must match).
+    segmentDurationSec: 2,
     hevcEncodePreferred,
     // VERBATIM — deliberately NOT `&& av1Verified` (docs/PLAYBACK.md §2.4,
     // LD-7). hevc's preference is resolved two lines up because its only
