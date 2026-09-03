@@ -74,6 +74,42 @@ export interface ResolveServerPolicyEnv {
   allowTranscode?: string;
 }
 
+/**
+ * SPF-10 — the CAPABILITY half of `hevcEncodePreferred` (§2.4's other half,
+ * the operator PREFERENCE setting, is ANDed in by the caller below).
+ *
+ * `caps.backends` always carries a `software` entry whose `encode` array
+ * includes `hevc` (resolve-caps.ts's fallback synthesizes it; every real
+ * probe row verifies libx265 too) — treating ANY backend's hevc encode as
+ * "verified" therefore made this true on EVERY box, hardware or not. Two
+ * measured costs that hid behind that: (1) a software-only Tier-0 box would
+ * encode libx265 `veryfast`, 2-4x slower than libx264, and cannot keep a
+ * >=1080p ladder rung realtime; (2) a box whose hardware encoder only does
+ * h264 (older NVENC/QSV/VAAPI/AMF) would still get an hevc-swapped ladder
+ * (ladder.ts only checks `policy.hevcEncodePreferred` + device support, not
+ * caps), fail hardware.ts's `encodeCoversTargets` for that ladder, and fall
+ * all the way to full software with no `-hwaccel` at all — the WORST route
+ * on that box, chosen instead of its own working hardware h264 route.
+ *
+ * The fix: a non-software backend that verifies hevc encode is real
+ * evidence software never was. Failing that, software hevc is preferred
+ * ONLY when there is genuine CPU headroom (tier >= 1) AND no hardware
+ * encode route exists at all (a non-software backend verifying h264 means
+ * THAT route should win, not a software hevc swap) AND software itself
+ * verifies hevc. Tier 0 — the small-box tier this run's whole complaint is
+ * about — never prefers software hevc: it has no CPU headroom to spend on
+ * the 2-4x cost, and if a hardware route exists this rule already lost to
+ * it above.
+ */
+function hevcVerified(caps: VerifiedCapabilities, tier: 0 | 1 | 2): boolean {
+  const nonSoftware = caps.backends.filter((b) => b.backend !== "software");
+  if (nonSoftware.some((b) => b.encode.includes("hevc"))) return true;
+  if (tier < 1) return false;
+  if (nonSoftware.some((b) => b.encode.length > 0)) return false;
+  const software = caps.backends.find((b) => b.backend === "software");
+  return software !== undefined && software.encode.includes("hevc");
+}
+
 /** The four transcode.* effective values (packages/shared/src/
  *  settings-registry.ts), already resolved by the caller (env-pin > DB >
  *  default, A8) — this module never reads SettingsService's cache itself,
@@ -102,8 +138,7 @@ export function resolveServerPolicy(
 ): ServerPolicy {
   const tier = parseEnvTier(env.tier);
   const allowTranscode = parseEnvBoolean(env.allowTranscode, true);
-  const hevcVerified = caps.backends.some((b) => b.encode.includes("hevc"));
-  const hevcEncodePreferred = settings.hevcEncodePreferred && hevcVerified;
+  const hevcEncodePreferred = settings.hevcEncodePreferred && hevcVerified(caps, tier);
 
   return {
     allowTranscode,
