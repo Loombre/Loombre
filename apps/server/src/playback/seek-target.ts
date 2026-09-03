@@ -21,8 +21,11 @@
 
 import { clampSeekTargetMs } from "../common/served-playlist.js";
 
-/** One nominal served-playlist segment (§9.1.5 — the same 6 s the
- *  hls-file controller's derivation arithmetic uses). */
+/** SPF-1: kept at 6_000ms (three nominal 2s segments, not one nominal 6s
+ *  segment) rather than re-derived from the new 2s nominal segment — this
+ *  is the retained, QA-verified margin against an `-ss` landing inside the
+ *  final GOP (browser-player-F4), and that hazard's size does not shrink
+ *  just because the segment-duration constant did. */
 export const EOF_SEEK_MARGIN_MS = 6_000;
 
 /** `[0, max(0, durationMs − one nominal segment)]` — see the module

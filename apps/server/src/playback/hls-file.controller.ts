@@ -86,7 +86,7 @@
 // wrong by construction: `-hls_time {SEG_DUR}` is a LOWER bound and
 // `-force_key_frames expr:gte(t,n_forced*{SEG_DUR})`
 // (packages/playback-engine/src/args/builder.ts §6) cuts at the first
-// keyframe AT OR AFTER each mark, so a real segment is 6.006s..9s+ and the
+// keyframe AT OR AFTER each mark, so a real segment is 2.002s..3s+ and the
 // error COMPOUNDS with the index — tens of seconds by the middle of a
 // feature. The derivation lives in ../common/served-playlist.ts (shared
 // with the progress-ingestion path, which needs the same timeline
@@ -154,16 +154,17 @@ import { resolveViewer } from "./viewer.js";
 import { storedDecision, storedLadder } from "./stored-plan-facts.js";
 
 const MANIFEST_POLL_TIMEOUT_MS = 8_000;
-const MANIFEST_POLL_INTERVAL_MS = 250;
-const SEGMENT_DURATION_SEC = 6;
-/** gap-F6: the implicit-seek threshold — one full live window ahead of
- *  `produced_segment` (worker `SEGMENT_RETENTION_SEC` 120s / 6s segments).
- *  Anything within it is "not yet produced, but in reach": the worker is
- *  producing toward it and a restart would be churn. It deliberately sits
- *  ABOVE the web client's forward-buffer ceiling (90s = 15 segments,
+const MANIFEST_POLL_INTERVAL_MS = 100;
+const SEGMENT_DURATION_SEC = 2;
+/** SPF-1: 120s retention / 2s segments. gap-F6: the implicit-seek
+ *  threshold — one full live window ahead of `produced_segment` (worker
+ *  `SEGMENT_RETENTION_SEC` 120s / `SEGMENT_DURATION_SEC`). Anything within
+ *  it is "not yet produced, but in reach": the worker is producing toward
+ *  it and a restart would be churn. It deliberately sits ABOVE the web
+ *  client's forward-buffer ceiling (90s = 45 segments,
  *  apps/web/src/lib/hls-js-config.ts), so ordinary buffering can never
  *  trip an implicit seek. */
-const LIVE_WINDOW_SEGMENTS = 20;
+const LIVE_WINDOW_SEGMENTS = 120 / SEGMENT_DURATION_SEC;
 
 /** gap-F6 round 3: how far BELOW the session's recorded forward
  *  progression (`highest_served_segment`, d4-f2) an ENOENT index must sit
@@ -175,7 +176,9 @@ const LIVE_WINDOW_SEGMENTS = 20;
  *  not a seek. A REAL backward seek that reaches the ENOENT path at all
  *  targets pruned history — necessarily more than the whole 120s
  *  retention window behind the live edge, far beyond this hysteresis;
- *  anything within it is still on disk and never gets here. */
+ *  anything within it is still on disk and never gets here. This bounds a
+ *  COUNT of out-of-order hls.js requests, not a duration, so it stays 3
+ *  independent of the segment-duration change (SPF-1). */
 const BACKWARD_JUMP_HYSTERESIS_SEGMENTS = 3;
 
 /** gap-F6 round 3: how close a derived target may sit to a LATER run's
@@ -183,10 +186,11 @@ const BACKWARD_JUMP_HYSTERESIS_SEGMENTS = 3;
  *  already performed". The original one-nominal-segment (6s) tolerance
  *  only absorbed exact-index retries; neighbouring raced indexes derive
  *  targets a segment or three apart (live: run2/run3 origins 8_810ms
- *  apart, spawned 0.8s apart) and each spawned another restart. Three
- *  nominal segments matches the backward-jump hysteresis above — the
- *  same "adjacent is a race, distant is intent" boundary on the ms axis. */
-const ALREADY_ANSWERED_TOLERANCE_MS = BACKWARD_JUMP_HYSTERESIS_SEGMENTS * SEGMENT_DURATION_SEC * 1000;
+ *  apart, spawned 0.8s apart) and each spawned another restart. SPF-1: an
+ *  explicit 18_000ms constant — the ms meaning the round-3 evidence sized
+ *  is what matters here, not a derivation from the (now smaller) nominal
+ *  segment duration. */
+const ALREADY_ANSWERED_TOLERANCE_MS = 18_000;
 
 /** 503 details (same problem code for all three — the distinction is
  *  advisory for humans/logs; clients key off 503 + Retry-After alone).
@@ -413,7 +417,23 @@ export class PlaybackHlsFileController {
       // DECISION: keep serving BOTH — this route does not need to (and
       // does not) distinguish suspended_by_throttle at all; "suspended"
       // itself is the servable state, regardless of which side wrote it.
-      const manifestServable = session.status === "active" || session.status === "suspended";
+      //
+      // SPF-4: a PENDING seek (`seekTargetMs !== null` — written by POST
+      // /seek or the segment-GET implicit-seek trigger, not yet consumed
+      // by the worker's restart transaction) holds the manifest exactly
+      // like `status === 'seeking'` does, even while `status` still reads
+      // 'active'/'suspended' from before the write. The web client reloads
+      // the playlist at the seek's 202 response; without this hold that
+      // reload would race the worker's poll tick and win, handing back the
+      // STALE pre-seek playlist, and the client would then sit idle until
+      // its next 1s nudge (apps/web/src/lib/relocation-nudge.ts) instead of
+      // landing the moment the new run goes active. The absorbed-seek case
+      // (a request the write side folds into the already-active run, no
+      // restart needed) clears this column within one worker tick, so the
+      // hold this adds is short — bounded by the same poll cadence and
+      // deadline below, never a new wait class of its own.
+      const manifestServable =
+        (session.status === "active" || session.status === "suspended") && session.seekTargetMs === null;
       if (manifestServable && session.producedSegment !== null && session.stagingDir) {
         try {
           const text = await readFile(join(session.stagingDir, "media.m3u8"), "utf8");

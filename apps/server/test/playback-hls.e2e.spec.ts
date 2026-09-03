@@ -152,6 +152,10 @@ function casual() {
   };
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /** Creates a real (forced-transcode) session via the HTTP API, then
  *  simulates the worker's OWN column/file writes for it — see this file's
  *  header for why. Returns the session id + its (test-owned) staging dir. */
@@ -366,6 +370,61 @@ describe("GET /playback/sessions/{id}/hls/media.m3u8", () => {
     expect(res.status).toBe(401);
     expect(JSON.stringify(res.body)).not.toContain("not-a-real-token");
   });
+
+  // SPF-4: a PENDING seek (`seek_target_ms !== null`, written by POST
+  // /seek or the segment-GET implicit-seek trigger and not yet consumed by
+  // the worker's restart transaction) holds the manifest exactly like
+  // `status === 'seeking'` does, even while `status` still reads
+  // 'active' from before the write — see hls-file.controller.ts's
+  // `serveMediaPlaylist`. Without this the client's 202-time playlist
+  // reload would win the race against the worker's own poll tick, hand
+  // back the STALE pre-seek playlist, and leave the client idle until its
+  // next 1s relocation nudge instead of landing the moment the new run
+  // goes active.
+  it("SPF-4: a PENDING seek (seek_target_ms set) holds the manifest — GET waits for it to clear, then serves 200", async () => {
+    const { sessionId, sessionDir } = await createSimulatedTranscodeSession();
+    mkdirSync(sessionDir, { recursive: true });
+    const playlistText = "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:2\n#EXTINF:2,\nrun0/s000000.m4s\n";
+    writeFileSync(path.join(sessionDir, "media.m3u8"), playlistText, "utf8");
+    await markSessionActiveWithProducedSegment(sessionId, sessionDir, 0);
+
+    const setDb = createDb(process.env["DATABASE_URL"]!);
+    try {
+      await setDb
+        .updateTable("playback_sessions")
+        .set({ seek_target_ms: 30_000, updated_at_ms: Date.now() })
+        .where("id", "=", sessionId)
+        .execute();
+    } finally {
+      await setDb.destroy();
+    }
+
+    const startedAtMs = Date.now();
+    const getPromise = admin().get(`/playback/sessions/${sessionId}/hls/media.m3u8`);
+
+    // Simulates the worker's own restart transaction consuming the seek
+    // (`consumeSeekTarget` nulls the column) after it has actually picked
+    // the request up — the GET above must still be parked at this point.
+    await sleep(400);
+    const clearDb = createDb(process.env["DATABASE_URL"]!);
+    try {
+      await clearDb
+        .updateTable("playback_sessions")
+        .set({ seek_target_ms: null, updated_at_ms: Date.now() })
+        .where("id", "=", sessionId)
+        .execute();
+    } finally {
+      await clearDb.destroy();
+    }
+
+    const res = await getPromise;
+    const elapsedMs = Date.now() - startedAtMs;
+    expect(res.status).toBe(200);
+    expect(res.text).toBe(playlistText);
+    // The GET must have actually been held, not raced through on an
+    // earlier poll tick before the column was cleared.
+    expect(elapsedMs).toBeGreaterThanOrEqual(350);
+  }, 15_000);
 });
 
 describe("GET /playback/sessions/{id}/hls/{file} — segment/init serving", () => {
@@ -410,23 +469,25 @@ describe("GET /playback/sessions/{id}/hls/{file} — segment/init serving", () =
     }
   });
 
-  it("a segment BEYOND the live window (> 20 segments ahead of produced_segment) -> 503 + Retry-After, and writes seek_target_ms", async () => {
+  it("a segment BEYOND the live window (> 60 segments ahead of produced_segment) -> 503 + Retry-After, and writes seek_target_ms", async () => {
     const { sessionId } = await setupWithSegments(0);
     // gap-F6 widened the implicit-seek threshold from 3 segments to one
-    // full 120s live window (20 segments) — index 30 is genuinely out of
-    // window and still restarts.
-    const res = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000030.m4s`);
+    // full 120s live window (SPF-1: 60 segments at the 2s nominal segment
+    // duration) — index 90 is genuinely out of window and still restarts.
+    // setupWithSegments writes no media.m3u8, so the derivation falls back
+    // to the last-resort nominal arithmetic below.
+    const res = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000090.m4s`);
     expect(res.status).toBe(503);
     expect(res.headers["retry-after"]).toBe("1");
 
     const db = createDb(process.env["DATABASE_URL"]!);
     try {
       const row = await db.selectFrom("playback_sessions").select(["seek_target_ms"]).where("id", "=", sessionId).executeTakeFirstOrThrow();
-      expect(row.seek_target_ms).toBe(30 * 6 * 1000); // segmentIndex * segmentDurationSec(6) * 1000
+      expect(row.seek_target_ms).toBe(90 * 2 * 1000); // segmentIndex * segmentDurationSec(2) * 1000
     } finally {
       await db.destroy();
     }
-  });
+  }, 15_000);
 
   // ── gap-F6: the implicit-seek trigger must not churn runs ─────────────
   // QA 2026-08-20/21 (P1): hls.js's ordinary forward-buffering (no caps
@@ -437,7 +498,7 @@ describe("GET /playback/sessions/{id}/hls/{file} — segment/init serving", () =
   // the retried URI, each hls.js retry of the SAME dead URI restarted the
   // run AGAIN (run0→run7, compounding relocation, phantom progress).
   // "Outside the produced window" now means outside the 120s LIVE WINDOW
-  // (SEGMENT_RETENTION_SEC / 6s = 20 segments), and a URI naming a
+  // (SEGMENT_RETENTION_SEC / 2s = 60 segments), and a URI naming a
   // SUPERSEDED run is a stale retry by construction — never a new seek.
 
   it("gap-F6: a not-yet-produced segment WITHIN the live window -> 503 + Retry-After, and does NOT write seek_target_ms", async () => {
@@ -518,10 +579,10 @@ describe("GET /playback/sessions/{id}/hls/{file} — segment/init serving", () =
     writeServedPlaylist(sessionDir, [run0, run1]);
     await markSessionActiveWithProducedSegment(sessionId, sessionDir, 20);
 
-    // s000060 is 40 ahead (beyond the 20-segment window) but names run0,
-    // which no longer owns segment 60 — run1 does. A CURRENT playlist
+    // s000090 is 70 ahead (beyond the 60-segment window) but names run0,
+    // which no longer owns segment 90 — run1 does. A CURRENT playlist
     // could never have produced this URI: it is a pre-restart retry.
-    const res = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000060.m4s`);
+    const res = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000090.m4s`);
     expect(res.status).toBe(503);
     expect(await readSeekTargetMs(sessionId)).toBeNull();
   }, 15_000);
@@ -606,7 +667,7 @@ describe("GET /playback/sessions/{id}/hls/{file} — segment/init serving", () =
     expect(
       await readSeekTargetMs(sessionId),
       "a first-touch backward jump never restarted — the 503-forever wedge",
-    ).toBe(3 * 6 * 1000);
+    ).toBe(3 * 2 * 1000);
 
     // The worker consumes the seek (nulls the column) and relocates. The
     // client, still on its old playlist, retries the same dead URI: the
@@ -628,7 +689,7 @@ describe("GET /playback/sessions/{id}/hls/{file} — segment/init serving", () =
   // last URI this client named", not "how far has this client actually
   // got". The backward-jump gate needs the second question. hls.js probes
   // ahead of the produced edge as a matter of course (it buffers up to 90s
-  // and the live window admits 20 segments), and every one of those probes
+  // and the live window admits 60 segments), and every one of those probes
   // used to raise the baseline: the client's OWN next fragment — pruned
   // out from under it, round 3's prune race — then sat far below the
   // inflated baseline and read as a backward seek, restarting the run for
@@ -643,10 +704,10 @@ describe("GET /playback/sessions/{id}/hls/{file} — segment/init serving", () =
     const served = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000008.m4s`);
     expect(served.status).toBe(200);
 
-    // hls.js buffers ahead: s000044 is exactly at the live-window ceiling
-    // (produced 24 + 20), so it is NOT an implicit seek — a plain
-    // not-yet-produced 503. It still writes requested_segment = 44.
-    const probe = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000044.m4s`);
+    // hls.js buffers ahead: s000084 is exactly at the live-window ceiling
+    // (produced 24 + 60), so it is NOT an implicit seek — a plain
+    // not-yet-produced 503. It still writes requested_segment = 84.
+    const probe = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000084.m4s`);
     expect(probe.status).toBe(503);
     expect(
       await readSeekTargetMs(sessionId),
@@ -688,7 +749,7 @@ describe("GET /playback/sessions/{id}/hls/{file} — segment/init serving", () =
 
     // A 503 never moves it: a probe inside the live window, and a pruned
     // index behind the produced edge.
-    expect((await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000044.m4s`)).status).toBe(503);
+    expect((await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000084.m4s`)).status).toBe(503);
     rmSync(path.join(sessionDir, "run0", "s000012.m4s"));
     expect((await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000012.m4s`)).status).toBe(503);
     expect(await readWatermark(), "a refused request moved the SERVED watermark").toBe(8);
@@ -779,7 +840,7 @@ describe("GET /playback/sessions/{id}/hls/{file} — segment/init serving", () =
     const checkDb = createDb(process.env["DATABASE_URL"]!);
     try {
       const row = await checkDb.selectFrom("playback_sessions").select(["seek_target_ms"]).where("id", "=", sessionId).executeTakeFirstOrThrow();
-      expect(row.seek_target_ms).toBe(3 * 6 * 1000);
+      expect(row.seek_target_ms).toBe(3 * 2 * 1000);
     } finally {
       await checkDb.destroy();
     }
@@ -887,18 +948,18 @@ describe("GET /playback/sessions/{id}/hls/{file} — segment/init serving", () =
     await markSessionActiveWithProducedSegment(sessionId, sessionDir, 9);
 
     // ── SEEK 1 (forward, past the produced window) ──────────────────────
-    // (index 30: beyond the gap-F6 live-window threshold of produced+20,
+    // (index 90: beyond the gap-F6 live-window threshold of produced+60,
     // so the implicit-seek trigger genuinely fires.)
-    const forward = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000030.m4s`);
+    const forward = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000090.m4s`);
     expect(forward.status).toBe(503);
     expect(forward.headers["retry-after"]).toBe("1");
 
     // The whole listed window is exact (67_066 ms of real content for
     // indices 0..9); indices past its end extrapolate at the MEASURED mean
-    // (6_706.6 ms), never the nominal 6_000: 67_066 + (30 - 9 - 1) *
-    // 6_706.6 = 201_198 ms. The nominal answer, 180_000 ms, is 21 seconds
-    // of content early — and that error only grows with the index.
-    expect(await readSeekTargetMs(sessionId)).toBe(201_198);
+    // (6_706.6 ms), never the nominal 2_000: 67_066 + (90 - 9 - 1) *
+    // 6_706.6 = 603_594 ms. The nominal answer, 180_000 ms, is far short —
+    // and that error only grows with the index.
+    expect(await readSeekTargetMs(sessionId)).toBe(603_594);
 
     // ── the worker restarts, produces run1, retention prunes run0's head ─
     const run1: ServedRun = {
@@ -998,15 +1059,15 @@ describe("GET /playback/sessions/{id}/hls/{file} — segment/init serving", () =
     await markSessionActiveWithProducedSegment(sessionId, sessionDir, 29);
 
     // ── SEEK 1: forward, past the produced window, inside run 2 ─────────
-    // (index 50: beyond the gap-F6 live-window threshold of produced+20 —
+    // (index 100: beyond the gap-F6 live-window threshold of produced+60 —
     // and named under run2, the OWNING run, so it is not a stale retry.)
-    const forward = await admin().get(`/playback/sessions/${sessionId}/hls/run2/s000050.m4s`);
+    const forward = await admin().get(`/playback/sessions/${sessionId}/hls/run2/s000100.m4s`);
     expect(forward.status).toBe(503);
-    // Owner is run 2 (startSegment 20 <= 50), anchor 120_000. Its listed
-    // segments 20..29 contribute 10 x 7_007 = 70_070; the twenty not yet
-    // produced (30..49) extrapolate at run 2's OWN measured mean, 7_007,
-    // for 140_140 more. 120_000 + 210_210 = 330_210.
-    expect(await readSeekTargetMs(sessionId)).toBe(330_210);
+    // Owner is run 2 (startSegment 20 <= 100), anchor 120_000. Its listed
+    // segments 20..29 contribute 10 x 7_007 = 70_070; the seventy not yet
+    // produced (30..99) extrapolate at run 2's OWN measured mean, 7_007,
+    // for 490_490 more. 120_000 + 70_070 + 490_490 = 680_560.
+    expect(await readSeekTargetMs(sessionId)).toBe(680_560);
 
     // ── SEEK 2: backward across runs, into run 0's PRUNED head ──────────
     // ahead is negative, so this is the ENOENT path, and the owning run is
@@ -1043,13 +1104,14 @@ describe("GET /playback/sessions/{id}/hls/{file} — segment/init serving", () =
     writeServedPlaylist(sessionDir, [run0]);
     await markSessionActiveWithProducedSegment(sessionId, sessionDir, 9);
 
-    const res = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000030.m4s`);
+    const res = await admin().get(`/playback/sessions/${sessionId}/hls/run0/s000090.m4s`);
     expect(res.status).toBe(503);
     // Playlist-only derivation, unchanged: 10 listed x 6_006 = 60_060, plus
-    // twenty unproduced at the measured mean 6_006 = 180_180. (Index 30 —
-    // beyond the gap-F6 live-window threshold, so the trigger fires; no
-    // run rows exist, so nothing can be a stale-run retry.)
-    expect(await readSeekTargetMs(sessionId)).toBe(180_180);
+    // eighty unproduced at the measured mean 6_006 = 480_480. (Index 90 —
+    // beyond the gap-F6 live-window threshold (SPF-1: 60 segments), so the
+    // trigger fires; no run rows exist, so nothing can be a stale-run
+    // retry.)
+    expect(await readSeekTargetMs(sessionId)).toBe(540_540);
   }, 20_000);
 
   it("DOUBLE SEEK back-then-forward: the derived target is clamped to the playable ceiling (durationMs − one nominal segment)", async () => {
@@ -1467,7 +1529,7 @@ describe("GET /playback/sessions/{id}/hls/v{K}/… — the variant path family (
     const { sessionId } = await activeSessionWithPlaylist();
     await setActiveRung(sessionId, 0);
 
-    const res = await admin().get(`/playback/sessions/${sessionId}/hls/v1/run0/s000030.m4s`);
+    const res = await admin().get(`/playback/sessions/${sessionId}/hls/v1/run0/s000090.m4s`);
     expect(res.status).toBe(503);
     expect(res.headers["retry-after"]).toBe("1");
 
@@ -1485,7 +1547,7 @@ describe("GET /playback/sessions/{id}/hls/v{K}/… — the variant path family (
     const { sessionId } = await activeSessionWithPlaylist();
     await setActiveRung(sessionId, 1);
 
-    const res = await admin().get(`/playback/sessions/${sessionId}/hls/v1/run0/s000030.m4s`);
+    const res = await admin().get(`/playback/sessions/${sessionId}/hls/v1/run0/s000090.m4s`);
     expect(res.status).toBe(503);
 
     // Absorb-on-match applies to the RUNG half only — folding both into one
