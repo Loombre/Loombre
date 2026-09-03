@@ -31,7 +31,7 @@ import {
   setThrottleSuspended,
   type TranscodeSessionRow,
 } from "@loombre/db/internal";
-import { nowMs as clockNowMs } from "@loombre/shared";
+import { nowMs as clockNowMs, type FfmpegFailureCode } from "@loombre/shared";
 import { resolveFfmpeg } from "../probe/ffprobe.js";
 import { substituteTokens, injectReadrate } from "./args.js";
 import {
@@ -290,7 +290,16 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
   }
   const file = await getMediaFileById(db, sessionRow.file_id);
   if (!file) {
-    await markSessionFailed(db, sessionId, { errorCode: TRANSCODE_ERROR_CODE_FAILED, stderrTail: `media file ${sessionRow.file_id} not found`, nowMs: now() });
+    // The referenced media_files row is gone (hard-deleted since the
+    // session was created) — the same viewer-facing story as ffmpeg
+    // itself failing to open a missing path, so it gets the SAME code
+    // (SPF-7) rather than the generic fallback.
+    const errorCode: FfmpegFailureCode = "transcode-input-missing";
+    await markSessionFailed(db, sessionId, {
+      errorCode,
+      stderrTail: `media file ${sessionRow.file_id} not found`,
+      nowMs: now(),
+    });
     return;
   }
 
@@ -754,7 +763,13 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
       }
 
       await markSessionFailed(db, sessionId, {
-        errorCode: exitClass.kind === "encoder-malfunction" ? TRANSCODE_ERROR_CODE_ENCODER_MALFUNCTION : TRANSCODE_ERROR_CODE_FAILED,
+        // `recovery.kind === "give-up"` at this point means exitClass is
+        // either "fatal" (never eligible for recovery at all) or
+        // "encoder-malfunction" with its retries exhausted — never
+        // "clean"/"killed-by-us" (the outer guard already ruled those
+        // out). Checked as `=== "fatal"` rather than the inverse so
+        // `.errorCode`/`.detail` narrow correctly.
+        errorCode: exitClass.kind === "fatal" ? exitClass.errorCode : TRANSCODE_ERROR_CODE_ENCODER_MALFUNCTION,
         stderrTail: currentRun.exitInfo.stderrTail,
         nowMs: now(),
       });

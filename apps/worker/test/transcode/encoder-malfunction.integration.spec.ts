@@ -590,7 +590,7 @@ describe("hardware encode-session death recovery (browser-player-F2)", () => {
   );
 
   it(
-    "a generic non-zero ffmpeg exit is still terminal on the FIRST failure (no retry, unchanged code)",
+    "a generic non-zero ffmpeg exit is still terminal on the FIRST failure (no retry), sub-classified by SPF-7's classifyFfmpegFailure",
     { timeout: 60_000 * TIME_SCALE },
     async () => {
       installFakeProcessTable();
@@ -606,7 +606,10 @@ describe("hardware encode-session death recovery (browser-player-F2)", () => {
       expect(spawns.length).toBe(1);
       const row = await readRow(sessionId);
       expect(row.status).toBe("failed");
-      expect(row.error_code).toBe("transcode-failed");
+      // GENERIC_FAILURE_STDERR is an "Error opening input: No such file or
+      // directory" tail — SPF-7's classifier reads that as the specific
+      // transcode-input-missing code, not the historical generic fallback.
+      expect(row.error_code).toBe("transcode-input-missing");
     },
   );
 });

@@ -52,11 +52,14 @@
  * reshaping this module.
  */
 
+import { classifyFfmpegFailure } from "@loombre/shared";
+
 /** The facts process.ts's `FfmpegRunResult` carries that bear on this
  *  decision (a structural subset, so a caller can pass the result
  *  straight in). */
 export interface FfmpegExitFacts {
   exitCode: number | null;
+  signal?: string | null;
   killedByUs: boolean;
   stderrTail: string;
 }
@@ -69,13 +72,22 @@ export type TranscodeExitClass =
   /** A hardware encode session died. The pipeline is fine; the session
    *  isn't. Bounded retry then software fallback — encoder-recovery.ts. */
   | { kind: "encoder-malfunction"; osStatus: number; symbol: string }
-  /** Anything else: a real, unrecoverable pipeline failure. */
-  | { kind: "fatal" };
+  /** Anything else: a real, unrecoverable pipeline failure. `errorCode`
+   *  and `detail` come straight from @loombre/shared's
+   *  `classifyFfmpegFailure` (SPF-7) — the same pure sub-classification
+   *  apps/server's session-plan.ts re-derives from the persisted
+   *  `stderrTail` to build the contract's `errorDetail`. */
+  | { kind: "fatal"; errorCode: string; detail: string | null };
 
 export type FfmpegExitClassifier = (facts: FfmpegExitFacts) => TranscodeExitClass;
 
 /** `playback_sessions.error_code` for a pipeline failure — the historical
- *  value, unchanged, and still what every non-VideoToolbox failure gets. */
+ *  fallback value, unchanged, and still what a failure this file's own
+ *  table cannot say anything more specific about gets (SPF-7's
+ *  `classifyFfmpegFailure` fallback code, re-exported here so every
+ *  existing import site — including the start-up failures in runner.ts
+ *  that never reach this file's `classifyFfmpegExit` at all — keeps using
+ *  ONE constant). */
 export const TRANSCODE_ERROR_CODE_FAILED = "transcode-failed";
 
 /**
@@ -147,5 +159,6 @@ export function classifyFfmpegExit(facts: FfmpegExitFacts): TranscodeExitClass {
   if (facts.exitCode === 0) return { kind: "clean" };
   const vt = findRetryableOsStatus(facts.stderrTail);
   if (vt) return { kind: "encoder-malfunction", osStatus: vt.osStatus, symbol: vt.symbol };
-  return { kind: "fatal" };
+  const failure = classifyFfmpegFailure({ stderrTail: facts.stderrTail, exitCode: facts.exitCode, signal: facts.signal ?? null });
+  return { kind: "fatal", errorCode: failure.code, detail: failure.detail };
 }

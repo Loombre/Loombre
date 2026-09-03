@@ -3914,6 +3914,8 @@ export interface components {
             media?: components["schemas"]["MediaInfo"];
             status: components["schemas"]["PlaybackSessionStatus"];
             errorCode: string | null;
+            /** @description One sanitized line derived from the worker-captured ffmpeg output when status is `failed` (control characters stripped, absolute filesystem paths reduced to their basename, capped at 200 characters); `null` otherwise, and `null` when no recognizable line was captured. Never the raw stderr log. */
+            errorDetail?: string | null;
             /** @description Relative URL to GET .../hls/master.m3u8 — the MULTI-VARIANT master playlist (docs/PLAYBACK.md §9.1), for EVERY HLS session including ladder-empty ones, which render a single-variant master so the client has ONE path and no branch. Its variant URIs are `v{K}/media.m3u8`, K being the rung's index in `plan.ladder`; every variant serves the same playlist bytes, and the `v{K}` prefix is how a client's ABR switch reaches the server (§9.1.1). Still null for direct-play sessions (docs/PLAYBACK.md §9 — direct-play bypasses HLS packaging entirely). */
             manifestUrl?: string | null;
             /** Format: int64 */

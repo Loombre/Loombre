@@ -64,12 +64,20 @@ describe("classifyFfmpegExit — the injectable, platform-free exit classifier",
     expect(result.symbol).toBe("kVTSessionMalfunctionErr");
   });
 
-  it("a generic non-zero exit is FATAL (no OSStatus, no recovery)", () => {
-    expect(classifyFfmpegExit({ exitCode: 1, killedByUs: false, stderrTail: GENERIC_FAILURE_STDERR })).toEqual({ kind: "fatal" });
+  it("a generic non-zero exit is FATAL (no OSStatus, no recovery), sub-classified by @loombre/shared's classifyFfmpegFailure (SPF-7)", () => {
+    expect(classifyFfmpegExit({ exitCode: 1, killedByUs: false, stderrTail: GENERIC_FAILURE_STDERR })).toEqual({
+      kind: "fatal",
+      errorCode: "transcode-input-missing",
+      detail: "[in#0 @ 0x600001b0c000] Error opening input: No such file or directory",
+    });
   });
 
-  it("an exit with a null code (spawn error / signal death) and no OSStatus is FATAL", () => {
-    expect(classifyFfmpegExit({ exitCode: null, killedByUs: false, stderrTail: "" })).toEqual({ kind: "fatal" });
+  it("an exit with a null code (spawn error / signal death) and no OSStatus is FATAL, classified as transcode-killed", () => {
+    expect(classifyFfmpegExit({ exitCode: null, killedByUs: false, stderrTail: "" })).toEqual({
+      kind: "fatal",
+      errorCode: "transcode-killed",
+      detail: null,
+    });
   });
 
   it("our own terminate() is never a failure of any kind", () => {
@@ -82,17 +90,17 @@ describe("classifyFfmpegExit — the injectable, platform-free exit classifier",
 
   it("the AVERROR_EXTERNAL code alone is NOT enough — the OSStatus is what identifies a dead VT session", () => {
     const stderr = "[out#0/hls @ 0x14a8e0a40] Terminating thread with return code -542398533 (Generic error in an external library)";
-    expect(classifyFfmpegExit({ exitCode: 1, killedByUs: false, stderrTail: stderr })).toEqual({ kind: "fatal" });
+    expect(classifyFfmpegExit({ exitCode: 1, killedByUs: false, stderrTail: stderr })).toEqual({ kind: "fatal", errorCode: "transcode-failed", detail: null });
   });
 
   it("an OSStatus with no VideoToolbox component in the tail is NOT claimed as a VT session death", () => {
     const stderr = "[libx265 @ 0x1] some unrelated message mentioning -17691 in passing";
-    expect(classifyFfmpegExit({ exitCode: 1, killedByUs: false, stderrTail: stderr })).toEqual({ kind: "fatal" });
+    expect(classifyFfmpegExit({ exitCode: 1, killedByUs: false, stderrTail: stderr })).toEqual({ kind: "fatal", errorCode: "transcode-failed", detail: null });
   });
 
   it("does not mistake a LONGER number containing the OSStatus digits for the OSStatus", () => {
     const stderr = "[hevc_videotoolbox @ 0x1] Error encoding frame: -176911";
-    expect(classifyFfmpegExit({ exitCode: 1, killedByUs: false, stderrTail: stderr })).toEqual({ kind: "fatal" });
+    expect(classifyFfmpegExit({ exitCode: 1, killedByUs: false, stderrTail: stderr })).toEqual({ kind: "fatal", errorCode: "transcode-failed", detail: null });
   });
 
   it("the two error codes are distinct, so the client can tell a dead encoder from a broken pipeline", () => {

@@ -632,6 +632,8 @@ describe("GET/DELETE /playback/sessions/{id}", () => {
     // Gap-closure regression: GET re-assembles media too, not just create.
     expect(got.body.media).toBeDefined();
     expect(got.body.media.container).toBe("mkv");
+    // SPF-7: an active session never carries an error detail.
+    expect(got.body.errorDetail).toBeNull();
 
     const ended = await admin().delete(`/playback/sessions/${sessionId}`);
     expect(ended.status).toBe(204);
@@ -639,6 +641,36 @@ describe("GET/DELETE /playback/sessions/{id}", () => {
     const gotAfter = await admin().get(`/playback/sessions/${sessionId}`);
     expect(gotAfter.status).toBe(200);
     expect(gotAfter.body.status).toBe("ended");
+  });
+
+  it("SPF-7: a failed session's GET carries errorCode + a path-stripped errorDetail derived from the worker's stderr tail", async () => {
+    const sessionId = await createDirectPlaySession();
+    const db = createDb(process.env["DATABASE_URL"]!);
+    try {
+      // Simulates what apps/worker/src/transcode/runner.ts's
+      // markSessionFailed actually persists: a specific error_code (SPF-7's
+      // classifyFfmpegFailure) plus the RAW ffmpeg stderr tail — the server
+      // never stores a separately-sanitized detail column.
+      await db
+        .updateTable("playback_sessions")
+        .set({
+          status: "failed",
+          error_code: "transcode-input-missing",
+          stderr_tail: "/srv/media/x.mkv: No such file or directory",
+        })
+        .where("id", "=", sessionId)
+        .execute();
+
+      const got = await admin().get(`/playback/sessions/${sessionId}`);
+      expect(got.status).toBe(200);
+      expect(got.body.status).toBe("failed");
+      expect(got.body.errorCode).toBe("transcode-input-missing");
+      expect(got.body.errorDetail).toBe("x.mkv: No such file or directory");
+      // The server-side directory must never leak into the response.
+      expect(JSON.stringify(got.body)).not.toContain("/srv/media");
+    } finally {
+      await db.destroy();
+    }
   });
 
   it("cross-user access is 404 for both GET and DELETE", async () => {
