@@ -1,0 +1,117 @@
+name: Install or upgrade problem
+description: The installer, the Docker Compose stack, first boot, the setup wizard, or an upgrade didn't go as documented.
+title: "[Install] "
+labels: ["bug", "install", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A few things that are **expected**, not bugs, during the beta:
+        - **Gatekeeper (macOS) and SmartScreen (Windows) warn about the installer.** The installers are deliberately unsigned; each platform guide has the exact click-through and the reasoning.
+        - **The very first boot takes a minute.** The embedded PostgreSQL runs `initdb` and every migration before the services report healthy.
+        - **The update check never announces a beta.** Testers move between betas by hand.
+
+        Everything else is fair game. The [troubleshooting page](https://www.loombre.com/docs/install/troubleshooting) covers the problems seen so far — if yours is there and the fix didn't work, say so below.
+
+        If a **checksum, minisign signature, or attestation failed to verify**, please say so prominently in the first line: that is treated as a serious report regardless of cause.
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before you file
+      options:
+        - label: I searched the existing issues and this isn't already reported.
+          required: true
+        - label: I checked the troubleshooting section of my platform's install guide.
+          required: false
+        - label: I verified the download (checksum, minisign, or attestation) before installing.
+          required: false
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: Install method
+      options:
+        - Docker Compose (published GHCR images)
+        - Docker Compose (built from source)
+        - Linux tarball (systemd)
+        - Windows installer (.exe)
+        - macOS .pkg (Apple Silicon)
+        - macOS .pkg (Intel)
+        - Running from source (pnpm dev)
+    validations:
+      required: true
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Where did it go wrong?
+      options:
+        - Downloading or verifying the release
+        - Running the installer / pulling the images
+        - Services starting for the first time (embedded PostgreSQL, ports, permissions)
+        - The first-run setup wizard
+        - Adding a library / reading the media folders
+        - Upgrading from an earlier version
+        - Uninstalling
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version you were installing
+      placeholder: 1.0.0-beta.1
+    validations:
+      required: true
+  - type: input
+    id: previous-version
+    attributes:
+      label: Version you were upgrading from (if an upgrade)
+      placeholder: e.g. 1.0.0-beta.1, or "fresh install"
+  - type: input
+    id: os
+    attributes:
+      label: Operating system and version
+      placeholder: e.g. Ubuntu 24.04, Debian 12 (Docker), Windows 11 24H2, macOS 15.6 on Apple Silicon, Synology DSM 7.2
+    validations:
+      required: true
+  - type: dropdown
+    id: tier
+    attributes:
+      label: Hardware tier
+      options:
+        - Not sure
+        - Tier-0 (4-core, 4 GB RAM — Intel N100 / Raspberry Pi 5 class)
+        - Tier-1 (desktop or laptop with an iGPU or entry dGPU, 8–16 GB RAM)
+        - Tier-2 (dedicated server with a discrete GPU, 16+ GB RAM)
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you run or click, what did you expect, and what did you get instead? Exact error text please.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Ideally the exact commands, in order, from the guide you were following.
+      placeholder: |
+        1.
+        2.
+        3.
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant configuration
+      description: For Docker, the non-secret parts of `loombre.env` and any compose overrides. For native installs, anything you changed from the defaults (ports, an external PostgreSQL, a custom data directory). **Never paste passwords, `LOOMBRE_JWT_SECRET`, or API keys.**
+      render: shell
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / installer output
+      description: |
+        Linux `journalctl -u loombre-server -n 200` · macOS `/Library/Logs/Loombre/server.out.log` (and the installer log via `Installer → Window → Installer Log`) · Windows `%ProgramData%\Loombre\logs\server.log` · Docker `docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env logs`.
+      render: shell
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else

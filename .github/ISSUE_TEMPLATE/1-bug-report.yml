@@ -1,0 +1,129 @@
+name: Bug report
+description: Something doesn't work the way it should. Playback and install problems have their own forms.
+title: "[Bug] "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing the beta — reports like this one are what turn `beta.1` into `rc.1`.
+
+        A couple of routing notes before you start:
+        - **Playback** (won't play, stutters, seeks badly, converts unexpectedly) → use the **Playback problem** form.
+        - **Install, first boot, or upgrade** → use the **Install or upgrade problem** form.
+        - **Security vulnerability** → please don't file it here. Use [private vulnerability reporting](https://github.com/Loombre/Loombre/security/advisories/new) instead (see `SECURITY.md`).
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before you file
+      options:
+        - label: I searched the existing issues and this isn't already reported.
+          required: true
+        - label: This is not a security vulnerability.
+          required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you see? Exact error text and screenshots help a lot.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The shortest path that shows the problem, starting from a state someone else can reach.
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: dropdown
+    id: reproducibility
+    attributes:
+      label: How often does it happen?
+      options:
+        - Every time
+        - Sometimes
+        - Happened once so far
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Loombre version
+      description: Admin **Dashboard → System** card, or `loombre --version` where the CLI is installed.
+      placeholder: 1.0.0-beta.1
+    validations:
+      required: true
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: Install method
+      options:
+        - Docker Compose (published GHCR images)
+        - Docker Compose (built from source)
+        - Linux tarball (systemd)
+        - Windows installer (.exe)
+        - macOS .pkg (Apple Silicon)
+        - macOS .pkg (Intel)
+        - Running from source (pnpm dev)
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Server operating system and version
+      placeholder: e.g. Ubuntu 24.04, Windows 11 24H2, macOS 15.6, Synology DSM 7.2 (Docker)
+    validations:
+      required: true
+  - type: dropdown
+    id: tier
+    attributes:
+      label: Hardware tier of the server
+      description: See the system-requirements table in the install guide if you're unsure.
+      options:
+        - Not sure
+        - Tier-0 (4-core, 4 GB RAM — Intel N100 / Raspberry Pi 5 class)
+        - Tier-1 (desktop or laptop with an iGPU or entry dGPU, 8–16 GB RAM)
+        - Tier-2 (dedicated server with a discrete GPU, 16+ GB RAM)
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of Loombre is involved?
+      options:
+        - Web client (browsing, search, settings screens)
+        - Server / API
+        - Worker (scanning, metadata, jobs)
+        - Admin dashboard and settings
+        - Users, permissions, invitations
+        - Restricted content
+        - Remote access (Loombre Remote, Tunnel, Direct, reverse proxy)
+        - Data export / import, backup
+        - Other / not sure
+  - type: input
+    id: client
+    attributes:
+      label: Browser or client device (if the web client is involved)
+      placeholder: e.g. Chrome 128 on Windows 11, Safari on iPadOS 18, Firefox 130 on Fedora
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / error output
+      description: |
+        Whatever is relevant from around the time it happened. Where to look:
+        Linux `journalctl -u loombre-server -n 200` (and `loombre-worker`) · macOS `/Library/Logs/Loombre/server.out.log` · Windows `%ProgramData%\Loombre\logs\server.log` · Docker `docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env logs server` (and `worker`).
+        The admin **Dashboard → System** section also has a logs card and any crash files. Please redact anything private (library paths, usernames) you'd rather not share.
+      render: shell
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Did it start after an update or a configuration change? Anything unusual about your setup (external PostgreSQL, network mounts, a reverse proxy)?

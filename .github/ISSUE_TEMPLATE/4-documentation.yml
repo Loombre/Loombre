@@ -1,0 +1,48 @@
+name: Documentation
+description: A docs page, the README, or in-app help text is wrong, missing, or confusing.
+title: "[Docs] "
+labels: ["documentation", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A confusing doc is a real bug here, not a nitpick. The published guides at [www.loombre.com/docs](https://www.loombre.com/docs) are built from `docs/**` in this repository, so a fix lands in both places at once.
+  - type: input
+    id: page
+    attributes:
+      label: Which page?
+      description: A URL on www.loombre.com/docs, a repo path like `docs/install/linux.md`, or the screen in the app that shows the text.
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of problem?
+      options:
+        - Wrong or out of date
+        - Missing — something isn't documented at all
+        - Confusing or unclear
+        - Broken link, image, or screenshot
+        - Typo or formatting
+        - Written for the wrong audience (too technical / not technical enough for that guide)
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What's wrong
+      description: Quote the passage if it's short. If you followed the instructions and they didn't work, say what happened.
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: What it should say instead
+      description: A rough draft is welcome — it doesn't have to be polished.
+  - type: checkboxes
+    id: pr
+    attributes:
+      label: Would you like to fix it yourself?
+      options:
+        - label: I'd be happy to open a pull request for this.
+          required: false

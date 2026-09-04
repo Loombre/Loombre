@@ -1,0 +1,71 @@
+name: Feature request
+description: Something Loombre should do, or do differently.
+title: "[Feature] "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Already planned, so no need to request them: **photos**, **live TV**, and **native mobile and TV apps**. The data model accounts for them; they are not in the 1.0 line.
+
+        A clear problem statement is worth more than a fully specified design — describe what you can't do today, and why it matters, before describing a solution.
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before you file
+      options:
+        - label: I searched the existing issues and this isn't already requested.
+          required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: What can't you do today, or what's awkward? Who hits this — the person watching, the admin, the operator?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What are you proposing?
+      description: The feature or change you'd like to see. A rough idea of how it might work is useful; a precise spec is not required.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and workarounds
+      description: Have you found a workaround? Is there an existing feature that gets partway there?
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of Loombre?
+      options:
+        - Watching and browsing (web client)
+        - Playback and conversion
+        - Library scanning and metadata
+        - Users, permissions, invitations
+        - Restricted content
+        - Remote access
+        - Admin dashboard and settings
+        - Installers, packaging, upgrades
+        - API / SDK
+        - Other
+  - type: checkboxes
+    id: design-fit
+    attributes:
+      label: Fit with Loombre's design principles
+      description: Loombre makes a few deliberate choices that shape what fits. A request that cuts against one is still worth discussing — it just helps to say so up front.
+      options:
+        - label: This does not require telemetry, analytics, or any phone-home behaviour.
+          required: false
+        - label: This keeps restricted content server-enforced and out of everyday browsing and search.
+          required: false
+        - label: This works on Tier-0 hardware (a 4-core, 4 GB machine), or degrades honestly there.
+          required: false
+        - label: This does not ask Loombre to implement another media server's API, schema, or naming.
+          required: false
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Screenshots, mockups, or links to how another product handles it — context is useful.

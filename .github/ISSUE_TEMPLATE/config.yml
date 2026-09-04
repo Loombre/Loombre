@@ -2,4 +2,7 @@ blank_issues_enabled: true
 contact_links:
   - name: Report a security vulnerability
     url: https://github.com/Loombre/Loombre/security/advisories/new
-    about: Please use private vulnerability reporting instead of a public issue — see SECURITY.md.
+    about: Please use GitHub's private vulnerability reporting, never a public issue. SECURITY.md explains scope and what to include.
+  - name: Documentation and troubleshooting
+    url: https://www.loombre.com/docs
+    about: The install guides, the User / Admin / Operator guides, and the troubleshooting page. Worth a look before filing — the answer may already be there.

@@ -1,0 +1,147 @@
+name: Playback problem
+description: A title won't play, stutters, seeks badly, or converts when you think it shouldn't.
+title: "[Playback] "
+labels: ["bug", "playback", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Playback is where the most moving parts meet — the file, the server's hardware, the browser, and the network between them — so the details below matter more than usual.
+
+        Two pages worth a look first:
+        - [Playback error codes](https://www.loombre.com/docs/user-guide/playback-errors) — what each code on the error screen means and the usual fix.
+        - [Why is this converting?](https://www.loombre.com/docs/user-guide/why-is-it-converting) — if the surprise is that a title is being converted at all.
+
+        If an error screen appeared, press **Copy details** on it and paste the result below. The error code is the single most useful thing you can include.
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before you file
+      options:
+        - label: I searched the existing issues and this isn't already reported.
+          required: true
+        - label: I tried **Try again** on the error screen (or reloading the page) and it still happens.
+          required: false
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you see or hear? Black screen, spinner, an error screen, stutter, audio out of sync, a seek that never lands, wrong subtitles…
+    validations:
+      required: true
+  - type: input
+    id: error-code
+    attributes:
+      label: Error code shown on screen (if any)
+      placeholder: e.g. transcode-encoder-init-failed, hls-network-error, media-unplayable
+  - type: textarea
+    id: copied-details
+    attributes:
+      label: Copied details
+      description: Paste what the **Copy details** button on the error screen produced, if there was one.
+      render: text
+  - type: dropdown
+    id: playback-mode
+    attributes:
+      label: Was the title direct-playing or being converted?
+      description: Loombre shows a "preparing your video" message while converting. An admin can see the exact decision and its reason codes by expanding the stream's row on the **Sessions** screen — paste those codes under "Anything else" if you have them.
+      options:
+        - Being converted (transcode / remux)
+        - Direct play
+        - Not sure
+    validations:
+      required: true
+  - type: dropdown
+    id: reproducibility
+    attributes:
+      label: How often does it happen?
+      options:
+        - Every time, with this title
+        - Every time, with many titles
+        - Sometimes
+        - Happened once so far
+    validations:
+      required: true
+  - type: textarea
+    id: media-details
+    attributes:
+      label: About the file
+      description: Container, video codec and profile, resolution, HDR or SDR, audio codec and channels, subtitle formats. The item's detail page shows most of this; `ffprobe <file>` output is ideal.
+      placeholder: |
+        e.g. MKV · HEVC Main 10, 3840×2160, HDR10 · TrueHD 7.1 + AC-3 5.1 · PGS + SRT subtitles
+  - type: input
+    id: client
+    attributes:
+      label: Browser and device you were playing on
+      placeholder: e.g. Chrome 128 on Windows 11 laptop, Safari on iPhone 15 (iOS 18), Firefox 130 on macOS 15
+    validations:
+      required: true
+  - type: dropdown
+    id: network
+    attributes:
+      label: Where was the player relative to the server?
+      options:
+        - Same machine
+        - Same local network (wired)
+        - Same local network (Wi-Fi)
+        - Away from home — Loombre Remote
+        - Away from home — Tunnel
+        - Away from home — Direct / own reverse proxy
+        - Not sure
+  - type: input
+    id: version
+    attributes:
+      label: Loombre version
+      description: Admin **Dashboard → System** card, or `loombre --version` where the CLI is installed.
+      placeholder: 1.0.0-beta.1
+    validations:
+      required: true
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: Install method
+      options:
+        - Docker Compose (published GHCR images)
+        - Docker Compose (built from source)
+        - Linux tarball (systemd)
+        - Windows installer (.exe)
+        - macOS .pkg (Apple Silicon)
+        - macOS .pkg (Intel)
+        - Running from source (pnpm dev)
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Server operating system, CPU, and GPU (if any)
+      placeholder: e.g. Ubuntu 24.04 on an Intel N100 (Quick Sync) · Windows 11 with an RTX 3060 · macOS 15 on an M2 Mac mini
+    validations:
+      required: true
+  - type: dropdown
+    id: tier
+    attributes:
+      label: Hardware tier of the server
+      options:
+        - Not sure
+        - Tier-0 (4-core, 4 GB RAM — Intel N100 / Raspberry Pi 5 class)
+        - Tier-1 (desktop or laptop with an iGPU or entry dGPU, 8–16 GB RAM)
+        - Tier-2 (dedicated server with a discrete GPU, 16+ GB RAM)
+  - type: textarea
+    id: capability-report
+    attributes:
+      label: Hardware capability report
+      description: Admin **Dashboard → System → Verified hardware capabilities** — paste the card's contents, or a screenshot. This tells us what the server believes it can decode, encode, and tone-map.
+      render: text
+  - type: textarea
+    id: logs
+    attributes:
+      label: Server and worker logs from around the time
+      description: |
+        Linux `journalctl -u loombre-worker -n 200` and `-u loombre-server` · macOS `/Library/Logs/Loombre/` · Windows `%ProgramData%\Loombre\logs\` · Docker `docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env logs worker server`.
+        A failed conversion session also keeps a sanitized `errorDetail` on the API (`GET /playback/sessions/{id}`). Redact anything private you'd rather not share.
+      render: shell
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Does the same file play in another browser or on another device? Did it work on an earlier beta?
