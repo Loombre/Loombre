@@ -80,6 +80,22 @@ export function parseAdvisories(auditJsonText) {
   } catch (err) {
     throw new Error(`dep-audit: could not parse \`pnpm audit\` output as JSON: ${err.message}`);
   }
+  // `pnpm audit --json` reports its OWN failure to reach the registry as an
+  // error object instead of a report — e.g. {"error":{"code":23,"message":
+  // "The operation was aborted due to timeout"}} when npm's audit endpoint
+  // times out. Name that cause: it is a registry/network failure, not a
+  // finding about the tree and not a code defect — but it still fails the
+  // gate, because an unverified tree must never read as clean.
+  const pnpmError = parsed?.error;
+  if (pnpmError && typeof pnpmError === "object") {
+    const code = pnpmError.code !== undefined ? `code ${pnpmError.code}` : "unknown code";
+    const message = typeof pnpmError.message === "string" ? pnpmError.message : JSON.stringify(pnpmError);
+    throw new Error(
+      `dep-audit: \`pnpm audit\` reported an error instead of an audit report — ${code}: ${message}. ` +
+        "This is a registry/network failure (npm's audit endpoint), not a finding about the dependency tree; " +
+        "the gate still fails because an unverified tree must never read as clean. Retry when the endpoint answers.",
+    );
+  }
   const advisories = parsed?.advisories;
   if (advisories === undefined || typeof advisories !== "object") {
     throw new Error("dep-audit: audit JSON has no \"advisories\" object — unexpected pnpm audit output shape.");

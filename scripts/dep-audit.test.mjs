@@ -72,6 +72,28 @@ test("parseAdvisories: throws when the JSON has no advisories object at all", ()
   assert.throws(() => parseAdvisories(JSON.stringify({ foo: "bar" })), /unexpected pnpm audit output shape/);
 });
 
+// Regression (2026-09-03): when npm's audit endpoint times out, `pnpm audit
+// --json` exits with `{"error":{"code":23,"message":"The operation was
+// aborted due to timeout"}}` — a report-shaped failure, not a report. The
+// old message ("no advisories object — unexpected pnpm audit output shape")
+// hid pnpm's own error and read like a code defect; an operator went
+// looking for a deleted file. The gate must STILL fail (an unverified tree
+// never reads as clean), but the message must name the real cause and
+// carry pnpm's code + message verbatim.
+test("parseAdvisories: a pnpm error object (registry/network failure) throws a message that names it and quotes pnpm's code + message", () => {
+  const pnpmTimeout = JSON.stringify({ error: { code: 23, message: "The operation was aborted due to timeout" } });
+  assert.throws(
+    () => parseAdvisories(pnpmTimeout),
+    (err) =>
+      err instanceof Error &&
+      /reported an error instead of an audit report/.test(err.message) &&
+      /registry|network/.test(err.message) &&
+      /code 23/.test(err.message) &&
+      /aborted due to timeout/.test(err.message) &&
+      !/unexpected pnpm audit output shape/.test(err.message),
+  );
+});
+
 test("loadAllowlist: parses a valid allowlist", () => {
   const entries = loadAllowlist(
     JSON.stringify({ entries: [{ advisoryId: "GHSA-xxxx", reason: "test reason", expires: "2099-01-01" }] }),
