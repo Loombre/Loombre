@@ -3,11 +3,10 @@
 Docker is the friction-free path because it sidesteps the entire "unsigned
 installer" trust conversation the native installers require (see
 [windows.md](windows.md) for that story) — a Docker image's integrity is
-provable by its content digest and, once an image is published under a
-release tag, a cosign signature over that digest (see "Verifying the
-image" below — the signing pipeline itself is already wired into
-`.github/workflows/release.yml`; no tagged release has been published
-yet). No SmartScreen, no Gatekeeper quarantine, no code-signing
+provable by its content digest and, for every image the release pipeline
+publishes, a cosign signature over that digest (see "Verifying the image"
+below — `1.0.0-beta.1` is the first published release, a pre-release for
+testers). No SmartScreen, no Gatekeeper quarantine, no code-signing
 certificate to not-buy.
 
 ## Prerequisites
@@ -44,11 +43,12 @@ docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.e
 
 Only two files are actually needed to run Loombre this way —
 `docker-compose.prod.yml` and `installers/docker/loombre.env.example` — a
-full `git clone` is simply the easiest way to get both today. It also
-happens to be required right now regardless, since no published image
-exists yet (see "Pulling a published image" below): building `server`/
-`worker` from source needs the whole repository as build context, not just
-those two files.
+full `git clone` is simply the easiest way to get both. The clone is only
+*required* if you build from source (the default when `LOOMBRE_IMAGE` /
+`LOOMBRE_WEB_IMAGE` are unset): building `server`/`worker` needs the whole
+repository as build context, not just those two files. Pulling the
+published image instead (see "Pulling a published image" below) needs only
+the two.
 
 The **web UI** is now at `http://<this host>:3000` (the `web` container;
 `LOOMBRE_WEB_PORT` changes it) and the **HTTP API** at
@@ -75,20 +75,24 @@ LOOMBRE_SERVER_ORIGIN=http://192.168.1.20:3001   # the API origin (web client's 
 Both are documented in full — including the unset/empty/set distinction
 each one carries — in `installers/docker/loombre.env.example`.
 
-**Pulling a published image** (once a tagged release publishes images —
-none has been published yet as of this writing). Note the tag form: git
-tags carry a leading `v` (`v0.9.0`), but the published image tags are the
-bare semver (the release pipeline strips the `v`):
+**Pulling a published image.** Every tagged release publishes both images
+to GHCR. Note the tag form: git tags carry a leading `v` (`v1.0.0-beta.1`),
+but the published image tags are the bare semver (the release pipeline
+strips the `v`). The current release is `1.0.0-beta.1` — a **pre-release
+for testers**; pin the version tag rather than the moving `latest` while
+the line is pre-1.0:
 
 ```bash
-export LOOMBRE_IMAGE=ghcr.io/loombre/loombre:0.9.0
-export LOOMBRE_WEB_IMAGE=ghcr.io/loombre/loombre-web:0.9.0
+export LOOMBRE_IMAGE=ghcr.io/loombre/loombre:1.0.0-beta.1
+export LOOMBRE_WEB_IMAGE=ghcr.io/loombre/loombre-web:1.0.0-beta.1
 docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env pull
 ```
 
-Until published images are available, `docker compose ... up -d` builds from
-source automatically the first time (the `build:` sections in `docker-compose.prod.yml`),
-which is what the Quickstart above does implicitly.
+Then run the Quickstart's three steps as written — with the images pulled,
+`up -d` starts them instead of building. With the two variables unset,
+`docker compose ... up -d` builds from source automatically the first time
+(the `build:` sections in `docker-compose.prod.yml`), which is what the
+Quickstart above does implicitly.
 
 ## What gets started
 
@@ -304,7 +308,7 @@ This prints the image's content digest — the same `sha256:...` value across
 any host pulling the same built image. If you built it locally, this proves
 bit-for-bit reproducibility.
 
-### Published images (once released)
+### Published images
 
 Loombre Docker images are cosign-signed using GitHub's OIDC identity:
 
@@ -314,7 +318,7 @@ Loombre Docker images are cosign-signed using GitHub's OIDC identity:
 cosign verify \
   --certificate-identity-regexp "^https://github.com/Loombre/Loombre/" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  ghcr.io/loombre/loombre:0.9.0
+  ghcr.io/loombre/loombre:1.0.0-beta.1
 ```
 
 This proves the image was built by Loombre's own CI from the exact commit
