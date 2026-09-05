@@ -15,7 +15,11 @@
      check (checked in CI by scripts/release/check-pubkey-consistency.mjs).
      Version 1.0.0-beta.1, published 2026-09-03 as a GitHub pre-release —
      root package.json, CHANGELOG.md's convention note and its
-     "[1.0.0-beta.1]" header. -->
+     "[1.0.0-beta.1]" header. The Linux native-package layer —
+     installers/linux/{build-rpm,build-deb,smoke-packages}.mjs and
+     lib/{native-package,elf-deps}.mjs — read directly; the one-payload
+     design and every deliberate difference from the tarball channel are
+     stated in lib/native-package.mjs's header. -->
 
 Loombre ships as four independent artifact types from one source tree, all
 built from the same version-stamped source.
@@ -33,7 +37,7 @@ built from the same version-stamped source.
         ┌───────────┬─────────┼─────────┬───────────┐
         ▼           ▼         ▼         ▼           ▼
    Linux tarball  Windows   macOS    Docker      release
-   + systemd      .exe      .pkg     images       manifest
+   + .rpm/.deb    .exe      .pkg     images       manifest
    (installers/   (install- (install- (root       (scripts/
    linux/)        ers/      ers/      Dockerfile,  release/
                   windows/) macos/)   multi-arch)  build-
@@ -72,6 +76,28 @@ menubar/tray controller app). All three, plus Docker, are documented from
 the installing user's side in the [Install](../../install/index.md) section — this
 page is the source-tree map, not a repeat of that content.
 
+### Linux: one payload, three containers
+
+`installers/linux` ships two further build scripts, `build-rpm.mjs` and
+`build-deb.mjs`, and they are deliberately **not** parallel builds. Each
+takes an already-built release tarball as its only input: it extracts that
+tarball, stages the payload entries under `/opt/loombre` unchanged, derives
+the package's shared-library requirements from the payload's own ELF files
+(`lib/elf-deps.mjs` — a small ELF64 reader, rather than rpm's find-requires
+or `dpkg-shlibdeps`, both of which would also pull in every `node_modules`
+shebang interpreter and re-export the bundled `libpq`/`libvips` to other
+packages), renders the **same** `systemd/*.service.template` and
+`loombre.env.template` files `install.sh` renders, and wraps the result
+with `rpmbuild` / `dpkg-deb`. Nothing re-runs `pnpm`, deploys, or fetches.
+So the three Linux channels can never ship different bytes for one version,
+and the shared layer that guarantees it — package identity, the semver →
+package-version mapping, the FHS staging tree, the spec, the control file
+and both formats' scriptlets — is `lib/native-package.mjs`, whose header is
+the authoritative statement of the design and of every deliberate
+difference from the tarball channel. `installers/linux/LAYOUT.md` maps the
+resulting on-disk shape; `docs/install/linux.md` is the operator-facing
+side.
+
 ## Release signing
 
 Every release artifact carries three independent verification layers
@@ -99,7 +125,11 @@ replaced.
 
 ## `.github/workflows/release.yml`
 
-The tag-triggered pipeline that builds the Linux tarball, the Windows
+The tag-triggered pipeline that builds the Linux tarball — and, from that
+same tarball, the `.rpm` and `.deb` (`build-rpm.mjs` / `build-deb.mjs` run
+against the artifact `build-tarball.mjs` just produced, on the same
+`ubuntu-latest` x64 runner, which is why published packages are x64-only
+while the tarball also ships arm64) — the Windows
 Burn-bundle `.exe` (which chains the VC++ redistributable ahead of an
 internally-built MSI — the MSI itself is deliberately **not** published
 as a separate release asset; the bundle's success page offers a Launch
@@ -111,3 +141,13 @@ pushes the two multi-arch Docker images (`loombre`, `loombre-web`),
 assembles and signs the release
 manifest and `SHA256SUMS`, and attests build provenance for every
 artifact.
+
+The two Linux channels have their own verification tools, run against real
+distro containers rather than in the tag pipeline:
+`installers/linux/smoke.mjs` proves the tarball and `install.sh`, and
+`installers/linux/smoke-packages.mjs` proves the packages — installing each
+one with the distro's own package manager (so the derived dependencies are
+resolved for real) and then walking install → verify → boot → reinstall →
+remove → purge → the tarball-coexistence guard → uid adoption on
+`fedora:44`/`rockylinux:9` for the rpm and `debian:12`/`ubuntu:24.04` for
+the deb.

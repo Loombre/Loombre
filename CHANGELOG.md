@@ -20,6 +20,34 @@ axis; nothing before `1.0.0-beta.1` was ever released.
 
 ## [Unreleased]
 
+### Added
+
+- **`.rpm` and `.deb` packages for Linux x64.** `sudo dnf install
+  ./loombre-<version>-linux-x64.rpm` or `sudo apt install
+  ./loombre-<version>-linux-x64.deb` puts the payload at `/opt/loombre`,
+  creates the `loombre` system user, the data dir and
+  `/etc/loombre/loombre.env`, installs the three systemd units and the
+  `loombre` CLI, then enables and starts the services — and an upgrade
+  stops them before the files change and starts exactly those again, while
+  never touching your env file. Channels: the `.rpm` covers Fedora, RHEL 9
+  and 10 with their Rocky/Alma rebuilds, and openSUSE Leap 15.6; the `.deb`
+  covers Debian 12 and 13 and Ubuntu 22.04/24.04 LTS; the tarball remains
+  the channel for every other glibc ≥ 2.34 distro and the only one with
+  relocatable paths. Both packages are built from the release tarball
+  itself, so all three channels ship identical bytes for a version.
+  (`docs/install/linux.md`.)
+
+### Changed
+
+- `install.sh` renders the env file from
+  `installers/linux/loombre.env.template` instead of an inline heredoc —
+  the same template the packages render, proven byte-identical.
+- The env template documents `LOOMBRE_SERVER_ORIGIN`, the variable LAN
+  installs need alongside `LOOMBRE_CORS_ORIGINS`: the web client's CSP
+  allows calls to that one API origin, and it defaults to
+  `http://localhost:3001`.
+- The Linux tarball now bundles Node's own `LICENSE` next to the runtime.
+
 ## [1.0.0-beta.1] — 2026-09-03 (pre-release)
 
 Published as a GitHub pre-release for testers: the in-app update check

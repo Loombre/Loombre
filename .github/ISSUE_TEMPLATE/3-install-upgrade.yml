@@ -33,6 +33,8 @@ body:
         - Docker Compose (published GHCR images)
         - Docker Compose (built from source)
         - Linux tarball (systemd)
+        - Linux .rpm (dnf / zypper)
+        - Linux .deb (apt)
         - Windows installer (.exe)
         - macOS .pkg (Apple Silicon)
         - macOS .pkg (Intel)

@@ -129,7 +129,7 @@ alongside `SHA256SUMS`, `manifest.json`, and their minisign signatures.
 | Platform | What you get | Guide |
 |---|---|---|
 | **Docker Compose** (recommended) | `ghcr.io/loombre/loombre` + `ghcr.io/loombre/loombre-web`, tag `1.0.0-beta.1`, cosign-signed | [docs/install/docker.md](docs/install/docker.md) |
-| **Linux** x64 | Tarball with systemd units and the `loombre` CLI | [docs/install/linux.md](docs/install/linux.md) |
+| **Linux** x64 | `.rpm` and `.deb` packages, or a tarball with systemd units and the `loombre` CLI | [docs/install/linux.md](docs/install/linux.md) |
 | **Windows** x64 | `.exe` installer: Windows services plus a system-tray controller | [docs/install/windows.md](docs/install/windows.md) |
 | **macOS** Apple Silicon and Intel | `.pkg` installer: LaunchDaemons plus a menubar controller (Intel builds are published on a demand basis) | [docs/install/macos.md](docs/install/macos.md) |
 

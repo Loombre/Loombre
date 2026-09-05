@@ -34,8 +34,8 @@ passes none of the TLS/ACME variables into the containers and publishes
 no 80/443 — the Docker distribution handles TLS with a reverse proxy in
 front of it instead ([Reverse proxy](reverse-proxy.md)). Setting the
 variables above in `loombre.env` there has no effect. Built-in ACME is
-for the native install paths (Linux tarball/systemd, macOS, Windows, or
-running from source).
+for the native install paths (Linux `.rpm`/`.deb`/tarball with systemd,
+macOS, Windows, or running from source).
 
 ## Choosing a challenge type
 
@@ -65,27 +65,52 @@ port (the CA would just fail to reach it).
 Node does not have by default** on any OS. Four ways to get it, in order
 of preference:
 
-### 1. systemd `AmbientCapabilities` (recommended — Linux tarball/systemd installs)
+### 1. A systemd drop-in adding `CAP_NET_BIND_SERVICE` (recommended — every native Linux channel)
 
 `installers/linux/systemd/loombre-server.service.template` ships
 with an EMPTY `CapabilityBoundingSet=` / `AmbientCapabilities=` by design
 — the unit runs with zero Linux capabilities unless you opt in, per the
 principle of least privilege the rest of that unit file's hardening
 follows (`ProtectSystem=strict`, `NoNewPrivileges=true`, etc.). To allow
-binding 80/443, add exactly one capability to both lines:
+binding 80/443, add exactly one capability, as a **drop-in** — never by
+editing the unit file:
+
+```bash
+sudo systemctl edit loombre-server
+```
 
 ```ini
+[Service]
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 ```
+
+```bash
+sudo systemctl restart loombre-server
+```
+
+Both lines are needed: the ambient set can only carry a capability the
+bounding set still allows, and the shipped unit empties both. `systemctl
+edit` writes
+`/etc/systemd/system/loombre-server.service.d/override.conf` and runs
+`daemon-reload` for you when you save.
+
+**Why a drop-in and not an edit.** On the `.rpm`/`.deb` channels the unit
+file itself lives in `/usr/lib/systemd/system/` and is **replaced on every
+upgrade** — an edit there is gone with the next release. A drop-in in
+`/etc` layers on top of whatever unit ships and survives; it works
+identically on the tarball channel, whose unit lives in
+`/etc/systemd/system/`. (A full copy of the unit in `/etc/systemd/system/`
+survives too, but by *shadowing* the shipped one, so later releases' unit
+changes silently never reach you — the package install prints a NOTE when
+it finds one.)
 
 This is the ONLY capability that needs adding — `CAP_NET_BIND_SERVICE`
 grants binding ports <1024 and nothing else; it does not grant root, does
 not defeat any of the unit's other hardening lines (`ProtectSystem`,
 `ProtectHome`, the `Restrict*`/`Protect*` sandboxing all stay in force),
 and is the standard, documented way systemd-managed services get this one
-privilege without running as root. `systemctl daemon-reload && systemctl
-restart loombre-server` after editing.
+privilege without running as root.
 
 *(The shipped template does not include this —
 correct as the SECURE-BY-DEFAULT posture for the common case
@@ -103,9 +128,10 @@ sudo setcap 'cap_net_bind_service=+ep' /opt/loombre/bin/node
 
 Grants the SAME single capability directly to the Node binary Loombre
 runs. Caveat: this must be re-applied after every Node binary
-replacement (an upgrade that ships a new bundled Node runtime) — the
-systemd `AmbientCapabilities` route above survives upgrades without any
-re-application because it's a unit-file property, not a file property.
+replacement (an upgrade that ships a new bundled Node runtime, and on the
+package channels every upgrade replaces `/opt/loombre` wholesale) — the
+drop-in route above survives upgrades without any re-application, because
+it is a property of a file in `/etc` that no channel overwrites.
 
 ### 3. `authbind` (Linux, alternative to setcap)
 

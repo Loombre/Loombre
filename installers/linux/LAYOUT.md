@@ -9,6 +9,8 @@ loombre-<version>-linux-<arch>/
 ├── VERSION                     # plain text, exact version string (root package.json's `version`)
 ├── install.sh                  # see below
 ├── uninstall.sh
+├── loombre.env.template        # the env file install.sh renders to /etc/loombre/loombre.env
+│                                 # (the .rpm/.deb render the SAME template — see "Native packages" below)
 ├── systemd/
 │   ├── loombre-server.service.template
 │   ├── loombre-worker.service.template
@@ -25,7 +27,8 @@ loombre-<version>-linux-<arch>/
 │                                   # install.sh symlinks /usr/local/bin/loombre -> this file, see below)
 ├── runtime/
 │   └── node/
-│       └── bin/node              # bundled Node runtime (installers/node-manifest.json — pinned + sha256, official nodejs.org build)
+│       ├── bin/node              # bundled Node runtime (installers/node-manifest.json — pinned + sha256, official nodejs.org build)
+│       └── LICENSE               # that build's own LICENSE (MIT plus its bundled V8/OpenSSL/ICU/zlib/libuv texts)
 ├── ffmpeg/
 │   ├── ffmpeg
 │   ├── ffprobe
@@ -53,8 +56,8 @@ loombre-<version>-linux-<arch>/
 
 | Path | Produced by |
 |------|-------------|
-| `bin/`, `install.sh`, `uninstall.sh`, `systemd/`, `VERSION` | this build script, generated/copied directly |
-| `runtime/node/` | `installers/node-manifest.json` — official nodejs.org release, checksum-verified before extraction |
+| `bin/`, `install.sh`, `uninstall.sh`, `systemd/`, `loombre.env.template`, `VERSION` | this build script, generated/copied directly |
+| `runtime/node/` (`bin/node` + `LICENSE`) | `installers/node-manifest.json` — official nodejs.org release, checksum-verified before extraction |
 | `ffmpeg/` | `scripts/fetch-ffmpeg.mjs` + `installers/ffmpeg-manifest.json` (shared deliverable, also used by lanes I3/I4) |
 | `lib/server/`, `lib/worker/` | `pnpm --filter <app> deploy <dir> --prod --legacy`, then packaging-time-only fixes — see below |
 | `web/` | `apps/web/.next/standalone` (Next `output: "standalone"`) + `.next/static` and `public/` overlays + a linux-`<arch>` sharp swap — `assembleWebStandalone` in `build-tarball.mjs` |
@@ -254,3 +257,60 @@ foreign file, or a symlink pointing at a different install/program
 entirely, is left untouched. Both scripts run from wherever the tarball
 was extracted — they read the payload from their own directory, not from
 a fixed path.
+
+## Native packages (`.rpm` / `.deb`)
+
+`build-rpm.mjs` and `build-deb.mjs` do **not** build anything: each takes an
+already built `loombre-<version>-linux-<arch>.tar.gz` as its only input,
+stages the payload above under `/opt/loombre` unchanged, renders the
+checkout's `systemd/*.service.template` and `loombre.env.template` around
+it, derives the package's shared-library requirements from the payload's
+own ELF files (`lib/elf-deps.mjs`), and hands the tree to `rpmbuild` /
+`dpkg-deb`. One payload, three containers: the tarball, the `.rpm` and the
+`.deb` of one version can never disagree. `lib/native-package.mjs`'s header
+is the authoritative statement of the design, of every deliberate
+difference from the tarball channel, and of the scriptlet lifecycle
+summarized below — read it there rather than trusting a second copy here.
+
+Both formats stage the same FHS tree (`assemblePackageRoot`):
+
+```
+/opt/loombre/                          # the tarball's payload entries, verbatim:
+                                       # bin/ lib/ runtime/ ffmpeg/ web/ pg/ packages/ VERSION
+/usr/lib/systemd/system/loombre-{server,worker,web}.service   # rendered units (package-owned)
+/usr/lib/sysusers.d/loombre.conf       # systemd-sysusers declaration of the service account
+/usr/bin/loombre -> /opt/loombre/bin/loombre                  # the CLI shim (NOT /usr/local)
+/usr/share/loombre/loombre.env         # the rendered env-file DEFAULT (see the scriptlets below)
+/etc/loombre/                          # package-owned, empty — where the env file lands
+/var/lib/loombre/                      # empty, 0750; owned by `loombre` via rpm %attr / dpkg-statoverride
+/usr/share/doc/loombre/copyright       # DEP-5 aggregation notice, generated from the payload's
+                                       # own npm license inventory + the AGPL/MIT/PostgreSQL texts
+/usr/share/doc/loombre/changelog.gz    # .deb only (lintian hygiene; one entry, not CHANGELOG.md)
+/usr/share/licenses/loombre/LICENSE    # the AGPL text
+```
+
+**What is NOT in a package.** `install.sh`, `uninstall.sh`, `systemd/` and
+`loombre.env.template` are tarball-channel files and never ship inside a
+package (`TARBALL_ONLY_ENTRIES`) — the package *is* the installer, and its
+templates are rendered at package-build time. The writable Next
+runtime-cache directory (`/opt/loombre/web/apps/web/.next/cache`, the one
+spot the hardened `loombre-web` unit may write to) is not shipped either:
+the install scriptlets create it owned by the service user, exactly as
+`install.sh` does, and the erase/remove scriptlets delete it — a package
+manager never removes a directory holding files it did not ship.
+
+**Scriptlet lifecycle**, one line per moment (rpm `%pre`/`%post`/`%preun`/
+`%postun`/`%posttrans`; deb `preinst`/`postinst`/`prerm`/`postrm`):
+
+| Moment | What happens |
+|---|---|
+| fresh install, before any file lands | refuse if an unpackaged (tarball) Loombre is present; create the `loombre` user/group, adopting an orphaned `/var/lib/loombre` uid |
+| fresh install, after unpack | create the Next cache dir; re-own the data dir if a previous install left it under another account; copy `/usr/share/loombre/loombre.env` to `/etc/loombre/loombre.env` **only if absent** (`root:loombre`, 0640); enable the three units (offline-safe, so a chroot-built image boots with them on); start them unless `/etc/loombre/no-autostart` exists or there is no live systemd; warn about a shadowing `/etc/systemd/system` unit copy |
+| upgrade | stop-before-unpack: record which units are active in a `/run` marker and stop them; the NEW package's last scriptlet starts exactly those. The env file is never touched |
+| erase / remove | stop + disable the units, delete the scriptlet-created cache dir and the now-empty payload chain, keep the data dir, the env file and the user (deb additionally masks the units) |
+| purge (deb only) | remove the data dir (unless it is a mount point), the config dir, the statoverrides and the user |
+
+`smoke-packages.mjs` walks every one of those moments inside real
+`fedora:44` / `rockylinux:9` / `debian:12` / `ubuntu:24.04` containers;
+`native-package.test.mjs` pins the rendered units and env file
+byte-identical against `install.sh`'s own `sed` expressions.

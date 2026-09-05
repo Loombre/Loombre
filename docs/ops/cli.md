@@ -21,26 +21,32 @@ from):
 node apps/server/bin/loombre.mjs --help
 ```
 
-**In a Linux tarball install** (`docs/install/linux.md`), `install.sh`
-places a `loombre` shim on `PATH` (`/usr/local/bin/loombre`, a symlink into
-the install root — `installers/linux/LAYOUT.md`), so once installed it's
-just:
+**In a native Linux install** (`docs/install/linux.md`), a `loombre` shim
+is placed on `PATH` — a symlink into the install root
+(`installers/linux/LAYOUT.md`). Where it lands depends on the channel:
+`/usr/bin/loombre` on the `.rpm`/`.deb` (FHS, Debian Policy and Fedora's
+guidelines all reserve `/usr/local` for the local administrator, so a
+package must not write there), `/usr/local/bin/loombre` on the tarball,
+which `install.sh` creates. Either way, once installed it's just:
 
 ```bash
 loombre --help
 ```
 
 **Channel availability:** as of this writing the `loombre` CLI ships in
-source checkouts and the Linux tarball only — the macOS `.pkg` and Windows
-installer do not currently include it (their server payloads are pruned to
-runtime files). On those platforms, commands documented here (including
-the PIN reset below) need a source checkout pointed at the same database.
+source checkouts and every native Linux channel (`.rpm`, `.deb`, tarball)
+only — the macOS `.pkg` and Windows installer do not currently include it
+(their server payloads are pruned to runtime files). On those platforms,
+commands documented here (including the PIN reset below) need a source
+checkout pointed at the same database.
 
-If the shim couldn't be placed (a foreign, non-symlink file already sat at
-`/usr/local/bin/loombre`, or `/usr/local/bin` wasn't writable — `install.sh`
-warns and prints the exact `ln -s` command to create it yourself when this
-happens), fall back to the tarball's own bundled Node runtime, from the
-install root:
+On the tarball channel the shim can fail to be placed (a foreign,
+non-symlink file already sat at `/usr/local/bin/loombre`, or
+`/usr/local/bin` wasn't writable — `install.sh` warns and prints the exact
+`ln -s` command to create it yourself when this happens; the packages own
+`/usr/bin/loombre` outright and never hit this). Either way you can fall
+back to the payload's own bundled Node runtime, from the install root
+(`/opt/loombre` by default):
 
 ```bash
 runtime/node/bin/node lib/server/bin/loombre.mjs --help

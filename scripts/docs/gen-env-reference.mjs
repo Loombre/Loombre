@@ -297,7 +297,7 @@ const OUT_OF_COMPOSE_FAMILIES = [
     "[docs/ops/remote-access/acme.md](/ops/remote-access/acme); " +
     "`LOOMBRE_ACME_DOMAINS`/`CHALLENGE_TYPE`/`TOS_AGREED` ARE covered above, as registry pins)",
   "IPC and logging (`LOOMBRE_IPC_*`, `LOOMBRE_LOG_FILE` — every install shape (macOS pkg, " +
-    "Windows MSI, Docker, Linux tarball) sets the log file automatically to a real, " +
+    "Windows MSI, Docker, Linux packages/tarball) sets the log file automatically to a real, " +
     "already-populated path so the admin Dashboard's log-tail card works out of the box; see " +
     "each platform's own [Install](/install/) page for the exact path, or override it yourself)",
   "embedded-PG plumbing (`LOOMBRE_EMBEDDED_PG_*`)",
