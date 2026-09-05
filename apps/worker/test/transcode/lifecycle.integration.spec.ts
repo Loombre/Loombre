@@ -272,10 +272,17 @@ describe.skipIf(!ffmpegAvailable || process.platform === "win32")(
     /** A REAL, detached ffmpeg standing in for one orphaned by a crashed
      *  worker: long-running, and with `stagingDir` in its command line
      *  exactly as a real run's substituted output path would be. */
+    // The stand-in must OUTLIVE the test's own DB round-trips and the
+    // reaper's inspection: `-re` paces the synthetic source at its 5 fps in
+    // real time (600 s of life), where an unpaced null-muxer run finishes
+    // all 3000 frames in ~0.2 s — an "orphan" already gone before the
+    // reaper (or even the aliveness wait below) looks, which is what the
+    // runner-timing failures of this case were (`already-gone` for
+    // `pid-reused`; "stand-in processes up" timing out).
     function spawnStandInFfmpeg(stagingDir: string): number {
       const child = spawn(
         ffmpegPath,
-        ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=64x48:rate=5", "-t", "600", "-f", "null", `${stagingDir}/orphan-marker`],
+        ["-hide_banner", "-loglevel", "error", "-re", "-f", "lavfi", "-i", "testsrc=size=64x48:rate=5", "-t", "600", "-f", "null", `${stagingDir}/orphan-marker`],
         { stdio: "ignore", detached: true },
       );
       child.unref();
