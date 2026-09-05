@@ -114,6 +114,11 @@ const EXTENSION_TO_KIND = {
   // than warning, so the next one cannot vanish the same way.
   exe: "bundle",
   pkg: "pkg",
+  // The two Linux native-package channels (installers/linux/build-rpm.mjs /
+  // build-deb.mjs — Fedora/RHEL/derivatives and Debian/Ubuntu respectively),
+  // alongside the pre-existing "tarball" channel for the same platforms.
+  rpm: "rpm",
+  deb: "deb",
 };
 
 /**

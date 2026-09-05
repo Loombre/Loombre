@@ -164,6 +164,109 @@ jobs:
           set -euo pipefail
           node installers/linux/build-tarball.mjs --version "$LOOMBRE_VERSION" --out-dir dist/release
 
+      - name: Install rpm build tooling (rpmbuild; dpkg-deb is native on ubuntu-latest)
+        run: sudo apt-get update && sudo apt-get install -y rpm
+
+      - name: build-rpm.mjs (native packages, one payload)
+        # installers/linux/build-rpm.mjs's ONLY input is the tarball
+        # build-tarball.mjs just produced (ONE PAYLOAD, THREE CONTAINERS —
+        # see lib/native-package.mjs's header): it extracts it, stages the
+        # payload under /opt/loombre unchanged, renders this checkout's own
+        # systemd/env templates around it, and derives Requires from the
+        # payload's ELF files. --packer native forces rpmbuild (installed
+        # above) rather than the docker fallback build-rpm.mjs would
+        # otherwise use — this runner already has it on PATH.
+        env:
+          LOOMBRE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          node installers/linux/build-rpm.mjs --tarball "dist/release/loombre-${LOOMBRE_VERSION}-linux-x64.tar.gz" --out-dir dist/release --packer native
+
+      - name: build-deb.mjs (native packages, one payload)
+        # Same one-payload shape as build-rpm.mjs above (installers/linux/
+        # lib/native-package.mjs). dpkg-deb is part of dpkg, always present
+        # on ubuntu-latest, so no extra tooling install step is needed here.
+        env:
+          LOOMBRE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          node installers/linux/build-deb.mjs --tarball "dist/release/loombre-${LOOMBRE_VERSION}-linux-x64.tar.gz" --out-dir dist/release --packer native
+
+      - name: Install smoke (deb, the runner's own systemd)
+        # ubuntu-latest runs systemd as PID 1 (unlike the ephemeral
+        # containers smoke-packages.mjs drives below), so this is a REAL
+        # install: apt's dpkg run fires the postinst scriptlet, which
+        # enables AND starts the units via deb-systemd-invoke (lib/
+        # native-package.mjs's header) because a live systemd is present.
+        # First boot provisions the bundled embedded PostgreSQL and
+        # auto-migrates (installers/linux/loombre.env.template's default
+        # PORT=3001) — the same real-boot bar build-macos's "Install smoke"
+        # step holds the .pkg to, mirrored here via the same poll-then-fail
+        # idiom.
+        env:
+          LOOMBRE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y "./dist/release/loombre-${LOOMBRE_VERSION}-linux-x64.deb"
+
+          booted=0
+          for _ in $(seq 1 75); do
+            if curl -fsS -o /dev/null "http://127.0.0.1:3001/healthz"; then booted=1; break; fi
+            sleep 2
+          done
+          if [ "$booted" != "1" ]; then
+            echo "::error::server did not answer on :3001 within 150s — journalctl follows"
+            sudo journalctl -u loombre-server --no-pager -n 80 || true
+            exit 1
+          fi
+          echo "install-smoke: /healthz 200"
+
+          systemctl is-active loombre-server loombre-worker loombre-web
+          echo "install-smoke: loombre-server, loombre-worker and loombre-web are all active"
+
+          setup_state="$(curl -fsS http://127.0.0.1:3001/setup/state)"
+          if ! echo "$setup_state" | grep -q '"needsSetup":true'; then
+            echo "::error::/setup/state did not report needsSetup:true: $setup_state"
+            exit 1
+          fi
+          echo "install-smoke: /setup/state needsSetup:true"
+
+          cli_version="$(/usr/bin/loombre --version)"
+          if ! echo "$cli_version" | grep -q "$LOOMBRE_VERSION"; then
+            echo "::error::/usr/bin/loombre --version printed '$cli_version', expected it to contain $LOOMBRE_VERSION"
+            exit 1
+          fi
+          echo "install-smoke: /usr/bin/loombre --version -> $cli_version"
+
+          sudo apt-get purge -y loombre
+          for p in /opt/loombre /var/lib/loombre /etc/loombre; do
+            if [ -e "$p" ]; then
+              echo "::error::$p still exists after apt-get purge"
+              exit 1
+            fi
+          done
+          if getent passwd loombre >/dev/null; then
+            echo "::error::the loombre system user still exists after apt-get purge"
+            exit 1
+          fi
+          echo "install-smoke: purge removed /opt/loombre, /var/lib/loombre, /etc/loombre and the loombre user"
+
+      - name: Package smoke (containers — fedora 44, rocky 9, debian 12)
+        # installers/linux/smoke-packages.mjs — the package-format sibling
+        # of the tarball's own smoke.mjs (see its header): install ->
+        # verify -> boot -> reinstall -> remove -> purge (plus the guard
+        # and uid-adoption scenarios) against real target distros, each in
+        # its own fresh container. docker is preinstalled on ubuntu-latest;
+        # the script pulls digest-pinned images itself.
+        env:
+          LOOMBRE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          node installers/linux/smoke-packages.mjs \
+            --rpm "dist/release/loombre-${LOOMBRE_VERSION}-linux-x64.rpm" \
+            --deb "dist/release/loombre-${LOOMBRE_VERSION}-linux-x64.deb" \
+            --distros fedora:44,rockylinux:9,debian:12
+
       - name: Upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

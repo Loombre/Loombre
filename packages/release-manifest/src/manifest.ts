@@ -38,13 +38,18 @@ export const ARTIFACT_PLATFORMS = [
  *  deployment and refuses to install without that prerequisite already
  *  present. A download page or updater must be able to tell them apart to
  *  recommend the right one, which a shared kind would prevent. */
-export type ArtifactKind = "tarball" | "msi" | "bundle" | "pkg" | "docker-image" | "checksums-file";
+// "rpm" and "deb" are the two Linux native-package channels (Fedora/RHEL/
+// derivatives and Debian/Ubuntu respectively) — installers/linux/
+// build-rpm.mjs and build-deb.mjs, alongside the existing "tarball" channel.
+export type ArtifactKind = "tarball" | "msi" | "bundle" | "pkg" | "rpm" | "deb" | "docker-image" | "checksums-file";
 
 export const ARTIFACT_KINDS = [
   "tarball",
   "msi",
   "bundle",
   "pkg",
+  "rpm",
+  "deb",
   "docker-image",
   "checksums-file",
 ] as const;
