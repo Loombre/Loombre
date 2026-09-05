@@ -20,6 +20,31 @@ axis; nothing before `1.0.0-beta.1` was ever released.
 
 ## [Unreleased]
 
+## [1.0.0-beta.2] — 2026-09-05 (pre-release)
+
+The second tester build: beta.1's code plus the two fixes that landed
+after its tag, and the Linux `.rpm`/`.deb` packages. Published as a
+GitHub pre-release like beta.1, so the in-app update check does not
+announce it.
+
+### Fixed
+
+- Worker: the file watcher can no longer stall jobs at all (this landed
+  after beta.1's tag, so beta.1 does not carry it). Job consumers now
+  register and confirm before any watcher starts, and the watcher itself
+  runs in its own thread, so a native watch that macOS holds on a privacy
+  prompt (or an FSEvents quirk) costs that library's change notifications
+  and nothing else. On macOS a library under Desktop, Documents,
+  Downloads, iCloud Drive or a Photos library is watched by stat polling,
+  which never makes the call macOS can hold; a watcher thread that is
+  wedged inside the OS is never joined at exit, so a restart or crash
+  still ends the process instead of leaving it alive but dead.
+  `LOOMBRE_SCAN_POLL=0/1` still overrides every automatic rule. Verified
+  on a Mac with a library whose Desktop folder had been deleted.
+- Web client: the API error class is re-exported with `export … from`, so
+  a build in which the module graph is rewritten (vitest's mock hoisting
+  was the visible case) can no longer resolve it as undefined.
+
 ### Added
 
 - **`.rpm` and `.deb` packages for Linux x64.** `sudo dnf install
@@ -118,17 +143,6 @@ reads `releases/latest` only, so betas are never announced to it.
   boot — the file watcher probes every path with a timeout and skips the
   ones that don't answer, so scans, probes and transcodes keep running.
   Found live on a stale Desktop library: every job silently stalled.
-- Worker: the file watcher can no longer stall jobs at all. Job consumers
-  now register and confirm before any watcher starts, and the watcher
-  itself runs in its own thread, so a native watch that macOS holds on a
-  privacy prompt (or an FSEvents quirk) costs that library's change
-  notifications and nothing else. On macOS a library under Desktop,
-  Documents, Downloads, iCloud Drive or a Photos library is watched by
-  stat polling, which never makes the call macOS can hold; a watcher
-  thread that is wedged inside the OS is never joined at exit, so a
-  restart or crash still ends the process instead of leaving it alive but
-  dead. `LOOMBRE_SCAN_POLL=0/1` still overrides every automatic rule.
-  Verified on a Mac with a library whose Desktop folder had been deleted.
 
 - Player: text subtitles can actually be turned on. The track picker still
   rendered every subtitle as "requires transcoding (Phase 3)", a Phase-2

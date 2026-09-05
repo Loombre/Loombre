@@ -7,7 +7,7 @@
 <p align="center"><strong>Your movies, shows, and music — on your own hardware, under your own rules.</strong></p>
 
 <p align="center">
-  <a href="https://github.com/Loombre/Loombre/releases/tag/v1.0.0-beta.1"><img alt="Latest release" src="https://img.shields.io/github/v/release/Loombre/Loombre?include_prereleases&amp;label=release"></a>
+  <a href="https://github.com/Loombre/Loombre/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/Loombre/Loombre?include_prereleases&amp;label=release"></a>
   <a href="https://github.com/Loombre/Loombre/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Loombre/Loombre/actions/workflows/ci.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="License: AGPL-3.0-only" src="https://img.shields.io/badge/license-AGPL--3.0--only-blue"></a>
   <a href=".nvmrc"><img alt="Node 24" src="https://img.shields.io/badge/node-24-brightgreen"></a>
@@ -33,10 +33,11 @@ other media server, and it shares no API surface, schema, or naming with one.
 
 ## The beta
 
-> **Loombre is version `1.0.0-beta.1`, pre-release** — published for testers
-> on 2026-09-03 with packaged installers for Linux, Windows, and macOS, Docker
-> images on GHCR, and checksums, signatures, and build attestations for every
-> file. **[Release page →](https://github.com/Loombre/Loombre/releases/tag/v1.0.0-beta.1)**
+> **Loombre is version `1.0.0-beta.2`, pre-release** — the tester line that
+> began with beta.1 on 2026-09-03: packaged installers for Linux (`.rpm` and
+> `.deb` from beta.2, plus the tarball), Windows, and macOS, Docker images on
+> GHCR, and checksums, signatures, and build attestations for every file.
+> **[Releases →](https://github.com/Loombre/Loombre/releases)**
 
 What "beta" means here:
 
@@ -123,7 +124,7 @@ per-platform prerequisites: [docs/install/index.md](docs/install/index.md).
 ### Downloads
 
 Every artifact below is on the
-**[1.0.0-beta.1 release page](https://github.com/Loombre/Loombre/releases/tag/v1.0.0-beta.1)**,
+**[releases page](https://github.com/Loombre/Loombre/releases)**,
 alongside `SHA256SUMS`, `manifest.json`, and their minisign signatures.
 
 | Platform | What you get | Guide |

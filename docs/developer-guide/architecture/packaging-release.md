@@ -13,7 +13,8 @@
      signing via GitHub OIDC — confirmed present in that workflow file.
      keys/README.md — three-location minisign public-key consistency
      check (checked in CI by scripts/release/check-pubkey-consistency.mjs).
-     Version 1.0.0-beta.1, published 2026-09-03 as a GitHub pre-release —
+     Version 1.0.0-beta.2, published from the v1.0.0-beta.2 tag cut 2026-09-05
+     (beta.1 went out 2026-09-03 as a GitHub pre-release) —
      root package.json, CHANGELOG.md's convention note and its
      "[1.0.0-beta.1]" header. The Linux native-package layer —
      installers/linux/{build-rpm,build-deb,smoke-packages}.mjs and
