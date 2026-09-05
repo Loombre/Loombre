@@ -251,13 +251,15 @@ jobs:
           fi
           echo "install-smoke: purge removed /opt/loombre, /var/lib/loombre, /etc/loombre and the loombre user"
 
-      - name: Package smoke (containers — fedora 44, rocky 9, debian 12)
+      - name: Package smoke (containers — fedora 44, rocky 9, debian 12, ubuntu 26.04)
         # installers/linux/smoke-packages.mjs — the package-format sibling
         # of the tarball's own smoke.mjs (see its header): install ->
         # verify -> boot -> reinstall -> remove -> purge (plus the guard
         # and uid-adoption scenarios) against real target distros, each in
         # its own fresh container. docker is preinstalled on ubuntu-latest;
-        # the script pulls digest-pinned images itself.
+        # the script pulls digest-pinned images itself. ubuntu:26.04 is the
+        # proof case for the vendored libxml2.so.2 (installers/
+        # libxml2-manifest.json): it ships no libxml2.so.2 package at all.
         env:
           LOOMBRE_VERSION: ${{ needs.prepare.outputs.version }}
         run: |
@@ -265,7 +267,7 @@ jobs:
           node installers/linux/smoke-packages.mjs \
             --rpm "dist/release/loombre-${LOOMBRE_VERSION}-linux-x64.rpm" \
             --deb "dist/release/loombre-${LOOMBRE_VERSION}-linux-x64.deb" \
-            --distros fedora:44,rockylinux:9,debian:12
+            --distros fedora:44,rockylinux:9,debian:12,ubuntu:26.04
 
       - name: Upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

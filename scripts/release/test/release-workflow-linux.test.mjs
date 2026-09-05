@@ -183,6 +183,14 @@ test("smoke-packages.mjs runs against the built .rpm AND .deb", () => {
     /smoke-packages\.mjs[\s\S]*?--deb "dist\/release\//,
     "smoke-packages.mjs must be given --deb",
   );
+  // ubuntu:26.04 ships no libxml2.so.2 package; installers/libxml2-manifest.json
+  // vendors one beside the embedded PostgreSQL precisely so the .deb installs
+  // there — the matrix must keep proving it on every tagged build.
+  assert.match(
+    buildLinux,
+    /smoke-packages\.mjs[\s\S]*?--distros [^\n]*\bubuntu:26\.04\b/,
+    "smoke-packages.mjs's --distros must include ubuntu:26.04 (the vendored-libxml2 proof case)",
+  );
 });
 
 test("the release job still needs build-linux", () => {
