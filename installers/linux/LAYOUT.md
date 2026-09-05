@@ -42,6 +42,7 @@ loombre-<version>-linux-<arch>/
 │   │                               # tree was 599 MB with no way to start it). See assembleWebStandalone.
 │   └── apps/web/server.js
 ├── pg/                            # embedded PostgreSQL payload, VENDOR-SHAPED: pg/<platform>/<version>/{bin,lib,share,...}
+│   │                               # lib/ additionally carries a vendored libxml2.so.2 (+ LICENSE.libxml2.txt) — see below
 │   │                               # — exactly one platform+version pair (the manifest's defaultVersion), the shape
 │   │                               # resolveVendorBinaries + bin/loombre-server's derivation expect. include/ headers
 │   │                               # excluded. A missing payload FAILS the build (embedded is the DATABASE_URL-unset
@@ -62,6 +63,7 @@ loombre-<version>-linux-<arch>/
 | `lib/server/`, `lib/worker/` | `pnpm --filter <app> deploy <dir> --prod --legacy`, then packaging-time-only fixes — see below |
 | `web/` | `apps/web/.next/standalone` (Next `output: "standalone"`) + `.next/static` and `public/` overlays + a linux-`<arch>` sharp swap — `assembleWebStandalone` in `build-tarball.mjs` |
 | `pg/` | `scripts/fetch-embedded-pg.mjs` at the manifest `defaultVersion`, restaged vendor-shaped (`pg/<platform>/<version>/`); REQUIRED — the build fails without it |
+| `pg/<platform>/<version>/lib/libxml2.so.2` (+ `LICENSE.libxml2.txt`) | `scripts/fetch-libxml2.mjs` + `installers/libxml2-manifest.json` — Rocky Linux 9.6's libxml2 rpm (MIT; glibc 2.34 floor, the same as the PostgreSQL binaries), sha256-verified, two files extracted. PostgreSQL links `libxml2.so.2` and its `RUNPATH $ORIGIN/../lib` resolves this copy first; libxml2 2.14 bumped the soname to `.so.16`, and Ubuntu 25.10 / 26.04 LTS ship no `.so.2` at all. Vendoring it makes the embedded database's dependency set identical on every distro and lets the .rpm/.deb derive `liblzma` instead of `libxml2` |
 | `packages/release-manifest/dist/` | a copy of the live repo's own already-built `packages/release-manifest/dist/` — see below |
 
 ## Three packaging-time-only fixes, all discovered by the first real container smoke run

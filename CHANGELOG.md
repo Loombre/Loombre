@@ -47,6 +47,12 @@ axis; nothing before `1.0.0-beta.1` was ever released.
   allows calls to that one API origin, and it defaults to
   `http://localhost:3001`.
 - The Linux tarball now bundles Node's own `LICENSE` next to the runtime.
+- The Linux tarball (and therefore both packages) carries its own
+  `libxml2.so.2` beside the embedded PostgreSQL, vendored from Rocky Linux
+  9's package (`installers/libxml2-manifest.json`): Ubuntu 25.10 and 26.04
+  LTS ship only `libxml2-16`, so without it the embedded database could not
+  start there and the `.deb` would have refused to install. `install.sh`'s
+  dependency hints no longer name libxml2.
 
 ## [1.0.0-beta.1] — 2026-09-03 (pre-release)
 

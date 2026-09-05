@@ -88,7 +88,7 @@ or `dpkg-shlibdeps`, both of which would also pull in every `node_modules`
 shebang interpreter and re-export the bundled `libpq`/`libvips` to other
 packages), renders the **same** `systemd/*.service.template` and
 `loombre.env.template` files `install.sh` renders, and wraps the result
-with `rpmbuild` / `dpkg-deb`. Nothing re-runs `pnpm`, deploys, or fetches.
+with `rpmbuild` / `dpkg-deb`. PostgreSQL's optional extension modules are excluded from that scan, and a vendored `libxml2.so.2` (`installers/libxml2-manifest.json`) is shipped beside PostgreSQL's own libraries so the packages never depend on a distro `libxml2` — Ubuntu 25.10+ has none with that soname. Nothing re-runs `pnpm`, deploys, or fetches.
 So the three Linux channels can never ship different bytes for one version,
 and the shared layer that guarantees it — package identity, the semver →
 package-version mapping, the FHS staging tree, the spec, the control file

@@ -50,10 +50,21 @@
 // inside the container (LOOMBRE_DATA_DIR set → the shared dev Postgres
 // fallback can never engage — apps/worker/src/db-url.ts resolution order).
 //
+//   systemd   (--systemd, opt-in, local Docker only) a PRIVILEGED container
+//             booted with systemd as PID 1 (a throwaway image built on the
+//             pinned base + the distro's systemd package): install must
+//             enable AND start the three units for real, /healthz answers
+//             through the units, /etc/loombre/no-autostart is honoured and
+//             consumed, a same-version reinstall stops-before-unpack and
+//             restores exactly the running units, removal while running
+//             stops them (and deb's remove masks them). Needs cgroup v2 and
+//             --privileged; release.yml covers the deb half natively on its
+//             systemd runner, the rpm half only here.
+//
 // Usage:
 //   node installers/linux/smoke-packages.mjs [--rpm <path>] [--deb <path>]
-//        [--distros fedora:44,rockylinux:9,debian:12,ubuntu:24.04]
-//        [--skip-boot] [--keep-containers] [--lint]
+//        [--distros fedora:44,rockylinux:9,debian:12,ubuntu:24.04,ubuntu:26.04]
+//        [--skip-boot] [--keep-containers] [--lint] [--systemd]
 //
 // Prerequisites: docker running locally; the packages built (build-rpm.mjs /
 // build-deb.mjs — the newest dist/*.rpm|deb for the host arch are used).
@@ -67,6 +78,9 @@ const LINUX_DIR = path.dirname(fileURLToPath(import.meta.url));
 const HOST_ARCH = process.arch === "arm64" ? "arm64" : "x64";
 const SERVER_PORT = 3111;
 const WEB_PORT = 3112;
+/** --systemd: the units bind the env file's own 3001/3000 inside the container; mapped to these host ports. */
+const SYSTEMD_SERVER_HOST_PORT = 3113;
+const SYSTEMD_WEB_HOST_PORT = 3114;
 
 /** Digest-pinned images (docker pull records these; bump deliberately). */
 const IMAGES = {
@@ -82,7 +96,7 @@ const IMAGES = {
 const DEFAULT_DISTROS = ["fedora:44", "rockylinux:9", "debian:12", "ubuntu:24.04", "ubuntu:26.04"];
 
 export function parseArgs(argv) {
-  const out = { rpm: null, deb: null, distros: DEFAULT_DISTROS, skipBoot: false, keepContainers: false, lint: false, help: false };
+  const out = { rpm: null, deb: null, distros: DEFAULT_DISTROS, skipBoot: false, keepContainers: false, lint: false, systemd: false, help: false };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--rpm") out.rpm = path.resolve(argv[++i]);
@@ -91,6 +105,7 @@ export function parseArgs(argv) {
     else if (arg === "--skip-boot") out.skipBoot = true;
     else if (arg === "--keep-containers") out.keepContainers = true;
     else if (arg === "--lint") out.lint = true;
+    else if (arg === "--systemd") out.systemd = true;
     else if (arg === "--help" || arg === "-h") out.help = true;
     else throw new Error(`smoke-packages: unrecognized argument ${arg}`);
   }
@@ -140,6 +155,16 @@ class Container {
     capture("docker", ["rm", "-f", this.name]);
     const portArgs = ports ? ["-p", `${SERVER_PORT}:${SERVER_PORT}`, "-p", `${WEB_PORT}:${WEB_PORT}`] : [];
     run("docker", ["run", "-d", "--name", this.name, ...portArgs, this.image, "sleep", "infinity"]);
+  }
+  /** A privileged container whose PID 1 is systemd (the image's CMD). */
+  startSystemd() {
+    capture("docker", ["rm", "-f", this.name]);
+    run("docker", [
+      "run", "-d", "--name", this.name, "--privileged", "--cgroupns=host",
+      "-v", "/sys/fs/cgroup:/sys/fs/cgroup:rw", "--tmpfs", "/run", "--tmpfs", "/run/lock", "--tmpfs", "/tmp",
+      "-p", `${SYSTEMD_SERVER_HOST_PORT}:3001`, "-p", `${SYSTEMD_WEB_HOST_PORT}:3000`,
+      this.image,
+    ]);
   }
   /** bash -c inside the container; returns { status, stdout, stderr, out }. */
   sh(script, { user, env = [] } = {}) {
@@ -438,10 +463,123 @@ async function guardAndAdopt(distro, family, artifact, version, args) {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// --systemd: the live start/stop path, in a privileged PID-1-systemd container
+// ─────────────────────────────────────────────────────────────────────────
+
+function buildSystemdImage(distro, family) {
+  const tag = `loombre-pkg-systemd-${distro.replace(/[:.]/g, "-")}`;
+  const dockerfile = family === "rpm"
+    ? `FROM ${IMAGES[distro].ref}\nRUN dnf install -y -q systemd procps-ng util-linux shadow-utils && dnf clean all\nSTOPSIGNAL SIGRTMIN+3\nCMD ["/sbin/init"]\n`
+    : `FROM ${IMAGES[distro].ref}\nRUN apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq systemd systemd-sysv procps >/dev/null && apt-get clean\nSTOPSIGNAL SIGRTMIN+3\nCMD ["/sbin/init"]\n`;
+  const res = spawnSync("docker", ["build", "-q", "-t", tag, "-"], { input: dockerfile, encoding: "utf8" });
+  if (res.status !== 0) throw new Error(`smoke-packages: docker build of the ${distro} systemd image failed:\n${res.stdout}${res.stderr}`);
+  return tag;
+}
+
+async function waitFor(label, fn, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  let last = "";
+  while (Date.now() < deadline) {
+    const r = fn();
+    if (r.ok) return r;
+    last = r.detail ?? "";
+    await new Promise((res) => setTimeout(res, 2_000));
+  }
+  throw new Error(`smoke-packages: ${label} did not happen within ${timeoutMs} ms (last: ${last})`);
+}
+
+async function systemdLifecycle(distro, family, artifact, version, args) {
+  const pm = PM[family];
+  const pkgInContainer = `/tmp/${path.basename(artifact)}`;
+  console.log(`\n=== ${distro} (${family}) — systemd PID 1: live enable/start, no-autostart, upgrade restore, remove ===\n`);
+  const image = buildSystemdImage(distro, family);
+  const c = new Container(`loombre-pkg-systemd-${distro.replace(/[:.]/g, "-")}`, image);
+  const active = (unit) => c.sh(`systemctl is-active ${unit}`).stdout.trim();
+  const enabled = (unit) => c.sh(`systemctl is-enabled ${unit}`).stdout.trim();
+  const units = ["loombre-server", "loombre-worker", "loombre-web"];
+  try {
+    c.startSystemd();
+    await waitFor("systemd to boot", () => {
+      const r = c.sh("systemctl is-system-running");
+      const state = r.stdout.trim();
+      return { ok: ["running", "degraded"].includes(state), detail: state || r.stderr.trim() };
+    }, 90_000);
+    log(`${distro}: systemd is PID 1 (${c.sh("systemctl is-system-running").stdout.trim()})`);
+    if (family === "deb") c.must("apt-get update -qq", {}, "apt index");
+    c.cp(artifact, pkgInContainer);
+
+    // install → enabled + started for real, served through the units
+    const inst = c.must(pm.install(pkgInContainer), {}, "install under systemd");
+    assert(/services enabled and started/.test(inst.out), `expected the live-start branch:\n${inst.out}`);
+    for (const u of units) assert(enabled(u) === "enabled", `${u} should be enabled, is ${enabled(u)}`);
+    await waitFor("loombre-server active + /healthz through the unit", () => {
+      const st = active("loombre-server");
+      return { ok: st === "active", detail: st };
+    }, 30_000);
+    await waitForHttp(`http://127.0.0.1:${SYSTEMD_SERVER_HOST_PORT}/healthz`, 150_000);
+    for (const u of units) {
+      await waitFor(`${u} active`, () => ({ ok: active(u) === "active", detail: active(u) }), 60_000);
+    }
+    await waitForHttp(`http://127.0.0.1:${SYSTEMD_WEB_HOST_PORT}/login`, 90_000);
+    log(`${distro}: all three units active; /healthz and /login answer through the units`);
+    assert(/StandardOutput|loombre-server/.test(c.sh("journalctl -u loombre-server --no-pager -n 5").out), "journal carries the server's output");
+
+    // same-version reinstall while running → stop-before-unpack, then exactly those units restored
+    const re = c.must(pm.reinstall(pkgInContainer), {}, "reinstall under systemd");
+    assert(!/conffile|What would you like/i.test(re.out), `reinstall must never prompt:\n${re.out}`);
+    c.must(`test ! -e /run/loombre-${family}-upgrade`, {}, "the upgrade marker is consumed");
+    for (const u of units) {
+      await waitFor(`${u} active again after the reinstall`, () => ({ ok: active(u) === "active", detail: active(u) }), 90_000);
+    }
+    await waitForHttp(`http://127.0.0.1:${SYSTEMD_SERVER_HOST_PORT}/healthz`, 150_000);
+    log(`${distro}: reinstall stopped the units before unpack and restored all three`);
+
+    // a stopped unit stays stopped across an upgrade (exact restoration, not "start everything")
+    c.must("systemctl stop loombre-worker");
+    c.must(pm.reinstall(pkgInContainer), {}, "reinstall with the worker stopped");
+    await waitFor("server active after the second reinstall", () => ({ ok: active("loombre-server") === "active", detail: active("loombre-server") }), 90_000);
+    assert(active("loombre-worker") !== "active", "a unit that was NOT running before the upgrade must not be started by it");
+    log(`${distro}: exact restoration — the stopped worker stayed stopped`);
+    c.must("systemctl start loombre-worker");
+
+    // remove while running → stopped (+ masked on deb)
+    c.must(pm.remove, {}, "remove under systemd");
+    for (const u of units) assert(active(u) !== "active", `${u} still active after remove`);
+    if (family === "deb") {
+      assert(enabled("loombre-server") === "masked", `deb remove should mask the units, got ${enabled("loombre-server")}`);
+      c.must(pm.purge, {}, "purge under systemd");
+      assert(!/masked/.test(enabled("loombre-server")), "purge must unmask");
+    }
+    log(`${distro}: remove stopped the running units${family === "deb" ? " and masked them; purge unmasked" : ""}`);
+
+    // no-autostart: enabled but NOT started, flag consumed
+    c.must("mkdir -p /etc/loombre && touch /etc/loombre/no-autostart");
+    const inst2 = c.must(pm.install(pkgInContainer), {}, "install with the no-autostart flag");
+    assert(/NOT started \(flag consumed\)/.test(inst2.out), `expected the no-autostart branch:\n${inst2.out}`);
+    c.must("test ! -e /etc/loombre/no-autostart", {}, "flag consumed");
+    for (const u of units) {
+      assert(enabled(u) === "enabled", `${u} should be enabled with the flag, is ${enabled(u)}`);
+      assert(active(u) !== "active", `${u} must not be started with the flag present`);
+    }
+    c.must("systemctl start loombre-server loombre-worker loombre-web", {}, "manual start after the flag");
+    await waitForHttp(`http://127.0.0.1:${SYSTEMD_SERVER_HOST_PORT}/healthz`, 150_000);
+    log(`${distro}: no-autostart honoured and consumed; manual start works`);
+    c.must(pm.remove);
+    if (family === "deb") c.must(pm.purge);
+    log(`${distro}: systemd scenario PASSED`);
+  } finally {
+    if (!args.keepContainers) {
+      c.remove();
+      capture("docker", ["rmi", "-f", image]);
+    }
+  }
+}
+
 async function main(argv) {
   const args = parseArgs(argv);
   if (args.help) {
-    console.log("Usage: node installers/linux/smoke-packages.mjs [--rpm <path>] [--deb <path>] [--distros a,b] [--skip-boot] [--keep-containers] [--lint]");
+    console.log("Usage: node installers/linux/smoke-packages.mjs [--rpm <path>] [--deb <path>] [--distros a,b] [--skip-boot] [--keep-containers] [--lint] [--systemd]");
     return;
   }
   if (capture("docker", ["--version"]).status !== 0) throw new Error("smoke-packages: docker not available on PATH");
@@ -459,6 +597,7 @@ async function main(argv) {
     try {
       await lifecycle(distro, family, artifact, version, args);
       await guardAndAdopt(distro, family, artifact, version, args);
+      if (args.systemd) await systemdLifecycle(distro, family, artifact, version, args);
       results.push({ distro, status: "passed" });
     } catch (err) {
       console.error(`\n!!! ${distro}: FAILED — ${err instanceof Error ? err.message : err}\n`);

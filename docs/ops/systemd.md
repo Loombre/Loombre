@@ -40,7 +40,7 @@ Full install/upgrade/uninstall instructions: `docs/install/linux.md`.
 
 ## One thing this page DOES cover: privileged ports
 
-Both shipped unit templates run with an **empty** `CapabilityBoundingSet=`
+All three shipped unit templates run with an **empty** `CapabilityBoundingSet=`
 / `AmbientCapabilities=` by design — zero Linux capabilities beyond what
 an ordinary unprivileged process gets, consistent with the rest of that
 unit's hardening (`ProtectSystem=strict`, `NoNewPrivileges=true`, and the

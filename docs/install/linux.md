@@ -18,7 +18,7 @@ channel. They differ only in who owns the files afterwards.
 | Channel | Use it on | Install with |
 |---|---|---|
 | **`.rpm`** | Fedora (currently supported releases), RHEL 9 and 10 and their rebuilds (Rocky, Alma), openSUSE Leap 15.6 | `sudo dnf install ./loombre-<version>-linux-x64.rpm` |
-| **`.deb`** | Debian 12 and 13, Ubuntu 22.04 LTS and 24.04 LTS | `sudo apt install ./loombre-<version>-linux-x64.deb` |
+| **`.deb`** | Debian 12 and 13, Ubuntu 22.04 LTS, 24.04 LTS and 26.04 LTS (25.10 too) | `sudo apt install ./loombre-<version>-linux-x64.deb` |
 | **tarball** | any glibc ≥ 2.34 distro; the only channel with relocatable paths (`--prefix`, `--data-dir`, `--user`) and the only one that runs without a package manager | `sudo ./install.sh` |
 
 **glibc ≥ 2.34 is the floor on every channel.** It comes from the bundled
@@ -157,7 +157,7 @@ so explicitly:
 sudo zypper install --allow-unsigned-rpm ./loombre-<version>-linux-x64.rpm
 ```
 
-### 3b. The `.deb` package (Debian 12/13, Ubuntu 22.04/24.04 LTS)
+### 3b. The `.deb` package (Debian 12/13, Ubuntu 22.04/24.04/26.04 LTS)
 
 ```sh
 sudo apt install ./loombre-<version>-linux-x64.deb
@@ -170,15 +170,13 @@ unprivileged `_apt` user cannot read (your home directory, typically),
 unsandboxed** … and carries on. That notice is harmless: the install
 proceeds as root.
 
-<!-- PKG-LIBXML2-BEGIN -->
-**Known limitation — Ubuntu 25.10 and 26.04 LTS.** Those releases ship
-`libxml2-16` and no `libxml2.so.2`, which the bundled PostgreSQL links
-against. The `.deb` therefore refuses to install there today, at dependency
-resolution (`libxml2 is not installable`) rather than by breaking after the
-fact. Ubuntu 22.04 LTS and 24.04 LTS, and Debian 12 and 13, are unaffected.
-Until this is resolved, use Docker on those releases (the tarball hits the
-same missing library — see step 3c).
-<!-- PKG-LIBXML2-END -->
+**Ubuntu 25.10 and 26.04 LTS** ship `libxml2-16` and no `libxml2.so.2`,
+which the bundled PostgreSQL links against — so Loombre carries its own
+copy of that library next to PostgreSQL's other libraries (an MIT-licensed
+`libxml2.so.2` taken from Rocky Linux 9's package, pinned by checksum in
+`installers/libxml2-manifest.json`; PostgreSQL's own `RUNPATH` finds it
+first). The `.deb` therefore installs on those releases exactly as on
+24.04, and the package never depends on a `libxml2` package at all.
 
 ### 3c. The tarball (any glibc ≥ 2.34 distro)
 
@@ -189,17 +187,17 @@ tarball only** — the `.rpm`/`.deb` declare these as real dependencies and
 their package manager pulls them in for you:
 
 ```sh
-# Debian/Ubuntu
-apt install libgssapi-krb5-2 libxml2 libreadline8
+# Debian/Ubuntu (24.04 and later resolve libreadline8 to libreadline8t64 by themselves)
+apt install libgssapi-krb5-2 libreadline8
 # openSUSE
-zypper install krb5 libxml2-2 libreadline8
+zypper install krb5 libreadline8
 # Fedora/RHEL
-dnf install krb5-libs libxml2 readline
+dnf install krb5-libs readline
 ```
 
-(On Ubuntu 25.10/26.04 there is no `libxml2` package providing
-`libxml2.so.2` to install — the limitation noted in step 3b applies to the
-tarball as well.)
+(libxml2 is not on the list on purpose: the tarball ships its own
+`libxml2.so.2` beside the embedded PostgreSQL — see step 3b — so no
+distro package is needed for it, on any release.)
 
 `install.sh` warns if they are missing (installs pointed at an external
 `DATABASE_URL` never run the bundled PostgreSQL and are unaffected).
