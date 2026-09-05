@@ -37,7 +37,9 @@
 // the union outside pg/lib is exactly libc/libm/libdl/libpthread/librt/
 // libresolv (GLIBC_2.34), libstdc++ (GLIBCXX_3.4.22, CXXABI_1.3.11),
 // libgcc_s, libcrypto/libssl (3), libgssapi_krb5, liblz4, libreadline (8),
-// libxml2, libz, libzstd; self-provided: libpq.so.5 and libvips-cpp.
+// libz, libzstd — plus liblzma via the vendored libxml2.so.2 that now sits
+// in pg/lib (installers/libxml2-manifest.json), which is why libxml2
+// itself is self-provided alongside libpq.so.5 and libvips-cpp.
 
 import { closeSync, lstatSync, openSync, readFileSync, readSync, readdirSync } from "node:fs";
 import path from "node:path";
@@ -358,6 +360,7 @@ export const DEB_SONAME_PACKAGE_MAP = Object.freeze({
   "libxml2.so.2": "libxml2",
   "libz.so.1": "zlib1g",
   "libzstd.so.1": "libzstd1",
+  "liblzma.so.5": "liblzma5",
 });
 
 function maxGlibcVersion(scan) {

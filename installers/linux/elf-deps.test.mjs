@@ -370,7 +370,7 @@ test("DEB_SONAME_PACKAGE_MAP covers every soname the 2026-09-05 payload probe fo
   for (const so of [
     "libc.so.6", "libm.so.6", "libdl.so.2", "libpthread.so.0", "librt.so.1", "libresolv.so.2",
     "libstdc++.so.6", "libgcc_s.so.1", "libcrypto.so.3", "libssl.so.3", "libgssapi_krb5.so.2",
-    "liblz4.so.1", "libreadline.so.8", "libxml2.so.2", "libz.so.1", "libzstd.so.1",
+    "liblz4.so.1", "libreadline.so.8", "libxml2.so.2", "libz.so.1", "libzstd.so.1", "liblzma.so.5",
   ]) {
     assert.ok(DEB_SONAME_PACKAGE_MAP[so], `no deb package mapping for ${so}`);
   }

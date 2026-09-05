@@ -1,0 +1,36 @@
+{
+  "manifestSchemaVersion": 1,
+  "pinnedAtMs": 1788609600000,
+  "pinnedAtIso": "2026-09-05T12:00:00Z",
+  "provenance": {
+    "note": "A libxml2.so.2 shared library vendored NEXT TO the embedded PostgreSQL (staged into pg/<platform>/<version>/lib/ by installers/linux/build-tarball.mjs, where PostgreSQL's own RUNPATH $ORIGIN/../lib resolves it before any system copy). Why: the theseus-rs PostgreSQL binaries link libxml2.so.2 dynamically, and libxml2 2.14 bumped its soname to libxml2.so.16 — Ubuntu 25.10, Ubuntu 26.04 LTS (and every distro that follows) ship no package providing the old soname, so without this file the .deb refuses to install there and the tarball's install.sh preflight has nothing to suggest. Self-providing the library makes the PostgreSQL dependency set identical on every target: the .rpm/.deb builders' ELF-derived Requires/Depends then carry libz/liblzma (present everywhere) instead of libxml2. Source: Rocky Linux 9's libxml2 package from the 9.6 vault (RHEL 9 rebuild — the OLDEST target the Linux channels support, so its glibc 2.34 floor equals the PostgreSQL binaries' own; a build from a newer distro would raise the floor). Only /usr/lib64/libxml2.so.2.9.13 (renamed to its SONAME, libxml2.so.2) and the license text are taken from the .rpm; xmllint/xmlcatalog/docs are discarded. The vault URL is a versioned snapshot Rocky keeps after the point release moves on (their current mirror already carries 2.9.13-14.el9_8.x); the rpms are digest-pinned below and re-verified before extraction, exactly like installers/ffmpeg-manifest.json's archives.",
+    "license": "MIT (libxml2's Copyright file, shipped alongside as LICENSE.libxml2.txt) — on LICENSE-INTENT.md's allow-list; recorded in its Vendored non-npm binaries table. Loaded by the PostgreSQL executables only (dlopen-free dynamic linking into the postgres/psql/pg_dump processes), never by Loombre's own code.",
+    "extraction": "The .rpm payload is a cpio archive: scripts/fetch-libxml2.mjs uses rpm2cpio|cpio where present (release.yml's ubuntu-latest, after apt install rpm) and bsdtar (libarchive reads .rpm natively; macOS's /usr/bin/tar) otherwise — no rpm database, no rpm install, just the two files."
+  },
+  "platforms": {
+    "linux-x64": {
+      "source": "Rocky Linux 9.6 vault, BaseOS x86_64 (dl.rockylinux.org/vault/rocky/9.6/BaseOS/x86_64/os/Packages/l/)",
+      "package": "libxml2-2.9.13-12.el9_6.x86_64.rpm",
+      "url": "https://dl.rockylinux.org/vault/rocky/9.6/BaseOS/x86_64/os/Packages/l/libxml2-2.9.13-12.el9_6.x86_64.rpm",
+      "sha256": "10a8bd5bf4bbc1cf043bdc54860c51b5cf0b37e9f753c1098b35bc0de7bb3435",
+      "sizeBytes": 763770,
+      "libraryEntry": "./usr/lib64/libxml2.so.2.9.13",
+      "licenseEntry": "./usr/share/licenses/libxml2/Copyright",
+      "soname": "libxml2.so.2",
+      "libxml2Version": "2.9.13",
+      "verification": "Downloaded in full on the build host 2026-09-05 and sha256'd locally; ELF inspection (installers/linux/lib/elf-deps.mjs): SONAME libxml2.so.2, NEEDED libz.so.1 liblzma.so.5 libm.so.6 libc.so.6, highest symbol version GLIBC_2.34 — the same floor as the embedded PostgreSQL binaries."
+    },
+    "linux-arm64": {
+      "source": "Rocky Linux 9.6 vault, BaseOS aarch64 (dl.rockylinux.org/vault/rocky/9.6/BaseOS/aarch64/os/Packages/l/)",
+      "package": "libxml2-2.9.13-12.el9_6.aarch64.rpm",
+      "url": "https://dl.rockylinux.org/vault/rocky/9.6/BaseOS/aarch64/os/Packages/l/libxml2-2.9.13-12.el9_6.aarch64.rpm",
+      "sha256": "68d659198ec432321b37ae8c4bbf3e1e04a3b6d875cab21125f1859af25baa1d",
+      "sizeBytes": 746118,
+      "libraryEntry": "./usr/lib64/libxml2.so.2.9.13",
+      "licenseEntry": "./usr/share/licenses/libxml2/Copyright",
+      "soname": "libxml2.so.2",
+      "libxml2Version": "2.9.13",
+      "verification": "Downloaded in full on the build host 2026-09-05 and sha256'd locally; ELF inspection: SONAME libxml2.so.2, NEEDED libz.so.1 liblzma.so.5 libm.so.6 libc.so.6 ld-linux-aarch64.so.1, highest symbol version GLIBC_2.34."
+    }
+  }
+}

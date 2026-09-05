@@ -247,15 +247,15 @@ pg_lib_preflight() {
   _pm=""
   _pkgs=""
   if command -v apt-get >/dev/null 2>&1; then
-    _pm="apt-get"; _install="apt-get install -y"; _pkgs="libgssapi-krb5-2 libxml2 libreadline8"
+    _pm="apt-get"; _install="apt-get install -y"; _pkgs="libgssapi-krb5-2 libreadline8"
   elif command -v dnf >/dev/null 2>&1; then
-    _pm="dnf"; _install="dnf install -y"; _pkgs="krb5-libs libxml2 readline"
+    _pm="dnf"; _install="dnf install -y"; _pkgs="krb5-libs readline"
   elif command -v zypper >/dev/null 2>&1; then
-    _pm="zypper"; _install="zypper --non-interactive install"; _pkgs="krb5 libxml2-2 libreadline8"
+    _pm="zypper"; _install="zypper --non-interactive install"; _pkgs="krb5 libreadline8"
   elif command -v pacman >/dev/null 2>&1; then
-    _pm="pacman"; _install="pacman -S --noconfirm"; _pkgs="krb5 libxml2 readline"
+    _pm="pacman"; _install="pacman -S --noconfirm"; _pkgs="krb5 readline"
   elif command -v apk >/dev/null 2>&1; then
-    _pm="apk"; _install="apk add"; _pkgs="krb5-libs libxml2 readline"
+    _pm="apk"; _install="apk add"; _pkgs="krb5-libs readline"
   fi
 
   if [ -z "${_pm}" ]; then

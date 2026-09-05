@@ -1054,6 +1054,26 @@ function assemblePg(stageDir, arch) {
   console.log(
     `build-tarball: embedded PG ${pgVersion} staged vendor-shaped at pg/${platformKey}/${pgVersion} (include/ headers excluded)`,
   );
+
+  // libxml2.so.2 next to PostgreSQL's own libraries (installers/
+  // libxml2-manifest.json, scripts/fetch-libxml2.mjs): the theseus-rs
+  // binaries link it dynamically and PostgreSQL's RUNPATH $ORIGIN/../lib
+  // resolves this copy first. libxml2 2.14 bumped its soname to .so.16 —
+  // Ubuntu 25.10 / 26.04 LTS ship no libxml2.so.2 at all — so shipping one
+  // makes the embedded database's dependency set identical on every
+  // distro (and the .rpm/.deb builders' ELF-derived Requires/Depends drop
+  // libxml2 for the liblzma/zlib it needs, present everywhere).
+  const libxml2FetchScript = join(REPO_ROOT, "scripts", "fetch-libxml2.mjs");
+  run(process.execPath, [libxml2FetchScript, "--platform", platformKey]);
+  const libxml2VendorDir = join(REPO_ROOT, "vendor", "libxml2", platformKey);
+  const libxml2Lib = join(libxml2VendorDir, "libxml2.so.2");
+  if (!existsSync(libxml2Lib)) {
+    throw new Error(`build-tarball: ${libxml2Lib} missing after fetch-libxml2.mjs ran — refusing to ship a PostgreSQL that cannot resolve libxml2.so.2 on current Ubuntu`);
+  }
+  cpSync(libxml2Lib, join(pgStageVersionDir, "lib", "libxml2.so.2"));
+  chmodSync(join(pgStageVersionDir, "lib", "libxml2.so.2"), 0o755);
+  cpSync(join(libxml2VendorDir, "LICENSE.libxml2.txt"), join(pgStageVersionDir, "lib", "LICENSE.libxml2.txt"));
+  console.log(`build-tarball: libxml2.so.2 (vendored, MIT) staged into pg/${platformKey}/${pgVersion}/lib`);
 }
 
 // ─────────────────────────────────────────────────────────────────────────

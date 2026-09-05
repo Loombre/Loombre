@@ -44,3 +44,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node installers/check-vendor-urls.mjs
+
+      # installers/libxml2-manifest.json pins the Rocky Linux 9 vault rpms
+      # the embedded PostgreSQL's libxml2.so.2 is vendored from — a HEAD
+      # probe per pinned URL, the same daily-liveness posture as above.
+      - name: node scripts/fetch-libxml2.mjs --check-urls
+        run: node scripts/fetch-libxml2.mjs --check-urls

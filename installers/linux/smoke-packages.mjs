@@ -40,9 +40,9 @@
 // Fedora release; rpm 6 reads the v4 packages rpm 4.18 writes) and
 // rockylinux:9 (the RHEL 9 floor — glibc 2.34); deb on debian:12 and
 // ubuntu:24.04 (the 64-bit time_t package names). `--distros` widens it
-// (debian:13, almalinux:10, ubuntu:26.04 — the last one is EXPECTED to
-// refuse today: it ships no libxml2.so.2, which the bundled PostgreSQL
-// needs; see the PKG run's OPEN items).
+// (debian:13, almalinux:10, fedora:43). ubuntu:26.04 is in the default
+// matrix on purpose: it ships no libxml2.so.2, so it proves the vendored
+// copy beside PostgreSQL (installers/libxml2-manifest.json) does its job.
 //
 // RESOURCE ISOLATION: host ports 3111 (server) / 3112 (web) from the
 // installers/linux lane's 3100-3199 range — clear of smoke.mjs's 3101/3102
@@ -79,7 +79,7 @@ const IMAGES = {
   "ubuntu:24.04": { ref: "ubuntu:24.04@sha256:4fbb8e6a8395de5a7550b33509421a2bafbc0aab6c06ba2cef9ebffbc7092d90", family: "deb" },
   "ubuntu:26.04": { ref: "ubuntu:26.04@sha256:2260313b31c8c011cd2eebe728008efac1b3982be73eb71348ea2648d2c0e09b", family: "deb" },
 };
-const DEFAULT_DISTROS = ["fedora:44", "rockylinux:9", "debian:12", "ubuntu:24.04"];
+const DEFAULT_DISTROS = ["fedora:44", "rockylinux:9", "debian:12", "ubuntu:24.04", "ubuntu:26.04"];
 
 export function parseArgs(argv) {
   const out = { rpm: null, deb: null, distros: DEFAULT_DISTROS, skipBoot: false, keepContainers: false, lint: false, help: false };
@@ -125,8 +125,10 @@ function run(cmd, args, opts = {}) {
   return res;
 }
 
+/** 64 MiB output buffer: `rpm -ql` / `dpkg -L` list ~21k paths (spawnSync's
+ *  1 MiB default silently kills the child with a null status). */
 function capture(cmd, args, opts = {}) {
-  return spawnSync(cmd, args, { encoding: "utf8", ...opts });
+  return spawnSync(cmd, args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, ...opts });
 }
 
 class Container {
@@ -253,7 +255,9 @@ async function lifecycle(distro, family, artifact, version, args) {
     assert(stat("/opt/loombre/web/apps/web/.next/cache") === "755 loombre loombre", `cache dir: ${stat("/opt/loombre/web/apps/web/.next/cache")}`);
     assert(stat("/etc/loombre/loombre.env") === "640 root loombre", `env file: ${stat("/etc/loombre/loombre.env")}`);
     assert(stat("/usr/share/loombre/loombre.env") === "644 root root", `env default: ${stat("/usr/share/loombre/loombre.env")}`);
-    c.must("cmp -s /etc/loombre/loombre.env /usr/share/loombre/loombre.env", {}, "fresh env file equals the shipped default");
+    // sha256sum (coreutils) rather than cmp/diff — diffutils is absent from
+    // Rocky's minimal image.
+    c.must('[ "$(sha256sum < /etc/loombre/loombre.env)" = "$(sha256sum < /usr/share/loombre/loombre.env)" ]', {}, "fresh env file equals the shipped default");
     for (const svc of ["loombre-server", "loombre-worker", "loombre-web"]) {
       const unit = c.must(`cat /usr/lib/systemd/system/${svc}.service`).stdout;
       assert(new RegExp(`^ExecStart=/opt/loombre/bin/${svc}$`, "m").test(unit), `${svc}: ExecStart`);
@@ -267,9 +271,13 @@ async function lifecycle(distro, family, artifact, version, args) {
     const verify = c.sh(pm.verify);
     assert(verify.status === 0 && verify.out.trim() === "", `${pm.verify} reported differences:\n${verify.out}`);
     const deps = c.must(pm.deps).stdout;
-    for (const needle of family === "rpm" ? ["libssl.so.3()(64bit)", "libc.so.6(GLIBC_2.34)(64bit)", "libxml2.so.2()(64bit)"] : ["libc6 (>= 2.34)", "libssl3", "libxml2", "adduser"]) {
+    for (const needle of family === "rpm" ? ["libssl.so.3()(64bit)", "libc.so.6(GLIBC_2.34)(64bit)", "liblzma.so.5()(64bit)"] : ["libc6 (>= 2.34)", "libssl3", "liblzma5", "adduser"]) {
       assert(deps.includes(needle), `dependencies lack ${needle}:\n${deps}`);
     }
+    // libxml2.so.2 is vendored beside PostgreSQL (installers/libxml2-manifest.json)
+    // precisely so no distro package is needed for it — Ubuntu 25.10+ has none.
+    assert(!/libxml2/.test(deps), `libxml2 must be self-provided, not a dependency:\n${deps}`);
+    c.must("test -f /opt/loombre/pg/*/*/lib/libxml2.so.2 && test -f /opt/loombre/pg/*/*/lib/LICENSE.libxml2.txt", {}, "vendored libxml2.so.2 + license present beside PostgreSQL");
     const files = c.must(pm.files).stdout.split("\n");
     for (const p of ["/usr/bin/loombre", "/usr/lib/sysusers.d/loombre.conf", "/usr/share/loombre/loombre.env", "/usr/share/doc/loombre/copyright", "/opt/loombre/bin/loombre-server"]) {
       assert(files.includes(p), `package file list lacks ${p}`);
