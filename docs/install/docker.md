@@ -5,7 +5,7 @@ installer" trust conversation the native installers require (see
 [windows.md](windows.md) for that story) — a Docker image's integrity is
 provable by its content digest and, for every image the release pipeline
 publishes, a cosign signature over that digest (see "Verifying the image"
-below — `1.0.0-beta.1` is the first published release, a pre-release for
+below — `1.0.0-beta.2` is the current release, a pre-release for
 testers). No SmartScreen, no Gatekeeper quarantine, no code-signing
 certificate to not-buy.
 
@@ -76,15 +76,15 @@ Both are documented in full — including the unset/empty/set distinction
 each one carries — in `installers/docker/loombre.env.example`.
 
 **Pulling a published image.** Every tagged release publishes both images
-to GHCR. Note the tag form: git tags carry a leading `v` (`v1.0.0-beta.1`),
+to GHCR. Note the tag form: git tags carry a leading `v` (`v1.0.0-beta.2`),
 but the published image tags are the bare semver (the release pipeline
-strips the `v`). The current release is `1.0.0-beta.1` — a **pre-release
+strips the `v`). The current release is `1.0.0-beta.2` — a **pre-release
 for testers**; pin the version tag rather than the moving `latest` while
 the line is pre-1.0:
 
 ```bash
-export LOOMBRE_IMAGE=ghcr.io/loombre/loombre:1.0.0-beta.1
-export LOOMBRE_WEB_IMAGE=ghcr.io/loombre/loombre-web:1.0.0-beta.1
+export LOOMBRE_IMAGE=ghcr.io/loombre/loombre:1.0.0-beta.2
+export LOOMBRE_WEB_IMAGE=ghcr.io/loombre/loombre-web:1.0.0-beta.2
 docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env pull
 ```
 
@@ -318,7 +318,7 @@ Loombre Docker images are cosign-signed using GitHub's OIDC identity:
 cosign verify \
   --certificate-identity-regexp "^https://github.com/Loombre/Loombre/" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  ghcr.io/loombre/loombre:1.0.0-beta.1
+  ghcr.io/loombre/loombre:1.0.0-beta.2
 ```
 
 This proves the image was built by Loombre's own CI from the exact commit

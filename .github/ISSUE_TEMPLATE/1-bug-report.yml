@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for testing the beta — reports like this one are what turn `beta.1` into `rc.1`.
+        Thanks for testing the beta — reports like this one are what turn `beta.N` into `rc.1`.
 
         A couple of routing notes before you start:
         - **Playback** (won't play, stutters, seeks badly, converts unexpectedly) → use the **Playback problem** form.
@@ -60,7 +60,7 @@ body:
     attributes:
       label: Loombre version
       description: Admin **Dashboard → System** card, or `loombre --version` where the CLI is installed.
-      placeholder: 1.0.0-beta.1
+      placeholder: 1.0.0-beta.2
     validations:
       required: true
   - type: dropdown

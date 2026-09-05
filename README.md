@@ -37,7 +37,7 @@ other media server, and it shares no API surface, schema, or naming with one.
 > began with beta.1 on 2026-09-03: packaged installers for Linux (`.rpm` and
 > `.deb` from beta.2, plus the tarball), Windows, and macOS, Docker images on
 > GHCR, and checksums, signatures, and build attestations for every file.
-> **[Releases →](https://github.com/Loombre/Loombre/releases)**
+> **[Release page →](https://github.com/Loombre/Loombre/releases/tag/v1.0.0-beta.2)**
 
 What "beta" means here:
 
@@ -129,7 +129,7 @@ alongside `SHA256SUMS`, `manifest.json`, and their minisign signatures.
 
 | Platform | What you get | Guide |
 |---|---|---|
-| **Docker Compose** (recommended) | `ghcr.io/loombre/loombre` + `ghcr.io/loombre/loombre-web`, tag `1.0.0-beta.1`, cosign-signed | [docs/install/docker.md](docs/install/docker.md) |
+| **Docker Compose** (recommended) | `ghcr.io/loombre/loombre` + `ghcr.io/loombre/loombre-web`, tag `1.0.0-beta.2`, cosign-signed | [docs/install/docker.md](docs/install/docker.md) |
 | **Linux** x64 | `.rpm` and `.deb` packages, or a tarball with systemd units and the `loombre` CLI | [docs/install/linux.md](docs/install/linux.md) |
 | **Windows** x64 | `.exe` installer: Windows services plus a system-tray controller | [docs/install/windows.md](docs/install/windows.md) |
 | **macOS** Apple Silicon and Intel | `.pkg` installer: LaunchDaemons plus a menubar controller (Intel builds are published on a demand basis) | [docs/install/macos.md](docs/install/macos.md) |
@@ -142,8 +142,8 @@ cp installers/docker/loombre.env.example installers/docker/loombre.env
 $EDITOR installers/docker/loombre.env   # set POSTGRES_PASSWORD and LOOMBRE_JWT_SECRET at minimum
 
 # Use the published images (leave these unset to build from source instead)
-export LOOMBRE_IMAGE=ghcr.io/loombre/loombre:1.0.0-beta.1
-export LOOMBRE_WEB_IMAGE=ghcr.io/loombre/loombre-web:1.0.0-beta.1
+export LOOMBRE_IMAGE=ghcr.io/loombre/loombre:1.0.0-beta.2
+export LOOMBRE_WEB_IMAGE=ghcr.io/loombre/loombre-web:1.0.0-beta.2
 docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env pull
 
 # 1) Postgres first; let it report healthy
@@ -212,7 +212,7 @@ identity:
 cosign verify \
   --certificate-identity-regexp "^https://github.com/Loombre/Loombre/" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  ghcr.io/loombre/loombre:1.0.0-beta.1
+  ghcr.io/loombre/loombre:1.0.0-beta.2
 ```
 
 The full trust model is in
@@ -283,7 +283,7 @@ finds one — enforced, not aspirational.
 
 ## Reporting a problem
 
-Bug reports from the beta are what turn `beta.1` into `rc.1`. Pick the form
+Bug reports from the betas are what turn `beta.N` into `rc.1`. Pick the form
 that fits at **[New issue](https://github.com/Loombre/Loombre/issues/new/choose)**:
 
 | Form | Use it when |

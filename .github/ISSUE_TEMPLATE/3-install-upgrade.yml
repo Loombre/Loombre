@@ -60,7 +60,7 @@ body:
     id: version
     attributes:
       label: Version you were installing
-      placeholder: 1.0.0-beta.1
+      placeholder: 1.0.0-beta.2
     validations:
       required: true
   - type: input
