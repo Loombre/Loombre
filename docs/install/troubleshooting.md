@@ -7,11 +7,12 @@ testing.
 
 ### Loombre won't start — "Module not found" or import errors
 
-**Common with:** Linux tarball, Docker, any platform  
+**Common with:** Linux (tarball or package), Docker, any platform  
 **Root cause:** Packaging issue during build or extraction
 
 **Fix:**
 - **Linux tarball:** Confirm complete extraction: `tar -tzf loombre-*.tar.gz | wc -l` should show thousands of files. Re-extract if needed.
+- **Linux `.rpm`/`.deb`:** ask the package manager to verify its own files against the package's checksums — `rpm -V loombre` or `dpkg -V loombre`; silence means nothing is missing or modified.
 - **Docker:** Ensure you've built the image (from the repo root): `docker compose -f docker-compose.prod.yml --env-file installers/docker/loombre.env build --no-cache` then try again.
 - **All platforms:** Check the startup logs for the exact missing module name — report it if it's from the Loombre project itself.
 
@@ -217,11 +218,16 @@ systemctl status loombre-server
 ```
 
 **Common issues (from journalctl output):**
-- Port in use: change `PORT` in `/etc/loombre/loombre.env` or stop the
-  conflicting process
+- Port in use: change `PORT` in `/etc/loombre/loombre.env` — the same path
+  on the `.rpm`, the `.deb` and the tarball — or stop the conflicting
+  process
 - Data directory permission denied: `sudo chown -R loombre:loombre /var/lib/loombre/`
 
-#### Tarball extraction failed
+(`systemctl cat loombre-server` prints the unit that is actually in force
+and where it lives: `/usr/lib/systemd/system/` on the package channels,
+`/etc/systemd/system/` on the tarball.)
+
+#### Tarball extraction failed (tarball channel only)
 
 **Symptom:** Extract command hangs or gives a partial directory
 
@@ -380,7 +386,7 @@ If you hit a problem not listed here:
    - All startup logs (the first 50–100 lines when you started the service)
    - The specific error message (not a paraphrase)
    - Your OS, CPU, RAM, and Loombre version
-   - How you installed (Docker, tarball, .exe installer, .pkg, Homebrew)
+   - How you installed (Docker, Linux .rpm/.deb/tarball, .exe installer, .pkg, Homebrew)
 
 2. **Paste the logs** (redact database passwords and secret tokens) on the GitHub
    Issues page — include enough context that the error is reproducible.

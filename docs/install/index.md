@@ -6,7 +6,7 @@ This guide covers the key installation paths and what hardware you need.
 ## Quick overview: choose your platform
 
 - **[Docker/Compose (recommended)](docker.md)** — Friction-free path if you have Docker. No OS-level signing checks, no Gatekeeper/SmartScreen prompts. Single environment file, `docker compose` commands.
-- **[Linux (tarball + systemd)](linux.md)** — Bare-metal installs, containers without Docker-in-Docker. Bundled Node, ffmpeg, systemd units.
+- **[Linux (rpm / deb / tarball)](linux.md)** — `.rpm` (Fedora, RHEL 9/10, openSUSE), `.deb` (Debian 12/13, Ubuntu 22.04/24.04 LTS), or a relocatable tarball for any other glibc ≥ 2.34 distro. Bare-metal installs, containers without Docker-in-Docker. Bundled Node, ffmpeg, systemd units.
 - **[Windows (.exe installer)](windows.md)** — Native installer, Windows services, system tray controller. Embedded PostgreSQL and bundled ffmpeg.
 - **[macOS (.pkg + menubar)](macos.md)** — Native installer, LaunchDaemons, menubar controller. Runs while logged out (ideal for a shared Mac).
 

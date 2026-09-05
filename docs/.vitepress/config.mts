@@ -133,7 +133,7 @@ export default defineConfig({
           items: [
             { text: "Overview & requirements", link: "/install/" },
             { text: "Docker / Compose (recommended)", link: "/install/docker" },
-            { text: "Linux (tarball + systemd)", link: "/install/linux" },
+            { text: "Linux (rpm / deb / tarball)", link: "/install/linux" },
             { text: "Windows (.exe)", link: "/install/windows" },
             { text: "macOS (.pkg)", link: "/install/macos" },
             { text: "Troubleshooting", link: "/install/troubleshooting" },

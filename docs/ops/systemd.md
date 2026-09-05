@@ -1,8 +1,9 @@
 # systemd
 
-Loombre's Linux tarball install (the alternative to the Docker/Compose
-canonical path — see `docs/install/linux.md`) ships three systemd unit
-templates and an installer that renders them for your system:
+Loombre's native Linux installs (the alternative to the Docker/Compose
+canonical path — see `docs/install/linux.md`) ship three systemd unit
+templates, rendered for your system by whichever channel you installed
+from — the `.rpm`, the `.deb`, or the tarball:
 
 - `installers/linux/systemd/loombre-server.service.template`
 - `installers/linux/systemd/loombre-worker.service.template`
@@ -14,6 +15,26 @@ templates and an installer that renders them for your system:
   (substituting the install prefix, data dir, config dir, and service
   user you choose) and installs them via `systemctl enable --now` by
   default (`--no-start` opts out of the immediate start).
+
+The `.rpm`/`.deb` render the **same** templates, at package-build time,
+with the default paths — proven byte-identical against `install.sh`'s own
+substitutions by `installers/linux/native-package.test.mjs`. Where the
+rendered units land is the one difference:
+
+| Channel | Unit files live in |
+|---|---|
+| `.rpm` / `.deb` | `/usr/lib/systemd/system/` — package-owned; replaced on every upgrade |
+| tarball | `/etc/systemd/system/` — written by `install.sh`, removed by `uninstall.sh` |
+
+**Customise with drop-ins, not by editing the unit.** `sudo systemctl edit
+loombre-server` writes
+`/etc/systemd/system/loombre-server.service.d/override.conf`, which layers
+on top of the shipped unit — the one form of customisation that survives an
+upgrade on every channel. A full copy of a unit in
+`/etc/systemd/system/loombre-server.service` shadows the packaged one
+instead, so later releases' unit changes silently never reach you; the
+package install prints a NOTE when it finds one, and `systemctl cat
+loombre-server` shows which file is actually in force.
 
 Full install/upgrade/uninstall instructions: `docs/install/linux.md`.
 
@@ -30,10 +51,10 @@ your own port-forwarding rule) but means the unit **cannot bind port
 
 If you're turning on built-in ACME (`docs/ops/remote-access/acme.md`) or manual TLS
 directly on 80/443, see that page's "The port story, honestly" section
-for the exact `AmbientCapabilities=CAP_NET_BIND_SERVICE` addition (and
-the `setcap`/`authbind` alternatives) — this is the one systemd-specific
-piece of that story, kept here as the canonical spot so both docs can
-point at each other instead of drifting out of sync.
+for the exact `CapabilityBoundingSet=`/`AmbientCapabilities=CAP_NET_BIND_SERVICE`
+drop-in (and the `setcap`/`authbind` alternatives) — this is the one
+systemd-specific piece of that story, kept here as the canonical spot so
+both docs can point at each other instead of drifting out of sync.
 
 ## Everything else (service management, logs, upgrades)
 
