@@ -389,7 +389,7 @@ const lsIsElf64 = process.platform === "linux" && existsSync(BIN_LS) && (() => {
 test("real binary: /bin/ls on a Linux host needs libc.so.6 with at least one GLIBC_ version", { skip: !lsIsElf64 && "no ELF64 /bin/ls here (not Linux)" }, () => {
   const info = readElfInfo(readFileSync(BIN_LS));
   assert.ok(info.needed.includes("libc.so.6"), `NEEDED: ${info.needed}`);
-  const glibc = info.versionNeeds.get("libc.so.6") ?? [];
+  const glibc = [...(info.versionNeeds.get("libc.so.6") ?? [])];
   assert.ok(glibc.some((v) => /^GLIBC_\d/.test(v)), `verneed for libc.so.6: ${glibc}`);
   assert.ok(["x86_64", "aarch64"].includes(info.machine), info.machine);
 });
