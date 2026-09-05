@@ -105,10 +105,13 @@ export const PACKAGE_META = Object.freeze({
   ],
   homepage: "https://github.com/Loombre/Loombre",
   vendor: "Loombre Project",
-  // No public project mailbox exists yet (owner decision pending — recorded
-  // in the PKG run's OPEN items). dpkg requires an RFC-822 Maintainer, and a
-  // contributor's personal address must not be baked into release artifacts.
-  maintainer: "Loombre Project <noreply@loombre.com>",
+  // The project has no public mailbox, so the contact is the repository
+  // itself (PKG-6). dpkg wants the `Name <address>` shape but validates only
+  // its presence — dpkg-deb builds and apt installs with a URL there (proven
+  // 2026-09-05; lintian's maintainer-address-malformed is advisory) — and
+  // rpm's Packager tag is free text. A contributor's personal address must
+  // never be baked into release artifacts.
+  maintainer: "Loombre Project <https://github.com/Loombre/Loombre>",
   // The fixed head of the SPDX expression for the AGGREGATE this package
   // ships: Loombre itself (AGPL-3.0-only), the bundled ffmpeg/ffprobe
   // (GPL-3.0-or-later — BtbN "-gpl" builds, see installers/ffmpeg-manifest.json's
