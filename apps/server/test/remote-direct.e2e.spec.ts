@@ -197,14 +197,21 @@ describe("POST /admin/remote/direct/acme-test", () => {
     // policy well past any sane test timeout) — this is also a REAL
     // production failure shape (docs/ops/remote-access/acme.md's whole "the port story,
     // honestly" section): something else already has LOOMBRE_HTTP_PORT.
+    // The blocker takes an OS-assigned port (0), never a fixed one: a fixed
+    // number in Linux's ephemeral range (32768–60999) is exactly what any
+    // concurrently running test's outgoing connection can be holding, and
+    // the blocker's own bind then fails with EADDRINUSE before the request
+    // under test is ever made.
     const { createServer } = await import("node:net");
     const blocker = createServer();
     await new Promise<void>((resolve, reject) => {
       blocker.once("error", reject);
-      blocker.listen(38080, "0.0.0.0", () => resolve());
+      blocker.listen(0, "0.0.0.0", () => resolve());
     });
+    const address = blocker.address();
+    if (address === null || typeof address === "string") throw new Error("blocker did not bind a TCP port");
     const original = process.env["LOOMBRE_HTTP_PORT"];
-    process.env["LOOMBRE_HTTP_PORT"] = "38080";
+    process.env["LOOMBRE_HTTP_PORT"] = String(address.port);
     try {
       const res = await asAdmin().post("/admin/remote/direct/acme-test", { domain: "port-in-use.example.com" });
       expect(res.status).toBe(200);
