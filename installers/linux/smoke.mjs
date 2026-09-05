@@ -198,7 +198,15 @@ const TARBALL_ARCH = process.arch === "arm64" ? "arm64" : "x64";
  *  this file's siblings. App-source staleness is NOT tracked here (that
  *  would mean walking the whole repo); --fresh covers that case. */
 function newestInstallerInputMtimeMs(dir) {
-  const SKIP = new Set(["dist", ".build", ".DS_Store"]);
+  // The .rpm/.deb builders (build-rpm.mjs, build-deb.mjs, lib/, their tests,
+  // smoke-packages.mjs) consume the tarball and never change its bytes, so
+  // editing them must not force a rebuild here; loombre.env.template IS a
+  // tarball input and stays in the walk.
+  const SKIP = new Set([
+    "dist", ".build", ".DS_Store",
+    "lib", "build-rpm.mjs", "build-deb.mjs", "smoke-packages.mjs",
+    "native-package.test.mjs", "elf-deps.test.mjs",
+  ]);
   let newest = 0;
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (SKIP.has(entry.name)) continue;

@@ -1284,6 +1284,11 @@ async function assembleTarball(args) {
   mkdirSync(nodeRuntimeDir, { recursive: true });
   cpSync(nodeBinPath, join(nodeRuntimeDir, "node"));
   chmodSync(join(nodeRuntimeDir, "node"), 0o755);
+  // Node's own LICENSE (MIT plus the licenses of its bundled V8/OpenSSL/ICU/
+  // zlib/libuv) travels with the binary — the .rpm/.deb copyright file
+  // points at it, and a redistributed MIT binary should carry its notice.
+  const nodeLicensePath = join(dirname(dirname(nodeBinPath)), "LICENSE");
+  if (existsSync(nodeLicensePath)) cpSync(nodeLicensePath, join(stageDir, "runtime", "node", "LICENSE"));
 
   console.log("--- bundling ffmpeg/ffprobe ---");
   if (!args.skipFetchFfmpeg) fetchFfmpeg(platformKey);
@@ -1304,11 +1309,16 @@ async function assembleTarball(args) {
   writeWrapperScripts(stageDir);
   writeFileSync(join(stageDir, "VERSION"), version + "\n");
 
-  console.log("--- bundling install.sh / uninstall.sh / systemd units ---");
+  console.log("--- bundling install.sh / uninstall.sh / loombre.env.template / systemd units ---");
   for (const name of ["install.sh", "uninstall.sh"]) {
     cpSync(join(INSTALLERS_LINUX_DIR, name), join(stageDir, name));
     chmodSync(join(stageDir, name), 0o755);
   }
+  // The env-file skeleton install.sh renders (and the .rpm/.deb builders
+  // render from the same file at package-build time — installers/linux/
+  // lib/native-package.mjs). Shipped at the tarball root next to install.sh.
+  cpSync(join(INSTALLERS_LINUX_DIR, "loombre.env.template"), join(stageDir, "loombre.env.template"));
+  chmodSync(join(stageDir, "loombre.env.template"), 0o644);
   cpSync(join(INSTALLERS_LINUX_DIR, "systemd"), join(stageDir, "systemd"), { recursive: true });
 
   console.log("--- packaging tarball ---");

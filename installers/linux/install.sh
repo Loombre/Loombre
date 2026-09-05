@@ -190,65 +190,19 @@ ENV_FILE="${CONFIG_DIR}/loombre.env"
 if [ -f "${ENV_FILE}" ]; then
   echo "install.sh: ${ENV_FILE} already exists — leaving it untouched"
 else
-  cat > "${ENV_FILE}" <<EOF
-# Loombre environment file — installers/linux/install.sh generated this
-# skeleton. Values here are read by loombre-server, loombre-worker AND
-# loombre-web (systemd's EnvironmentFile=, or sourced directly in
-# --no-systemd mode).
-
-# Server HTTP port.
-PORT=3001
-
-NODE_ENV=production
-
-# App-data directory (matches the --data-dir this was installed with).
-LOOMBRE_DATA_DIR=${DATA_DIR}
-
-# PostgreSQL. Leave DATABASE_URL unset (the default) to use the BUNDLED
-# embedded PostgreSQL: the server provisions it under the data dir, runs
-# migrations automatically at boot, and supervises it — no database setup
-# of any kind required. Uncomment and point at your own Postgres 17+
-# instance for external mode instead (P4.2's "external-PG env var path" —
-# first-class and equally tested; you run migrations yourself in that mode,
-# see docs/install/linux.md).
-#DATABASE_URL=postgres://loombre:CHANGE_ME@127.0.0.1:5432/loombre
-
-# JWT signing secret. STRONGLY recommended to set explicitly in any real
-# deployment — without it the server falls back to an EPHEMERAL per-process
-# secret (every restart logs every device out). Generate one with:
-#   openssl rand -base64 48
-#LOOMBRE_JWT_SECRET=
-
-# Web client (bin/loombre-web / loombre-web.service) HTTP port. NOT the
-# shared PORT above — that one belongs to loombre-server; the web wrapper
-# reads this and defaults to 3000.
-#LOOMBRE_WEB_PORT=3000
-
-# Reverse-proxy deployments: uncomment if loombre-server sits behind your
-# own trusted reverse proxy (nginx/Caddy/Traefik) that sets X-Forwarded-For.
-#LOOMBRE_TRUST_PROXY=loopback
-
-# CORS allow-list for the web client, comma-separated. Empty disables CORS
-# entirely (same-origin deployments behind one reverse proxy). For LAN use
-# — browsing from other machines — list the web client's URL as those
-# machines actually reach it (host/IP + LOOMBRE_WEB_PORT), e.g.:
-#   LOOMBRE_CORS_ORIGINS=http://localhost:3000,http://192.168.1.50:3000
-#LOOMBRE_CORS_ORIGINS=http://localhost:3000
-
-# Embedded PostgreSQL (ADVANCED — normally all auto). When DATABASE_URL is
-# unset, bin/loombre-server points the vendor dir at the installed pg/
-# payload and derives the version from it; the cluster listens on
-# localhost:5433. Only override to run a self-vendored PG build/version or
-# to move the port:
-#LOOMBRE_EMBEDDED_PG_VENDOR_DIR=${PREFIX}/pg
-#LOOMBRE_EMBEDDED_PG_VERSION=
-#LOOMBRE_EMBEDDED_PG_PORT=5433
-
-# Library folders on NAS/network mounts (NFS/SMB) often don't deliver
-# inotify events — set LOOMBRE_SCAN_POLL=1 to force polling for watched
-# paths if new files aren't picked up automatically.
-#LOOMBRE_SCAN_POLL=1
-EOF
+  # Rendered from loombre.env.template (shipped at the tarball root next to
+  # this script) — the SAME template the .rpm/.deb packages render at build
+  # time, so every Linux channel writes a byte-identical skeleton for the
+  # same paths. Placeholders follow the systemd templates' idiom
+  # (__DATA_DIR__ / __PREFIX__), substituted with the same sed pattern.
+  if [ ! -f "${SCRIPT_DIR}/loombre.env.template" ]; then
+    echo "install.sh: ${SCRIPT_DIR}/loombre.env.template is missing — the tarball is incomplete (re-extract it)" >&2
+    exit 1
+  fi
+  sed \
+    -e "s#__DATA_DIR__#${DATA_DIR}#g" \
+    -e "s#__PREFIX__#${PREFIX}#g" \
+    "${SCRIPT_DIR}/loombre.env.template" > "${ENV_FILE}"
   chown root:"${LOOMBRE_USER}" "${ENV_FILE}"
   chmod 640 "${ENV_FILE}"
   echo "install.sh: wrote ${ENV_FILE} (0640, root:${LOOMBRE_USER})"
