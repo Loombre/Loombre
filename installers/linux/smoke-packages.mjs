@@ -64,7 +64,7 @@
 // Usage:
 //   node installers/linux/smoke-packages.mjs [--rpm <path>] [--deb <path>]
 //        [--distros fedora:44,rockylinux:9,debian:12,ubuntu:24.04,ubuntu:26.04]
-//        [--skip-boot] [--keep-containers] [--lint] [--systemd]
+//        [--skip-boot] [--keep-containers] [--lint] [--systemd | --only-systemd]
 //
 // Prerequisites: docker running locally; the packages built (build-rpm.mjs /
 // build-deb.mjs — the newest dist/*.rpm|deb for the host arch are used).
@@ -96,7 +96,7 @@ const IMAGES = {
 const DEFAULT_DISTROS = ["fedora:44", "rockylinux:9", "debian:12", "ubuntu:24.04", "ubuntu:26.04"];
 
 export function parseArgs(argv) {
-  const out = { rpm: null, deb: null, distros: DEFAULT_DISTROS, skipBoot: false, keepContainers: false, lint: false, systemd: false, help: false };
+  const out = { rpm: null, deb: null, distros: DEFAULT_DISTROS, skipBoot: false, keepContainers: false, lint: false, systemd: false, onlySystemd: false, help: false };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--rpm") out.rpm = path.resolve(argv[++i]);
@@ -106,6 +106,7 @@ export function parseArgs(argv) {
     else if (arg === "--keep-containers") out.keepContainers = true;
     else if (arg === "--lint") out.lint = true;
     else if (arg === "--systemd") out.systemd = true;
+    else if (arg === "--only-systemd") { out.systemd = true; out.onlySystemd = true; }
     else if (arg === "--help" || arg === "-h") out.help = true;
     else throw new Error(`smoke-packages: unrecognized argument ${arg}`);
   }
@@ -371,12 +372,17 @@ async function lifecycle(distro, family, artifact, version, args) {
     log(`${distro}: stop the booted processes, plant runtime cache content, remove`);
     c.sh("pkill -u loombre; sleep 3; pkill -9 -u loombre; true");
     c.must(`mkdir -p $(dirname ${PLANTED_CACHE}) && touch ${PLANTED_CACHE}`, { user: "loombre" }, "plant cache content as the service user");
+    // A package manager removes an EMPTY owned directory on erase — "the data
+    // dir is kept" is a claim about a data dir with content (which every real
+    // install has after its first boot). Plant a marker so the assertion tests
+    // the claim even under --skip-boot.
+    c.must("touch /var/lib/loombre/.smoke-marker", { user: "loombre" }, "plant data-dir content as the service user");
     const rm = c.must(pm.remove, {}, "remove");
     assert(/removed\. Kept/.test(rm.out), `remove output should say what was kept:\n${rm.out}`);
     c.must("test ! -e /opt/loombre", {}, "/opt/loombre gone after remove (the scriptlet cleans the runtime cache dir)");
     c.must("test ! -e /usr/bin/loombre", {}, "/usr/bin/loombre gone");
     c.must("test ! -e /usr/lib/systemd/system/loombre-server.service", {}, "units gone");
-    c.must("test -d /var/lib/loombre && test -n \"$(ls -A /var/lib/loombre)\"", {}, "data dir kept with its content");
+    c.must("test -f /var/lib/loombre/.smoke-marker", {}, "data dir kept with its content");
     c.must("test -f /etc/loombre/loombre.env", {}, "env file kept");
     c.must("getent passwd loombre >/dev/null", {}, "user kept after remove");
     if (family === "deb") {
@@ -471,7 +477,11 @@ function buildSystemdImage(distro, family) {
   const tag = `loombre-pkg-systemd-${distro.replace(/[:.]/g, "-")}`;
   const dockerfile = family === "rpm"
     ? `FROM ${IMAGES[distro].ref}\nRUN dnf install -y -q systemd procps-ng util-linux shadow-utils && dnf clean all\nSTOPSIGNAL SIGRTMIN+3\nCMD ["/sbin/init"]\n`
-    : `FROM ${IMAGES[distro].ref}\nRUN apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq systemd systemd-sysv procps >/dev/null && apt-get clean\nSTOPSIGNAL SIGRTMIN+3\nCMD ["/sbin/init"]\n`;
+    // Debian's official images ship /usr/sbin/policy-rc.d (exit 101) so that
+    // package installs inside a container never start services — which
+    // deb-systemd-invoke honours by design. A real host has no such file;
+    // this image is standing in for one, so drop it.
+    : `FROM ${IMAGES[distro].ref}\nRUN apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq systemd systemd-sysv procps >/dev/null && apt-get clean && rm -f /usr/sbin/policy-rc.d\nSTOPSIGNAL SIGRTMIN+3\nCMD ["/sbin/init"]\n`;
   const res = spawnSync("docker", ["build", "-q", "-t", tag, "-"], { input: dockerfile, encoding: "utf8" });
   if (res.status !== 0) throw new Error(`smoke-packages: docker build of the ${distro} systemd image failed:\n${res.stdout}${res.stderr}`);
   return tag;
@@ -491,7 +501,9 @@ async function waitFor(label, fn, timeoutMs) {
 
 async function systemdLifecycle(distro, family, artifact, version, args) {
   const pm = PM[family];
-  const pkgInContainer = `/tmp/${path.basename(artifact)}`;
+  // NOT /tmp: the systemd container mounts a tmpfs there, and `docker cp`
+  // writes into the image layer underneath that mount.
+  const pkgInContainer = `/var/tmp/${path.basename(artifact)}`;
   console.log(`\n=== ${distro} (${family}) — systemd PID 1: live enable/start, no-autostart, upgrade restore, remove ===\n`);
   const image = buildSystemdImage(distro, family);
   const c = new Container(`loombre-pkg-systemd-${distro.replace(/[:.]/g, "-")}`, image);
@@ -513,10 +525,15 @@ async function systemdLifecycle(distro, family, artifact, version, args) {
     const inst = c.must(pm.install(pkgInContainer), {}, "install under systemd");
     assert(/services enabled and started/.test(inst.out), `expected the live-start branch:\n${inst.out}`);
     for (const u of units) assert(enabled(u) === "enabled", `${u} should be enabled, is ${enabled(u)}`);
-    await waitFor("loombre-server active + /healthz through the unit", () => {
-      const st = active("loombre-server");
-      return { ok: st === "active", detail: st };
-    }, 30_000);
+    try {
+      await waitFor("loombre-server active + /healthz through the unit", () => {
+        const st = active("loombre-server");
+        return { ok: st === "active", detail: st };
+      }, 30_000);
+    } catch (err) {
+      console.error(c.sh("systemctl status loombre-server --no-pager -l; journalctl -u loombre-server --no-pager -n 40; ls -la /usr/sbin/policy-rc.d 2>&1").out);
+      throw err;
+    }
     await waitForHttp(`http://127.0.0.1:${SYSTEMD_SERVER_HOST_PORT}/healthz`, 150_000);
     for (const u of units) {
       await waitFor(`${u} active`, () => ({ ok: active(u) === "active", detail: active(u) }), 60_000);
@@ -579,7 +596,7 @@ async function systemdLifecycle(distro, family, artifact, version, args) {
 async function main(argv) {
   const args = parseArgs(argv);
   if (args.help) {
-    console.log("Usage: node installers/linux/smoke-packages.mjs [--rpm <path>] [--deb <path>] [--distros a,b] [--skip-boot] [--keep-containers] [--lint] [--systemd]");
+    console.log("Usage: node installers/linux/smoke-packages.mjs [--rpm <path>] [--deb <path>] [--distros a,b] [--skip-boot] [--keep-containers] [--lint] [--systemd | --only-systemd]");
     return;
   }
   if (capture("docker", ["--version"]).status !== 0) throw new Error("smoke-packages: docker not available on PATH");
@@ -595,8 +612,10 @@ async function main(argv) {
     }
     const version = versionFromArtifact(artifact);
     try {
-      await lifecycle(distro, family, artifact, version, args);
-      await guardAndAdopt(distro, family, artifact, version, args);
+      if (!args.onlySystemd) {
+        await lifecycle(distro, family, artifact, version, args);
+        await guardAndAdopt(distro, family, artifact, version, args);
+      }
       if (args.systemd) await systemdLifecycle(distro, family, artifact, version, args);
       results.push({ distro, status: "passed" });
     } catch (err) {

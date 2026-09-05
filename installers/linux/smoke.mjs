@@ -205,7 +205,7 @@ function newestInstallerInputMtimeMs(dir) {
   const SKIP = new Set([
     "dist", ".build", ".DS_Store",
     "lib", "build-rpm.mjs", "build-deb.mjs", "smoke-packages.mjs",
-    "native-package.test.mjs", "elf-deps.test.mjs",
+    "native-package.test.mjs", "elf-deps.test.mjs", "LAYOUT.md",
   ]);
   let newest = 0;
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
