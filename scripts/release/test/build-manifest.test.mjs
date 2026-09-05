@@ -37,6 +37,12 @@ test("inferPlatformAndKind: recognizes the documented naming convention", () => 
   });
   assert.deepEqual(inferPlatformAndKind("loombre-0.9.0-macos-arm64.pkg"), { platform: "macos-arm64", kind: "pkg" });
   assert.deepEqual(inferPlatformAndKind("loombre-0.9.0-macos-x64.pkg"), { platform: "macos-x64", kind: "pkg" });
+  // The two Linux native-package channels (installers/linux/build-rpm.mjs /
+  // build-deb.mjs), alongside the pre-existing "tarball" kind for the same
+  // platforms.
+  assert.deepEqual(inferPlatformAndKind("loombre-1.0.0-beta.1-linux-x64.rpm"), { platform: "linux-x64", kind: "rpm" });
+  assert.deepEqual(inferPlatformAndKind("loombre-1.0.0-beta.1-linux-arm64.deb"), { platform: "linux-arm64", kind: "deb" });
+  assert.deepEqual(inferPlatformAndKind("loombre-1.0.0-linux-x64.deb"), { platform: "linux-x64", kind: "deb" });
 });
 
 test("inferPlatformAndKind: handles a prerelease/build-metadata version embedded in the filename", () => {
@@ -56,8 +62,11 @@ test("inferPlatformAndKind: returns null for an unrecognized filename", () => {
   // bootstrapper), so the example moved to an extension we genuinely do
   // not publish. The linux/.exe pairing being nonsensical is NOT what this
   // function rejects — it maps platform and extension independently, the
-  // same way it does not reject a macOS .msi.
-  assert.equal(inferPlatformAndKind("loombre-0.9.0-linux-x64.deb"), null); // unknown extension
+  // same way it does not reject a macOS .msi. `.deb` (this example's
+  // original extension) is ITSELF now a recognized kind (the Linux
+  // native-package channel, installers/linux/build-deb.mjs), so the
+  // example moved again to an extension we genuinely do not publish.
+  assert.equal(inferPlatformAndKind("loombre-0.9.0-linux-x64.zip"), null); // unknown extension
 });
 
 test("buildManifest: assembles a single-release, stable-channel manifest from artifacts", () => {
