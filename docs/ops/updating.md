@@ -48,14 +48,15 @@ panel, or calls the API endpoint directly).
 
 The manifest URL is the **base directory** containing two files:
 `manifest.json` and `manifest.json.minisig` (a detached signature). By
-default this points at a GitHub Releases download URL for the project's
-own `stable` channel — a placeholder value
-(`https://github.com/Loombre/Loombre/releases/latest/download`)
-until the repository is public; an unreachable/unset mirror simply
-surfaces as `"unreachable"` in the admin UI, it is never a hard
-dependency, never blocks server boot, and never appears on any user-facing
-request's hot path (the check runs in the background — see "Behavior by
-mode" below).
+default this points at the project's own **stable** channel on GitHub
+Releases, `https://github.com/Loombre/Loombre/releases/latest/download`.
+GitHub resolves `releases/latest` to the newest release that is neither a
+draft nor a pre-release, so while only betas exist (the `1.0.0-beta.N`
+line) that URL answers 404 and the panel reports `"unreachable"` — betas
+are never announced; testers move between them by hand. An
+unreachable/unset mirror is never a hard dependency, never blocks server
+boot, and never appears on any user-facing request's hot path (the check
+runs in the background — see "Behavior by mode" below).
 
 Enterprises and airgapped installs can point this at an internal mirror
 (a plain static-file host serving the same two files, kept in sync with

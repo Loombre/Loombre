@@ -28,29 +28,30 @@ channels that floor is a real dependency, so RHEL 8, Debian 11 and Ubuntu
 libc.so.6(GLIBC_2.34)(64bit)` on rpm, `libc6 (>= 2.34)` on deb — rather
 than installing and crashing later. Those releases need the Docker path.
 
-**Published releases carry x64 packages only.** The release pipeline builds
-Linux on an x64 runner, so `loombre-<version>-linux-x64.rpm` and
-`…-x64.deb` are what a release page offers. For arm64 (a Pi 5, an Ampere
-box) build the package yourself from that release's arm64 tarball, on the
-arm64 machine:
+**Published releases carry x64 artifacts only.** The release pipeline
+builds Linux on an x64 runner, so `loombre-<version>-linux-x64.rpm`,
+`…-x64.deb` and `…-x64.tar.gz` are what a release page offers. For arm64
+(a Pi 5, an Ampere box) build from a checkout of the same version, on the
+arm64 machine — the tarball first, then a package from it if you want one:
 
 ```sh
-node installers/linux/build-rpm.mjs --tarball loombre-<version>-linux-arm64.tar.gz
-node installers/linux/build-deb.mjs --tarball loombre-<version>-linux-arm64.tar.gz
+node installers/linux/build-tarball.mjs --arch arm64
+node installers/linux/build-rpm.mjs --tarball installers/linux/dist/loombre-<version>-linux-arm64.tar.gz
+node installers/linux/build-deb.mjs --tarball installers/linux/dist/loombre-<version>-linux-arm64.tar.gz
 ```
 
-(Both need a repo checkout of the same version, and either `rpmbuild`/`dpkg-deb`
-on `PATH` or a running Docker — see each script's `--help`. The arm64
-**tarball** is published like the x64 one and needs none of this.)
+(The package builders need either `rpmbuild`/`dpkg-deb` on `PATH` or a
+running Docker — see each script's `--help`. The arm64 tarball installs
+with its bundled `install.sh` exactly like the published x64 one.)
 
 ## 1. Download
 
 ```sh
 # Replace <version> — and pick ONE of the three artifacts.
-# Packages are published for x64 only; the tarball is x64 and arm64.
+# Published releases are x64 only (arm64: build from source, see above).
 curl -LO https://github.com/Loombre/Loombre/releases/download/v<version>/loombre-<version>-linux-x64.rpm
 curl -LO https://github.com/Loombre/Loombre/releases/download/v<version>/loombre-<version>-linux-x64.deb
-curl -LO https://github.com/Loombre/Loombre/releases/download/v<version>/loombre-<version>-linux-<arch>.tar.gz
+curl -LO https://github.com/Loombre/Loombre/releases/download/v<version>/loombre-<version>-linux-x64.tar.gz
 
 curl -LO https://github.com/Loombre/Loombre/releases/download/v<version>/SHA256SUMS
 curl -LO https://github.com/Loombre/Loombre/releases/download/v<version>/SHA256SUMS.minisig

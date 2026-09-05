@@ -173,10 +173,10 @@ checksum+signature-verified.
 
 **Not yet installable** — the cask file ships in this repository
 (`installers/macos/homebrew/loombre.rb`) but is not yet wired to a
-publisher: no tap exists and no tagged release has been published yet
-(the same caveat the Docker page gives its published-image path), so
-`brew install` has nothing to resolve today. Once a tap and a published
-release exist, the invocation will be:
+publisher: no tap exists, and the cask still carries version and
+checksum placeholders, so `brew install` has nothing to resolve today
+even though tagged releases are published. Once a tap exists and the
+cask is filled in from a release, the invocation will be:
 
 ```sh
 brew install --cask --no-quarantine loombre

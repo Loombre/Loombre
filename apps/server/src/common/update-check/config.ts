@@ -30,12 +30,13 @@ export function resolveUpdateCheckMode(raw: string | undefined): UpdateCheckMode
   return "daily";
 }
 
-// Placeholder until the repo goes public (STATE.md P4.9/keys/README.md
-// rollout checklist) — a harmless default: an unset/unreachable mirror
-// simply surfaces as `verification: "unreachable"`, never a crash, never a
-// blocked boot (CLAUDE.md invariant 6 spirit: nothing here is on any
-// user-facing hot path either). Real deployments — and this project once
-// public — override via LOOMBRE_UPDATE_MANIFEST_URL.
+// The project's own stable channel. GitHub resolves `releases/latest` to
+// the newest non-draft, non-pre-release release, so pre-releases (the
+// 1.0.0-beta.N line) are never announced here — while only those exist the
+// URL answers 404, which surfaces as `verification: "unreachable"`, never a
+// crash, never a blocked boot (nothing here is on any user-facing hot
+// path). Mirrors and airgapped installs override via
+// LOOMBRE_UPDATE_MANIFEST_URL.
 export const DEFAULT_MANIFEST_BASE_URL = "https://github.com/Loombre/Loombre/releases/latest/download";
 
 export function resolveManifestBaseUrl(raw: string | undefined): string {
