@@ -310,6 +310,12 @@ async function lifecycle(distro, family, artifact, version, args) {
     }
     assert(!files.includes("/etc/loombre/loombre.env"), "the live env file must not be package-owned");
     assert(files.some((f) => f.includes("/[id]/") || f.includes("/[itemType]/")), "bracket directories must be listed verbatim (no glob expansion)");
+    // koffi (WireGuard's FFI layer): exactly the glibc build for THIS arch,
+    // resolvable as koffi's sibling scope package; no musl build, no other
+    // platform's binary (build-tarball.mjs fixKoffiBinding).
+    const koffi = c.must("find /opt/loombre -name koffi.node").stdout.trim().split("\n").filter(Boolean);
+    assert(koffi.length === 1 && koffi[0].endsWith(`/@koromix/koffi-linux-${HOST_ARCH}/linux_${HOST_ARCH}/koffi.node`), `koffi binaries: ${JSON.stringify(koffi)}`);
+    c.must(`test ! -d $(dirname $(dirname ${koffi[0]}))/musl_${HOST_ARCH}`, {}, "no musl koffi build in the payload");
     log(`${distro}: license -> ${c.must(pm.license).stdout.trim().split("\n")[0]}`);
     if (args.lint) {
       const lint = family === "rpm"

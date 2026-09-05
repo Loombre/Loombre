@@ -309,6 +309,28 @@ test("scanPayloadDeps: unions NEEDED, subtracts self-provided sonames and the lo
   });
 });
 
+test("scanPayloadDeps: a musl-linked ELF is foreign — it contributes no needs and no provides, and is reported (koffi's Linux package ships glibc + musl addons side by side)", () => {
+  withTempPayload((root) => {
+    put(root, "lib/server/node_modules/@koromix/koffi-linux-x64/linux_x64/koffi.node", buildSyntheticElf({
+      machine: 62, soname: "koffi.node", needed: ["libstdc++.so.6", "libc.so.6"], verneed: { "libc.so.6": ["GLIBC_2.34"] },
+    }));
+    put(root, "lib/server/node_modules/@koromix/koffi-linux-x64/musl_x64/koffi.node", buildSyntheticElf({
+      machine: 62, soname: "koffi.node", needed: ["libstdc++.so.6", "libc.musl-x86_64.so.1", "libfoo-musl-only.so.1"],
+    }));
+    const scan = scanPayloadDeps(root, {});
+    assert.deepEqual(scan.externalSonames, ["libc.so.6", "libstdc++.so.6"]);
+    assert.ok(!scan.externalSonames.includes("libfoo-musl-only.so.1"), "a foreign file's other needs must not leak either");
+    assert.deepEqual(scan.foreignLibc, ["lib/server/node_modules/@koromix/koffi-linux-x64/musl_x64/koffi.node"]);
+    assert.equal(scan.files.length, 1);
+    // The real x64 payload: this exact shape turned the first beta.2 release
+    // run red — the deb map refused libc.musl-x86_64.so.1, and the rpm would
+    // have been uninstallable (nothing provides a musl libc on Fedora/RHEL).
+    const reqs = rpmRequiresFromScan(scan);
+    assert.ok(!reqs.some((r) => /musl/.test(r)), reqs.join("\n"));
+    assert.ok(debDependsFromScan(scan).includes("libc6 (>= 2.34)"));
+  });
+});
+
 test("scanPayloadDeps: a payload mixing machine types is reported (a wrong-arch tarball must never package silently)", () => {
   withTempPayload((root) => {
     put(root, "a", buildSyntheticElf({ machine: 62, needed: ["libc.so.6"] }));
@@ -366,9 +388,9 @@ test("debDependsFromScan: an external soname with no package mapping FAILS the b
   assert.throws(() => debDependsFromScan(scan), /libwhatever\.so\.9/);
 });
 
-test("DEB_SONAME_PACKAGE_MAP covers every soname the 2026-09-05 payload probe found outside pg/lib", () => {
+test("DEB_SONAME_PACKAGE_MAP covers every soname the 2026-09-05 payload probes found outside pg/lib (arm64 + the x64 runner's libmvec)", () => {
   for (const so of [
-    "libc.so.6", "libm.so.6", "libdl.so.2", "libpthread.so.0", "librt.so.1", "libresolv.so.2",
+    "libc.so.6", "libm.so.6", "libdl.so.2", "libpthread.so.0", "librt.so.1", "libresolv.so.2", "libmvec.so.1",
     "libstdc++.so.6", "libgcc_s.so.1", "libcrypto.so.3", "libssl.so.3", "libgssapi_krb5.so.2",
     "liblz4.so.1", "libreadline.so.8", "libxml2.so.2", "libz.so.1", "libzstd.so.1", "liblzma.so.5",
   ]) {

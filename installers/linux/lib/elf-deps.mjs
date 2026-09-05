@@ -63,6 +63,13 @@ const DT_RUNPATH = 29n;
  *  glibc ships it, and libc.so.6 is already in the set. */
 const LOADER_SONAME_PATTERN = /^ld-linux[-.]|^ld64\.so|^ld\.so/;
 
+/** An ELF that needs a musl libc can never be loaded on the glibc hosts the
+ *  packages target (koffi's Linux platform package ships a glibc AND a musl
+ *  build of its addon side by side; keyring/sharp publish musl variants pnpm
+ *  installs on Alpine only). Such a file is FOREIGN: it contributes neither
+ *  needs nor provides, and is reported so a builder can log — or prune — it. */
+const FOREIGN_LIBC_PATTERN = /^libc\.musl-/;
+
 /** A shared object is "provided" under its SONAME, or — when it carries no
  *  SONAME tag (sharp's bundled libvips) — under its file name if that looks
  *  like a library. PostgreSQL extension modules (plpython3.so …) have neither
@@ -235,6 +242,7 @@ function providedNameFor(info, relPath) {
  *   provided: string[],
  *   machines: Set<string>,
  *   files: { path: string, machine: string }[],
+ *   foreignLibc: string[],   // musl-linked ELF files, skipped entirely
  * }}
  */
 export function scanPayloadDeps(rootDir, opts = {}) {
@@ -246,6 +254,7 @@ export function scanPayloadDeps(rootDir, opts = {}) {
   const versionNeeds = new Map();
   const machines = new Set();
   const files = [];
+  const foreignLibc = [];
 
   for (const full of walkRegularFiles(rootDir)) {
     if (!readMagic(full)) continue;
@@ -256,6 +265,10 @@ export function scanPayloadDeps(rootDir, opts = {}) {
       info = readElfInfo(readFileSync(full));
     } catch (err) {
       throw new Error(`elf-deps: ${rel}: ${err instanceof Error ? err.message : err}`);
+    }
+    if (info.needed.some((so) => FOREIGN_LIBC_PATTERN.test(so))) {
+      foreignLibc.push(rel);
+      continue;
     }
     const providedName = providedNameFor(info, rel);
     if (excluded) {
@@ -300,7 +313,9 @@ export function scanPayloadDeps(rootDir, opts = {}) {
     }
   }
 
-  return { externalSonames, versionNeeds: versionNeedsOut, provided: [...provided].sort(), machines, files };
+  const foreign = externalSonames.filter((so) => FOREIGN_LIBC_PATTERN.test(so));
+  if (foreign.length > 0) throw new Error(`elf-deps: a musl libc surfaced as an external need (${foreign.join(", ")}) — the foreign-libc exclusion missed a file`);
+  return { externalSonames, versionNeeds: versionNeedsOut, provided: [...provided].sort(), machines, files, foreignLibc };
 }
 
 /**
@@ -344,6 +359,8 @@ export function rpmRequiresFromScan(scan) {
 export const DEB_SONAME_PACKAGE_MAP = Object.freeze({
   "libc.so.6": "libc6",
   "libm.so.6": "libc6",
+  // glibc's vector-math library (x86_64 only; BtbN's x64 ffmpeg links it).
+  "libmvec.so.1": "libc6",
   "libdl.so.2": "libc6",
   "libpthread.so.0": "libc6",
   "librt.so.1": "libc6",
@@ -404,4 +421,4 @@ export function debDependsFromScan(scan, map = DEB_SONAME_PACKAGE_MAP) {
   return [...out].sort();
 }
 
-export { LOADER_SONAME_PATTERN, LIBRARY_FILENAME_PATTERN };
+export { LOADER_SONAME_PATTERN, LIBRARY_FILENAME_PATTERN, FOREIGN_LIBC_PATTERN };

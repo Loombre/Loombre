@@ -740,6 +740,84 @@ async function fixWorkerSharp(workerDeployDir, arch) {
 // (this smoke had not been re-run between A9 landing and the rename run).
 // ─────────────────────────────────────────────────────────────────────────
 
+// koffi (packages/wg-native's FFI layer) — the THIRD instance of the same
+// build-host-vs-target platform trap fixWorkerSharp/fixKeyringBinding fix:
+// koffi 3.x ships its addon as per-platform optional packages
+// (@koromix/koffi-<platform>-<arch>), and pnpm resolves those for the
+// RUNNING host, so a macOS-built Linux tarball carried only the darwin
+// binary (WireGuard's FFI could not load on Linux) while a Linux-runner
+// build carried the right one. Found by the first v1.0.0-beta.2 release
+// run: koffi's Linux package also ships a MUSL build of the addon next to
+// the glibc one (linux_<arch>/ + musl_<arch>/, chosen at load time by the
+// host's ELF interpreter), and that musl-linked file is what made the
+// .deb builder's dependency derivation refuse (and would have left the
+// .rpm requiring a musl libc no distro provides). The scan now treats
+// musl-linked files as foreign (lib/elf-deps.mjs); this step removes the
+// file at the source, because a glibc-targeting tarball has no use for it.
+//
+// koffi resolves its platform package RELATIVE TO ITSELF —
+// `${__dirname}/../../../@koromix/koffi-${platform}-${arch}` from
+// koffi/src/koffi/ — i.e. a sibling scope directory next to the koffi
+// package, not a nested node_modules, so the vendored package lands there.
+async function fixKoffiBinding(deployDir, arch, appLabel) {
+  const topLevelLink = join(deployDir, "node_modules", "koffi");
+  let koffiReal;
+  if (existsSync(topLevelLink)) {
+    koffiReal = realpathSync(topLevelLink);
+  } else {
+    const pnpmDir = join(deployDir, "node_modules", ".pnpm");
+    const storeEntry = existsSync(pnpmDir) ? readdirSync(pnpmDir).find((e) => e.startsWith("koffi@")) : undefined;
+    if (!storeEntry) {
+      console.log(`build-tarball: ${appLabel} has no koffi in its deploy tree — koffi platform-binding fix not needed here`);
+      return;
+    }
+    koffiReal = join(pnpmDir, storeEntry, "node_modules", "koffi");
+  }
+  const koffiPkg = JSON.parse(readFileSync(join(koffiReal, "package.json"), "utf8"));
+  const bindingName = `@koromix/koffi-linux-${arch}`;
+  const bindingVersion = koffiPkg.optionalDependencies?.[bindingName];
+  if (!bindingVersion) {
+    throw new Error(
+      `build-tarball: could not derive the ${bindingName} version from ${koffiReal}/package.json — koffi's layout changed; update fixKoffiBinding.`,
+    );
+  }
+  console.log(`build-tarball: resolved koffi ${koffiPkg.version} -> ${bindingName}@${bindingVersion} (derived, not hardcoded)`);
+
+  const siblingsDir = dirname(koffiReal); // the node_modules dir koffi resolves its platform package from
+  const scopeDir = join(siblingsDir, "@koromix");
+  if (existsSync(scopeDir)) {
+    for (const entry of readdirSync(scopeDir)) {
+      if (entry.startsWith("koffi-")) {
+        rmSync(join(scopeDir, entry), { recursive: true, force: true });
+        console.log(`build-tarball: removed build-host koffi binding @koromix/${entry} (wrong platform for the shipped tarball)`);
+      }
+    }
+  }
+  const pnpmDir = join(deployDir, "node_modules", ".pnpm");
+  if (existsSync(pnpmDir)) {
+    for (const entry of readdirSync(pnpmDir)) {
+      if (entry.startsWith("@koromix+koffi-")) {
+        rmSync(join(pnpmDir, entry), { recursive: true, force: true });
+        console.log(`build-tarball: removed koffi platform package store entry .pnpm/${entry}`);
+      }
+    }
+  }
+
+  await vendorPinnedPlatformNpmPackage(bindingName, bindingVersion, siblingsDir);
+
+  const vendoredDir = join(scopeDir, `koffi-linux-${arch}`);
+  const glibcBinary = join(vendoredDir, `linux_${arch}`, "koffi.node");
+  if (!existsSync(glibcBinary)) {
+    throw new Error(`build-tarball: ${bindingName}@${bindingVersion} did not contain linux_${arch}/koffi.node — koffi's package layout changed; update fixKoffiBinding.`);
+  }
+  const muslDir = join(vendoredDir, `musl_${arch}`);
+  if (existsSync(muslDir)) {
+    rmSync(muslDir, { recursive: true, force: true });
+    console.log(`build-tarball: dropped ${bindingName}'s musl_${arch}/ build (a glibc tarball never loads it; it must not shape the .rpm/.deb dependencies)`);
+  }
+  console.log(`build-tarball: koffi binding ready at ${relative(deployDir, glibcBinary)}`);
+}
+
 async function fixKeyringBinding(deployDir, arch, appLabel) {
   // @napi-rs/keyring is a TRANSITIVE dep (via @loombre/secrets), so unlike
   // sharp it is NOT linked at the deploy dir's top-level node_modules —
@@ -1281,6 +1359,7 @@ async function assembleTarball(args) {
   precompileRawTsDepsIn(serverDeployDir, precompiledDepsDir);
   fixServerAjv(serverDeployDir);
   await fixKeyringBinding(serverDeployDir, arch, "apps/server");
+  await fixKoffiBinding(serverDeployDir, arch, "apps/server");
   bundleReleaseManifestForServer(stageDir);
   pruneDeployedAppDir(serverDeployDir);
 
@@ -1290,6 +1369,7 @@ async function assembleTarball(args) {
   precompileRawTsDepsIn(workerDeployDir, precompiledDepsDir);
   await fixWorkerSharp(workerDeployDir, arch);
   await fixKeyringBinding(workerDeployDir, arch, "apps/worker");
+  await fixKoffiBinding(workerDeployDir, arch, "apps/worker");
   pruneDeployedAppDir(workerDeployDir);
 
   console.log("--- staging apps/web (Next standalone output) ---");

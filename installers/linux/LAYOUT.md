@@ -66,7 +66,7 @@ loombre-<version>-linux-<arch>/
 | `pg/<platform>/<version>/lib/libxml2.so.2` (+ `LICENSE.libxml2.txt`) | `scripts/fetch-libxml2.mjs` + `installers/libxml2-manifest.json` — Rocky Linux 9.6's libxml2 rpm (MIT; glibc 2.34 floor, the same as the PostgreSQL binaries), sha256-verified, two files extracted. PostgreSQL links `libxml2.so.2` and its `RUNPATH $ORIGIN/../lib` resolves this copy first; libxml2 2.14 bumped the soname to `.so.16`, and Ubuntu 25.10 / 26.04 LTS ship no `.so.2` at all. Vendoring it makes the embedded database's dependency set identical on every distro and lets the .rpm/.deb derive `liblzma` instead of `libxml2` |
 | `packages/release-manifest/dist/` | a copy of the live repo's own already-built `packages/release-manifest/dist/` — see below |
 
-## Three packaging-time-only fixes, all discovered by the first real container smoke run
+## Packaging-time-only fixes, each discovered by a real smoke or release run
 
 `pnpm deploy --prod` is a mechanically correct isolation primitive, but it
 faithfully reproduces whatever the SOURCE package.json files declare —
@@ -118,6 +118,25 @@ story:
    (see its `for entry in ...` payload list) — still runs; with the real
    dependency in place it is redundant but harmless, and retiring it is
    the build-script owner's call.
+
+4. **Platform-specific native bindings resolved for the BUILD HOST, not the
+   target** — the class item 2 first exposed for `sharp`, and which two
+   more packages turned out to share: `@napi-rs/keyring` (per-platform
+   `keyring-<platform>-<libc>` packages; `fixKeyringBinding()` removes the
+   build host's and vendors the lockfile-pinned `linux-<arch>-gnu` one)
+   and, found by the first v1.0.0-beta.2 release run, `koffi`
+   (packages/wg-native's FFI layer; per-platform
+   `@koromix/koffi-<platform>-<arch>` packages resolved by koffi as a
+   SIBLING scope directory of its own package, not a nested
+   node_modules). A macOS-built Linux tarball used to carry only the
+   darwin koffi binary. `fixKoffiBinding()` vendors the lockfile-pinned
+   `@koromix/koffi-linux-<arch>` next to koffi, removes every other
+   platform's entry, and drops the package's `musl_<arch>/` build: koffi
+   ships a glibc and a musl addon side by side (chosen at load time by
+   the host's ELF interpreter), and a musl-linked ELF is exactly what the
+   `.rpm`/`.deb` dependency derivation must never see as a requirement
+   (`lib/elf-deps.mjs` also treats such files as foreign — belt and
+   braces).
 
 ## Why `pnpm deploy` alone is not enough
 
