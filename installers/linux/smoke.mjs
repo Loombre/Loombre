@@ -205,7 +205,7 @@ function newestInstallerInputMtimeMs(dir) {
   const SKIP = new Set([
     "dist", ".build", ".DS_Store",
     "lib", "build-rpm.mjs", "build-deb.mjs", "smoke-packages.mjs",
-    "native-package.test.mjs", "elf-deps.test.mjs", "LAYOUT.md",
+    "native-package.test.mjs", "elf-deps.test.mjs", "LAYOUT.md", "smoke.mjs",
   ]);
   let newest = 0;
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -688,9 +688,13 @@ async function main(argv) {
     console.log("smoke: embedded-mode /healthz 200 OK — provision + auto-migrate fully self-contained (no repo checkout, no external DB)");
 
     console.log("--- web client via bin/loombre-web ---");
+    // LOOMBRE_DATA_DIR, like the server/worker launches above and like the
+    // systemd unit's EnvironmentFile: the wrapper cd's there before teeing
+    // its log to logs/web.log — without it the cwd is `/` and the mkdir
+    // fails as the service user before Next ever starts.
     run("docker", [
       "exec", "-d", "-u", "loombre",
-      "-e", `LOOMBRE_WEB_PORT=${SMOKE_WEB_PORT}`, "-e", `LOOMBRE_SERVER_ORIGIN=http://localhost:${SMOKE_SERVER_PORT}`,
+      "-e", `LOOMBRE_WEB_PORT=${SMOKE_WEB_PORT}`, "-e", `LOOMBRE_SERVER_ORIGIN=http://localhost:${SMOKE_SERVER_PORT}`, "-e", "LOOMBRE_DATA_DIR=/var/lib/loombre",
       args.containerName, "bash", "-c", "/opt/loombre/bin/loombre-web > /tmp/loombre-web.log 2>&1",
     ]);
     try {
