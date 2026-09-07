@@ -221,19 +221,11 @@ for (const notice of registry.disabledProviders()) {
   console.warn(`worker: metadata provider "${notice.name}" disabled — ${notice.reason}`);
 }
 
-// A keyed provider that is enabled NOW but was not at the last boot (or was
-// never recorded) fans out one metadata-refresh for every unmatched item in
-// the libraries whose chain includes it — the env-var key path. The
-// admin-screen path enqueues the same job from the server on save.
-for (const name of await enqueueRefreshForNewlyEnabledProviders(
-  db,
-  registry,
-  ["tmdb", "tvdb"],
-  (payload) => queue.enqueue("metadata-refresh", payload),
-  getMetadataProviderState,
-)) {
-  console.warn(`worker: metadata provider "${name}" is newly enabled — enqueued a metadata refresh for unmatched items`);
-}
+// The "provider newly enabled" boot sweep lives in main() below, AFTER
+// waitForDatabaseReady(): at module scope it ran before the server's
+// embedded PostgreSQL was listening and its first read (ECONNREFUSED)
+// became a fatal top-level rejection — one crash file per package
+// restart on the Linux reference box (rebuild #10, 2026-09-07).
 
 queue.work(
   "metadata-refresh",
@@ -250,7 +242,7 @@ queue.work(
   metadataConsumerHandler({
     db,
     registry,
-    enqueueImageJob: (payload) => queue.enqueue("image", payload),
+    enqueueImageJob: (payload, opts) => queue.enqueue("image", payload, opts),
   }),
   { concurrency: 2 },
 );
@@ -272,7 +264,13 @@ queue.work(
 
 // Deliverable E (worker half): image ingest pipeline — pre-scaled variants
 // + blurhash, all CPU work in worker_threads (P1.8 / Tier-0 law).
-queue.work("image", imageConsumerHandler({ db }), { concurrency: 2 });
+// Concurrency: the same CPU-derived floor the probe consumer uses. Each
+// job is a few seconds of libvips (webp + avif × 3 sizes, blurhash,
+// dominant colour) on ONE core pair; a fixed 2 left a 20-core box at ~10%
+// utilisation with ~400 jobs queued after a metadata sweep (16 min wall,
+// measured on the Linux reference box). Pipeline work still runs in
+// worker_threads (Tier-0 law), so this only widens the job fan-in.
+queue.work("image", imageConsumerHandler({ db }), { concurrency: cpuDerivedConcurrencyFloor() });
 
 // Phase 3 §11 step 5: hardware capability self-test battery (docs/
 // PLAYBACK.md §8.1). Runs synchronously within the job (the battery itself
@@ -852,6 +850,25 @@ async function main(): Promise<void> {
   await waitForDatabaseReady();
   await reconcileStaleJobLedger();
   await reapOrphanedTranscodes();
+
+  // A keyed provider that is enabled NOW but was not at the last boot (or
+  // was never recorded) fans out one metadata-refresh for every unmatched
+  // item in the libraries whose chain includes it — the env-var key path.
+  // The admin-screen path enqueues the same job from the server on save.
+  // Best-effort: a failure here is a log line, never a dead worker.
+  try {
+    for (const name of await enqueueRefreshForNewlyEnabledProviders(
+      db,
+      registry,
+      ["tmdb", "tvdb"],
+      (payload) => queue.enqueue("metadata-refresh", payload),
+      getMetadataProviderState,
+    )) {
+      console.warn(`worker: metadata provider "${name}" is newly enabled — enqueued a metadata refresh for unmatched items`);
+    }
+  } catch (err) {
+    console.warn(`worker: provider-enablement boot check failed (will run again next boot): ${err instanceof Error ? err.message : String(err)}`);
+  }
 
   // Assert the consumers ACTUALLY registered before saying so. The ten
   // queue.work() calls at module scope are fire-and-forget, and they run at

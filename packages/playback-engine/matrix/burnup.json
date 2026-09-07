@@ -538,5 +538,6 @@
   "537-direct-play-h264-constrained-baseline.yaml": "green",
   "538-transcode-h264-opengop-mkv-repackage-copy-unsafe.yaml": "green",
   "539-direct-play-h264-opengop-mp4-untouched.yaml": "green",
-  "540-transcode-h264-opengop-mp4-audio-repackage-copy-unsafe.yaml": "green"
+  "540-transcode-h264-opengop-mp4-audio-repackage-copy-unsafe.yaml": "green",
+  "541-transcode-h264-opengop-low-bitrate-source-height-clamp.yaml": "green"
 }

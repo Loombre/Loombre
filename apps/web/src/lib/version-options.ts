@@ -59,15 +59,36 @@ export function currentVersionId(files: readonly MediaFileSummary[], mediaFileId
   return files.find((f) => f.isDefault)?.id ?? files[0]?.id;
 }
 
+/** The last path segment, for telling apart files whose label AND detail
+ *  tie (two "1080p · H.264 · MKV" parts of a multi-part title). */
+function fileNameOf(path: string | undefined): string | null {
+  if (!path) return null;
+  const name = path.split(/[\\/]/).pop() ?? "";
+  return name.length > 0 ? name : null;
+}
+
 export function versionOptionsFor(files: readonly MediaFileSummary[], mediaFileId: string | undefined): VersionOption[] {
   const current = currentVersionId(files, mediaFileId);
-  return files.map((file) => ({
+  const options = files.map((file) => ({
     id: file.id,
     label: fallbackLabel(file),
     detail: detailFor(file),
     isCurrent: file.id === current,
     isDefault: file.isDefault === true,
+    fileName: fileNameOf(file.path),
   }));
+  // Files that would read identically get their file name appended, so a
+  // "Part 1"/"Part 2" pair (or two encodes of one cut) stays tellable
+  // apart until multi-part stacking exists.
+  const keyOf = (o: { label: string; detail: string | null }) => `${o.label}\u0000${o.detail ?? ""}`;
+  const counts = new Map<string, number>();
+  for (const o of options) counts.set(keyOf(o), (counts.get(keyOf(o)) ?? 0) + 1);
+  return options.map(({ fileName, ...option }) => {
+    if ((counts.get(keyOf(option)) ?? 0) > 1 && fileName) {
+      return { ...option, detail: option.detail ? `${option.detail} · ${fileName}` : fileName };
+    }
+    return option;
+  });
 }
 
 /** Positions under this are "the start" — not worth a ?t= that would only

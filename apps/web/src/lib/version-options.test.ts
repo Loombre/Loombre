@@ -39,6 +39,21 @@ describe("versionOptionsFor", () => {
     ]);
   });
 
+  it("appends the file name only when two files would read identically (multi-part pairs), never otherwise", () => {
+    const part1 = file({ id: "p1", path: "/media/The Idol/The.Idol.Part1.1080p.mkv" });
+    const part2 = file({ id: "p2", path: "/media/The Idol/The.Idol.Part2.1080p.mkv" });
+    const other = file({ id: "u", height: 720, path: "/media/The Idol/The.Idol.720p.mkv" });
+    const options = versionOptionsFor([part1, part2, other], "p1");
+    expect(options.map((o) => o.detail)).toEqual([
+      "H.264 · MKV · The.Idol.Part1.1080p.mkv",
+      "H.264 · MKV · The.Idol.Part2.1080p.mkv",
+      "H.264 · MKV",
+    ]);
+    expect(options.some((o) => "fileName" in o)).toBe(false);
+    // A tie without a path to disambiguate stays as it was.
+    expect(versionOptionsFor([file({ id: "a" }), file({ id: "b" })], undefined).map((o) => o.detail)).toEqual(["H.264 · MKV", "H.264 · MKV"]);
+  });
+
   it("with no ?mediaFileId the DEFAULT file is current (the server's own default), else the first", () => {
     expect(currentVersionId([HD, UHD], undefined)).toBe("f-2160");
     expect(currentVersionId([HD, LABELLED], undefined)).toBe("f-1080");

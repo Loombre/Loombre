@@ -422,14 +422,14 @@ describe("plan(): engineVersion", () => {
     expect(ENGINE_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
   });
 
-  it("Stage B′ (open-GOP h264 copy safety) bumps the ruleset to 0.12.0 — a NEW decision rule + a new reason code, so MINOR (Wave C2 was 0.11.0 for the same reason)", () => {
+  it("0.13.0: §7 source-height clamp (ladder construction rule changed) after 0.12.0 Stage B′ — both MINOR (a changed/new decision rule; Wave C2 was 0.11.0 for the same reason)", () => {
     // Wave C1 (LD-7) landed 0.10.0 (AV1 ladder targeting) and its review
     // finding-1 follow-up 0.10.1 (a narrowing of an existing rule, PATCH).
     // Wave C2 adds §7.5's Tier-0 advertised-variant cap: a genuinely new
     // decision rule with a new emittable reason code, changing the stored
     // `ladder` for a whole class of Tier-0 plans — MINOR, by the same
     // policy that made 0.10.0 minor and 0.10.1 patch.
-    expect(ENGINE_VERSION).toBe("0.12.0");
+    expect(ENGINE_VERSION).toBe("0.13.0");
   });
 });
 

@@ -282,6 +282,10 @@ function deviceSupportsHevc(device: DeviceProfile): boolean {
  * `reasons` to the plan's own list at Stage-F position (before Stage G's
  * routing reasons — docs/PLAYBACK.md §4's "ordered by stage").
  */
+/** §7 source-height clamp headroom: the kept rung at the source's own
+ *  resolution encodes at 1.25 × the source bitrate (see step (b)). */
+export const SOURCE_BITRATE_CLAMP_HEADROOM = 1.25;
+
 export interface LadderBuildResult {
   ladder: LadderRung[];
   /** `av1-rung-demoted`, one per §7.1(g) demotion, in table order. */
@@ -362,11 +366,40 @@ export function buildLadder(
 
   if (table.length === 0) return { ladder: [], reasons };
 
-  // Steps (a)-(d) — independent conjunctive drop filters (binding
-  // interpretation constraint 3).
-  const survivors = table.filter((rung) => {
-    if (sourceHeightPx !== null && rung.heightPx > sourceHeightPx) return false; // (a)
-    if (rung.videoBitrateBps > sourceBitrateBps) return false; // (b)
+  // Step (a) — never exceed source height.
+  const withinHeight = table.filter((rung) => sourceHeightPx === null || rung.heightPx <= sourceHeightPx);
+
+  // Step (b) — never exceed source bitrate, with the §7 SOURCE-HEIGHT
+  // CLAMP (ENGINE_VERSION 0.13.0, 2026-09-07): rungs above the source
+  // bitrate are dropped EXCEPT the one at the source's own resolution (the
+  // greatest heightPx left after (a); ties -> its lowest-bitrate row),
+  // which is KEPT with its bitrate clamped to
+  // min(its own bitrate, max(round(1.25 × source), the table's lowest rung
+  // bitrate)). Before
+  // this, a 1080p source at 0.93 Mbps that Stage B′/C/E forced into a
+  // transcode had every rung but 360p/0.8M dropped and came out at 360p —
+  // the transcode lost resolution the source never asked to lose (Linux
+  // reference box, rebuild #10). 1.25× is re-encode headroom (a second
+  // generation at the source's exact bitrate is visibly worse); the table
+  // floor keeps a tiny source from producing a nonsensical 1080p@100k rung.
+  const tableFloorBps = table.reduce((min, rung) => Math.min(min, rung.videoBitrateBps), Number.POSITIVE_INFINITY);
+  const overBitrate = withinHeight.filter((rung) => rung.videoBitrateBps > sourceBitrateBps);
+  const clampCandidate =
+    overBitrate.length === 0
+      ? undefined
+      : overBitrate.reduce((best, rung) =>
+          rung.heightPx > best.heightPx || (rung.heightPx === best.heightPx && rung.videoBitrateBps < best.videoBitrateBps) ? rung : best,
+        );
+  const afterBitrate: LadderRung[] = withinHeight.flatMap((rung) => {
+    if (rung.videoBitrateBps <= sourceBitrateBps) return [rung];
+    if (rung !== clampCandidate) return [];
+    // A clamp only ever LOWERS a rung: min() keeps an explicit table row
+    // whose own bitrate already sits inside the headroom band verbatim.
+    return [{ ...rung, videoBitrateBps: Math.min(rung.videoBitrateBps, Math.max(Math.round(sourceBitrateBps * SOURCE_BITRATE_CLAMP_HEADROOM), tableFloorBps)) }];
+  });
+
+  // Steps (c)-(d) — network / device caps, evaluated on the clamped value.
+  const survivors = afterBitrate.filter((rung) => {
     if (!network.isLocal && rung.videoBitrateBps > network.maxBitrateBps) return false; // (c)
     if (device.maxStreamBitrateBps !== null && rung.videoBitrateBps > device.maxStreamBitrateBps) return false; // (d)
     return true;

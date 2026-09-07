@@ -75,7 +75,10 @@ const SUPPORTED_ITEM_TYPES = new Set<MetadataItemType>(['movie', 'series', 'arti
 export interface MetadataConsumerDeps {
   db: DbOrTx;
   registry: ProviderRegistry;
-  enqueueImageJob: (payload: JobPayloads['image']) => Promise<unknown>;
+  /** `opts.priority` (pg-boss: higher first) — item artwork is enqueued
+   *  ahead of person portraits so a library LOOKS complete before the cast
+   *  rows fill in (a sweep can queue hundreds of thumbs per film). */
+  enqueueImageJob: (payload: JobPayloads['image'], opts?: { priority: number }) => Promise<unknown>;
   clock?: () => number;
   /** Injectable for tests — forwarded to pickBestMatch's ambiguity log. */
   log?: (message: string) => void;
@@ -255,6 +258,10 @@ async function resolveViaProviderChain(
   return null;
 }
 
+/** Item posters/backdrops jump the image queue ahead of person portraits
+ *  (default priority 0): the poster is what the library grid shows. */
+export const ITEM_ARTWORK_IMAGE_PRIORITY = 10;
+
 export function metadataConsumerHandler(deps: MetadataConsumerDeps): JobHandler<'metadata'> {
   const clock = deps.clock ?? (() => Date.now());
   // AUD-A7c-002: the LOGGING BOUNDARY, not the one throw site the finding
@@ -419,12 +426,15 @@ export function metadataConsumerHandler(deps: MetadataConsumerDeps): JobHandler<
     // each page refresh while the queue drained (435 jobs for one film on
     // the reference box).
     for (const image of selectPrimaryImages(matched.images)) {
-      await deps.enqueueImageJob({
-        entityType: 'catalog_item',
-        entityId: item.id,
-        kind: image.kind,
-        sourcePath: `url:${image.url}`,
-      });
+      await deps.enqueueImageJob(
+        {
+          entityType: 'catalog_item',
+          entityId: item.id,
+          kind: image.kind,
+          sourcePath: `url:${image.url}`,
+        },
+        { priority: ITEM_ARTWORK_IMAGE_PRIORITY }
+      );
     }
 
     // Cast portraits: one 'thumb' per credited person that has one. A

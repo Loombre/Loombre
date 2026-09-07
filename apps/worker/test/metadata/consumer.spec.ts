@@ -294,18 +294,15 @@ describe('metadataConsumerHandler', () => {
       kind: 'thumb',
       sourcePath: 'url:https://example.invalid/jane.jpg',
     });
-    expect(enqueueImageJob).toHaveBeenCalledWith({
-      entityType: 'catalog_item',
-      entityId: itemId,
-      kind: 'poster',
-      sourcePath: 'url:https://example.invalid/poster.jpg',
-    });
-    expect(enqueueImageJob).toHaveBeenCalledWith({
-      entityType: 'catalog_item',
-      entityId: itemId,
-      kind: 'backdrop',
-      sourcePath: 'url:https://example.invalid/backdrop.jpg',
-    });
+    // Item artwork rides ahead of person portraits in the image queue.
+    expect(enqueueImageJob).toHaveBeenCalledWith(
+      { entityType: 'catalog_item', entityId: itemId, kind: 'poster', sourcePath: 'url:https://example.invalid/poster.jpg' },
+      { priority: 10 }
+    );
+    expect(enqueueImageJob).toHaveBeenCalledWith(
+      { entityType: 'catalog_item', entityId: itemId, kind: 'backdrop', sourcePath: 'url:https://example.invalid/backdrop.jpg' },
+      { priority: 10 }
+    );
   });
 
   // Regression (gap-closure lane, Wave-2 real-scan finding): the scanner's

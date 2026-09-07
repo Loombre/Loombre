@@ -112,6 +112,8 @@ export async function createPlaybackSession(
   selection?: TrackSelection,
 ): Promise<CreateSessionResult> {
   const serverUrl = getAuthStore().getSnapshot().serverUrl;
+  // The session this one replaces must be gone first (see pendingEnds).
+  await awaitPendingSessionEnds();
   // d3-a6: the live capability probe, with the deliberate per-browser
   // override (localStorage, QA/dev lever) merged above it when one is set —
   // see lib/device-profile-override.ts's header for the recorded decision.
@@ -180,13 +182,32 @@ export async function createDirectPlaySession(
   return guarded;
 }
 
+/** DELETEs still in flight. A create waits for them (below) so the session
+ *  being replaced — a version switch, a subtitle re-pin, a retry — has
+ *  released its admission slot before the new one asks for it. Without
+ *  this, VideoPlayer's unmount cleanup (`void endPlaybackSession(old)`)
+ *  raced the next effect's create, and on a box at the transcode cap the
+ *  viewer's OWN old session was the slot that refused them (429
+ *  transcode-slots-exhausted on the Linux reference box, rebuild #10). */
+const pendingEnds = new Set<Promise<void>>();
+
 export async function endPlaybackSession(sessionId: string): Promise<void> {
+  const request = apiDelete("/playback/sessions/{id}", { params: { path: { id: sessionId } } }).then(
+    () => undefined,
+    () => undefined, // Best-effort: the 15-minute idle sweeper (docs/PLAYBACK.md §9) reaps any session this call fails to end (unload race, network blip).
+  );
+  pendingEnds.add(request);
   try {
-    await apiDelete("/playback/sessions/{id}", { params: { path: { id: sessionId } } });
-  } catch {
-    // Best-effort: the 15-minute idle sweeper (docs/PLAYBACK.md §9) reaps
-    // any session this call fails to end (unload race, network blip).
+    await request;
+  } finally {
+    pendingEnds.delete(request);
   }
+}
+
+/** Resolves once every in-flight session end has settled (never rejects). */
+export async function awaitPendingSessionEnds(): Promise<void> {
+  if (pendingEnds.size === 0) return;
+  await Promise.allSettled([...pendingEnds]);
 }
 
 /** Injectable seams for `endPlaybackSessionOnUnload` — tests supply both;

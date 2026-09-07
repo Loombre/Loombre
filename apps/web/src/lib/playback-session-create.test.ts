@@ -10,10 +10,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const apiPost = vi.fn();
+const apiDelete = vi.fn();
 vi.mock("./api-client.js", async () => {
   const actual =
     await vi.importActual<typeof import("./api-client.js")>("./api-client.js");
-  return { ...actual, apiPost: (...args: unknown[]) => apiPost(...args) };
+  return { ...actual, apiPost: (...args: unknown[]) => apiPost(...args), apiDelete: (...args: unknown[]) => apiDelete(...args) };
 });
 vi.mock("./device-profile-override.js", () => ({
   resolveSessionDeviceProfile: async () => ({ name: "test-device" }),
@@ -27,7 +28,7 @@ vi.mock("./auth-store.js", () => ({
   }),
 }));
 
-import { createPlaybackSession } from "./playback-session.js";
+import { createPlaybackSession, endPlaybackSession } from "./playback-session.js";
 
 describe("createPlaybackSession request body", () => {
   beforeEach(() => {
@@ -60,5 +61,46 @@ describe("createPlaybackSession request body", () => {
         mode: "stream",
       },
     });
+  });
+});
+
+describe("createPlaybackSession waits for in-flight session ends", () => {
+  beforeEach(() => {
+    apiPost.mockReset().mockResolvedValue({ id: "session-2" });
+    apiDelete.mockReset();
+  });
+
+  it("does not POST the replacement until the old session's DELETE has settled (slot released first)", async () => {
+    const order: string[] = [];
+    let releaseDelete: () => void = () => undefined;
+    apiDelete.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseDelete = () => {
+            order.push("delete-settled");
+            resolve();
+          };
+        }),
+    );
+    apiPost.mockImplementation(async () => {
+      order.push("post");
+      return { id: "session-2" };
+    });
+
+    void endPlaybackSession("session-1"); // fire-and-forget, as VideoPlayer's cleanup does
+    const create = createPlaybackSession("item-1", "stream", "file-2");
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(order).toEqual([]); // still waiting on the DELETE
+    releaseDelete();
+    await create;
+    expect(order).toEqual(["delete-settled", "post"]);
+  });
+
+  it("a FAILED end never blocks the next create (best-effort end, sweeper reaps)", async () => {
+    apiDelete.mockRejectedValue(new Error("network blip"));
+    await endPlaybackSession("session-1");
+    await createPlaybackSession("item-1", "stream", "file-2");
+    expect(apiPost).toHaveBeenCalledTimes(1);
   });
 });

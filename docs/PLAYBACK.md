@@ -624,8 +624,19 @@ set of codecs a rung may ENCODE to, a different concept from
 Instance default table (policy-overridable):
 2160p/16M/hevc · 1080p/8M · 1080p/4M · 720p/3M · 480p/1.5M · 360p/0.8M
 (h264 below 2160 unless codec selection (§7.1) upgrades a rung).
-Construction rules: never exceed source height; never exceed source bitrate;
-drop rungs above `network.maxBitrateBps` (keep at least the lowest rung);
+Construction rules: never exceed source height; never exceed source bitrate
+— **except the source-height clamp (ENGINE_VERSION 0.13.0, 2026-09-07):**
+the rung at the source's own resolution (the greatest height left after
+the height rule; ties → its lowest-bitrate row) is KEPT rather than
+dropped when its bitrate exceeds the source's, with its bitrate clamped to
+`min(its own bitrate, max(round(1.25 × source bitrate), the table's lowest
+rung bitrate))` — a clamp only ever lowers a rung. A
+forced transcode (open-GOP copy refusal, tone-map, burn-in) of a
+low-bitrate source must not lose resolution it never needed to lose — a
+1080p source at 0.93 Mbps used to come out as a lone 360p rung. 1.25× is
+re-encode headroom; the table floor stops a tiny source from producing a
+nonsensical high-resolution rung. Network and device caps still apply to
+the clamped value; drop rungs above `network.maxBitrateBps` (keep at least the lowest rung);
 the master playlist lists the ADVERTISED rung set (§7.5 — all surviving
 rungs on Tier 1+, the variant-capped subset on Tier 0); **each rung is a
 separate workload governed by the §9 admission slot** — only the initially

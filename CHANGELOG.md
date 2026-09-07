@@ -134,6 +134,19 @@ axis; nothing before `1.0.0-beta.1` was ever released.
   SEI on H.264 (existing files are re-probed on the next start) and the
   playback engine transcodes such titles instead of copying them
   (ENGINE_VERSION 0.12.0, reason `video-open-gop-copy-unsafe`).
+- Playback: a forced conversion of a low-bitrate title no longer drops to
+  the smallest quality level. The level at the title's own resolution is
+  kept with its bitrate lowered to fit the source instead of being removed
+  (a 1080p title at 0.9 Mbps came out as 360p). ENGINE_VERSION 0.13.0.
+- Player: switching versions no longer races the previous session for a
+  conversion slot — the old session is ended before the new one is
+  requested. Version entries that would read identically (two parts of
+  one title) show their file name.
+- Worker: the provider-enablement check no longer runs before the
+  database is reachable (it crashed the worker once per package restart
+  on Linux native installs), image jobs run at the same CPU-derived
+  concurrency as probes instead of a fixed two, and a title's poster and
+  backdrop are queued ahead of its cast portraits.
 - Metadata: every TMDB image URL was built without a size segment
   (`https://image.tmdb.org/t/p//<file>` — TMDB's base URL ends at `/t/p/`
   and the default had its `original` stripped), so every poster, backdrop

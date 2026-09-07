@@ -234,7 +234,7 @@ import { buildFfmpegArgs } from "./args/builder.js";
  * IS the C2 regression pin (§7.5's "Matrix churn" paragraph). Matrix
  * 530 -> 536 cases, golden count 41 -> 42.
  */
-export const ENGINE_VERSION = "0.12.0";
+export const ENGINE_VERSION = "0.13.0";
 
 /**
  * Stage D assembly (docs/PLAYBACK.md §3 Stage D.4, binding interpretation

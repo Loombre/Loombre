@@ -292,12 +292,13 @@ describe("buildLadder: rule (a) — never exceed source height", () => {
 });
 
 describe("buildLadder: rule (b) — never exceed source bitrate", () => {
-  it("low-bitrate 2160p source drops the two highest rungs by bitrate alone (height passes)", () => {
+  it("low-bitrate 2160p source: the source-height rung is KEPT and clamped to 1.25× source (0.13.0), the other over-bitrate rung is dropped", () => {
     const media = makeMedia([makeVideoStream({ height: 2160, width: 3840, bitrateBps: 5_000_000 })], {
       overallBitrateBps: 5_000_000,
     });
     const ladder = buildLadder(media, makeDevice(), makeNetwork(), makePolicy(), CAPS_SOFTWARE_ONLY, 0).ladder;
     expect(ladder).toEqual([
+      { heightPx: 2160, videoBitrateBps: 6_250_000, audioBitrateBps: 384_000, codec: "hevc" },
       { heightPx: 1080, videoBitrateBps: 4_000_000, audioBitrateBps: 160_000, codec: "h264" },
       { heightPx: 720, videoBitrateBps: 3_000_000, audioBitrateBps: 160_000, codec: "h264" },
       { heightPx: 480, videoBitrateBps: 1_500_000, audioBitrateBps: 160_000, codec: "h264" },
@@ -305,12 +306,13 @@ describe("buildLadder: rule (b) — never exceed source bitrate", () => {
     ]);
   });
 
-  it("comparator interpretation: stream.bitrateBps null falls back to media.overallBitrateBps", () => {
+  it("comparator interpretation: stream.bitrateBps null falls back to media.overallBitrateBps (the clamp reads the same fallback)", () => {
     const media = makeMedia([makeVideoStream({ height: 2160, width: 3840, bitrateBps: null })], {
       overallBitrateBps: 2_000_000,
     });
     const ladder = buildLadder(media, makeDevice(), makeNetwork(), makePolicy(), CAPS_SOFTWARE_ONLY, 0).ladder;
     expect(ladder).toEqual([
+      { heightPx: 2160, videoBitrateBps: 2_500_000, audioBitrateBps: 384_000, codec: "hevc" },
       { heightPx: 480, videoBitrateBps: 1_500_000, audioBitrateBps: 160_000, codec: "h264" },
       { heightPx: 360, videoBitrateBps: 800_000, audioBitrateBps: 160_000, codec: "h264" },
     ]);
@@ -684,8 +686,10 @@ describe("buildLadder: degenerate inputs stay total", () => {
     expect(() => buildLadder(media, makeDevice(), makeNetwork(), makePolicy(), CAPS_SOFTWARE_ONLY, 99).ladder).not.toThrow();
     const ladder = buildLadder(media, makeDevice(), makeNetwork(), makePolicy(), CAPS_SOFTWARE_ONLY, 99).ladder;
     // No height cap applied (rule a permissive) — only bitrate rule (b) via
-    // the overallBitrateBps fallback narrows the table.
+    // the overallBitrateBps fallback narrows the table, keeping the
+    // greatest-height rung clamped (0.13.0).
     expect(ladder).toEqual([
+      { heightPx: 2160, videoBitrateBps: 6_250_000, audioBitrateBps: 384_000, codec: "hevc" },
       { heightPx: 1080, videoBitrateBps: 4_000_000, audioBitrateBps: 160_000, codec: "h264" },
       { heightPx: 720, videoBitrateBps: 3_000_000, audioBitrateBps: 160_000, codec: "h264" },
       { heightPx: 480, videoBitrateBps: 1_500_000, audioBitrateBps: 160_000, codec: "h264" },
