@@ -127,8 +127,11 @@ class FakeApiError extends Error {
 const RESUME_THRESHOLD_DETAIL =
   "transcode.segmentAheadResumeThreshold must be below transcode.segmentAheadTarget (currently 8).";
 
+const apiDeleteMock = vi.fn();
+
 vi.mock("../../../lib/api-client.js", () => ({
   apiPut: (...args: unknown[]) => apiPutMock(...args),
+  apiDelete: (...args: unknown[]) => apiDeleteMock(...args),
   LoombreApiError: FakeApiError,
 }));
 
@@ -225,6 +228,7 @@ describe("SettingField — Phosphor registry card fidelity", () => {
 
   beforeEach(() => {
     apiPutMock.mockReset();
+    apiDeleteMock.mockReset();
   });
 
   afterEach(() => {
@@ -710,7 +714,9 @@ describe("SettingField — Phosphor registry card fidelity", () => {
 
   describe("Reset-to-default clears dirty (confirmed[31] regression)", () => {
     it("editing a field then clicking Reset clears dirty, so a later external value update is applied instead of frozen", async () => {
-      apiPutMock.mockResolvedValue({
+      // Reset CLEARS the override (DELETE /admin/settings/{key}) — never a
+      // PUT of the default's current number (LNX-31).
+      apiDeleteMock.mockResolvedValue({
         key: MAX_TRANSCODES_ENTRY.key,
         value: MAX_TRANSCODES_ENTRY.default,
         source: "default",
@@ -730,9 +736,11 @@ describe("SettingField — Phosphor registry card fidelity", () => {
       await act(async () => {
         reset.click();
       });
-      await act(async () => {}); // flush the .then() chained onto submit()'s promise
+      await act(async () => {}); // flush the .then() chained onto clearOverride()'s promise
 
-      expect(apiPutMock).toHaveBeenCalledTimes(1);
+      expect(apiDeleteMock).toHaveBeenCalledTimes(1);
+      expect(apiDeleteMock).toHaveBeenCalledWith("/admin/settings/{key}", { params: { path: { key: MAX_TRANSCODES_ENTRY.key } } });
+      expect(apiPutMock).not.toHaveBeenCalled();
       expect(input.value).toBe(String(MAX_TRANSCODES_ENTRY.default));
 
       // The regression: with `dirty` stuck true, the resync effect's
@@ -820,6 +828,7 @@ describe("SettingField — dirty parity across every editable kind (d3-e7)", () 
 
   beforeEach(() => {
     apiPutMock.mockReset();
+    apiDeleteMock.mockReset();
   });
 
   afterEach(() => {

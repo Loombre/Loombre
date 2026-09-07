@@ -33,7 +33,7 @@ import { Icon } from "../../icon/Icon.js";
 import { Button } from "../../ui/Button.js";
 import { SettingField } from "./SettingField.js";
 import { isAtDefault, isEditable } from "../../../lib/settings-schema-widget.js";
-import { apiPut } from "../../../lib/api-client.js";
+import { apiDelete } from "../../../lib/api-client.js";
 import type { components } from "@loombre/sdk";
 import { apiErrorCopy } from "../../../lib/api-error-message.js";
 import styles from "./SettingsCategoryCard.module.css";
@@ -127,7 +127,9 @@ export function SettingsCategoryCard({
         // benefit to racing several PUTs against one admin's settings, and
         // sequential keeps a partial-failure's error message attributable
         // to a specific key rather than an ambiguous aggregate.
-        await apiPut("/admin/settings/{key}", { params: { path: { key: entry.key } }, body: { value: entry.default } });
+        // DELETE clears the override (source back to "default"/"environment")
+        // rather than writing the default's current number as a row.
+        await apiDelete("/admin/settings/{key}", { params: { path: { key: entry.key } } });
       }
       onChanged();
     } catch (err) {

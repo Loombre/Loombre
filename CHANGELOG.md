@@ -156,6 +156,10 @@ axis; nothing before `1.0.0-beta.1` was ever released.
   `LOOMBRE_JOBS_SUBTITLE_EXTRACT_CONCURRENCY`, and the existing
   `LOOMBRE_TRANSCODE_WORKER_CONCURRENCY`). Changes apply on the next
   restart. Image jobs previously ran at a fixed two.
+- Settings: **Reset to default** now clears the stored value instead of
+  writing the default's current number, so the setting reads "default"
+  again and a machine-derived default keeps tracking the machine. New
+  `DELETE /admin/settings/{key}` operation; "Reset category" uses it too.
 - Metadata: every TMDB image URL was built without a size segment
   (`https://image.tmdb.org/t/p//<file>` — TMDB's base URL ends at `/t/p/`
   and the default had its `original` stripped), so every poster, backdrop

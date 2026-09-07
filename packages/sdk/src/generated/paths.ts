@@ -76,6 +76,7 @@ export const API_OPERATIONS = [
   { path: "/admin/settings", method: "get", operationId: "getAdminSettings" },
   { path: "/admin/settings/schema", method: "get", operationId: "getAdminSettingsSchema" },
   { path: "/admin/settings/{key}", method: "put", operationId: "updateAdminSetting" },
+  { path: "/admin/settings/{key}", method: "delete", operationId: "clearAdminSetting" },
   { path: "/albums/{id}", method: "get", operationId: "getAlbum" },
   { path: "/albums/{id}/tracks", method: "get", operationId: "listAlbumTracks" },
   { path: "/artists", method: "get", operationId: "listArtists" },

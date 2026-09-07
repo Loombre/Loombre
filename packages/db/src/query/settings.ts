@@ -122,6 +122,56 @@ export async function upsertServerSettingAndEmit(
   });
 }
 
+export interface DeleteServerSettingInput {
+  key: string;
+  actorUserId: string;
+  nowMs: number;
+  /** The value that takes effect once the row is gone (env pin or the
+   *  registry/derived default) — resolved by the caller, who owns the
+   *  resolver; recorded as the event's `newValue`. */
+  effectiveValueAfter: unknown;
+}
+
+/**
+ * Clears a stored override (2026-09-07, owner requirement "reset to
+ * default"): deletes the server_settings row so the key resolves to its
+ * env pin or its registry default again — for a `deriveDefault` entry
+ * that means the machine-derived number keeps TRACKING tier/cores, which
+ * writing the default's current value as a row (the pre-fix Reset) could
+ * not. Emits the same settings.updated event as an upsert, in the same
+ * transaction, with `newValue` = the value now in effect. A key with no
+ * row is a no-op: `existed:false`, nothing emitted (idempotent DELETE).
+ */
+export async function deleteServerSettingAndEmit(
+  db: Kysely<DB>,
+  input: DeleteServerSettingInput
+): Promise<{ existed: boolean; oldValue: unknown }> {
+  return withTransaction(db, async (trx) => {
+    const existing = await trx
+      .selectFrom('server_settings')
+      .select('value')
+      .where('key', '=', input.key)
+      .executeTakeFirst();
+    if (!existing) return { existed: false, oldValue: null };
+
+    await trx.deleteFrom('server_settings').where('key', '=', input.key).execute();
+
+    await writeEvent(trx, {
+      type: 'settings.updated',
+      tsMs: input.nowMs,
+      actorUserId: input.actorUserId,
+      payload: {
+        actorUserId: input.actorUserId,
+        key: input.key,
+        oldValue: existing.value,
+        newValue: input.effectiveValueAfter,
+      },
+    });
+
+    return { existed: true, oldValue: existing.value };
+  });
+}
+
 /**
  * Redacted-sentinel sibling of upsertServerSettingAndEmit for A9's
  * provider-key audit events: the payload NEVER carries a real secret value

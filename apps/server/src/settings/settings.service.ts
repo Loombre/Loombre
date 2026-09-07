@@ -50,7 +50,7 @@ import {
   type SettingsResolutionNotice,
   type SettingsTier,
 } from "@loombre/shared";
-import { listServerSettings, upsertServerSettingAndEmit } from "@loombre/db";
+import { deleteServerSettingAndEmit, listServerSettings, upsertServerSettingAndEmit } from "@loombre/db";
 import { DbProvider } from "../common/db.provider.js";
 import { conflict, notFound, unprocessableEntity } from "../gateway/problem.exception.js";
 import { requireLiveAdmin } from "../common/require-live-admin.js";
@@ -394,6 +394,63 @@ export class SettingsService implements OnApplicationBootstrap {
       actorUserId: input.actorUserId,
       nowMs: input.nowMs,
     });
+
+    const effective = this.getEffective(input.key)!;
+    return {
+      key: input.key,
+      value: effective.value,
+      source: effective.source,
+      requiresRestart: effective.requiresRestart,
+      restartPending: this.restartPendingKeys.includes(input.key),
+    };
+  }
+
+  /**
+   * DELETE /admin/settings/{key} — clear the stored override so the key
+   * resolves to its env pin or its registry default again (2026-09-07,
+   * owner requirement "reset to default": for a deriveDefault entry the
+   * machine-derived number must keep tracking tier/cores, which Reset-as-
+   * PUT-the-default could not — that wrote a database row). Same ordered
+   * checks as updateSetting up to the pin: 403 (live re-verify) -> 404
+   * (unknown or env-only key). An ACTIVE env pin is NOT a 409 here: the
+   * row underneath a pin is inert by definition, and removing it is
+   * exactly the housekeeping an operator wants before lifting the pin.
+   * Idempotent: no row -> nothing written, nothing emitted, the current
+   * effective value is echoed.
+   */
+  async clearSetting(input: { key: string; actorUserId: string; nowMs: number; instancePath?: string }): Promise<UpdateSettingResponseDto> {
+    const instancePath = input.instancePath ?? `/v1/admin/settings/${input.key}`;
+
+    await requireLiveAdmin(this.dbProvider.db, input.actorUserId, instancePath);
+
+    const entry = this.registryByKey.get(input.key);
+    if (!entry || entry.scope !== "ui") {
+      throw notFound("Unknown or non-editable settings key.", instancePath);
+    }
+
+    const before = this.getEffective(input.key);
+    const tier = resolveTier(process.env);
+    // What takes effect once the row is gone: the pin if one is active,
+    // else the (possibly machine-derived) registry default.
+    const effectiveAfter = before?.locked ? before.value : registryDefaultForTier(entry, tier, { tier, cpuCount: cpus().length || 1 });
+
+    const { existed, oldValue } = await deleteServerSettingAndEmit(this.dbProvider.db, {
+      key: input.key,
+      actorUserId: input.actorUserId,
+      nowMs: input.nowMs,
+      effectiveValueAfter: effectiveAfter,
+    });
+
+    if (existed) {
+      await this.reload();
+      this.emitChange({
+        key: input.key,
+        oldValue,
+        newValue: effectiveAfter,
+        actorUserId: input.actorUserId,
+        nowMs: input.nowMs,
+      });
+    }
 
     const effective = this.getEffective(input.key)!;
     return {

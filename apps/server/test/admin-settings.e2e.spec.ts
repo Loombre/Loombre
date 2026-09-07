@@ -344,6 +344,49 @@ describe("DELETE /users/{id} (V1-004 regression)", () => {
   });
 });
 
+describe("DELETE /admin/settings/{key} (clear override — the settings screen's Reset)", () => {
+  it("403s for a non-admin (casual) token", async () => {
+    const res = await asCasual().delete("/admin/settings/images.avifQuality");
+    expect(res.status).toBe(403);
+  });
+
+  it("404s on an unknown key and on a scope:'env-only' key", async () => {
+    expect((await asAdmin().delete("/admin/settings/not.a.real.key")).status).toBe(404);
+    expect((await asAdmin().delete("/admin/settings/database.url")).status).toBe(404);
+  });
+
+  it("clears a stored override: source goes back to 'default' with the registry default in effect; a second DELETE is an idempotent 200", async () => {
+    const put = await asAdmin().put("/admin/settings/images.avifQuality", { value: 65 });
+    expect(put.status).toBe(200);
+
+    const cleared = await asAdmin().delete("/admin/settings/images.avifQuality");
+    expect(cleared.status, JSON.stringify(cleared.body)).toBe(200);
+    expect(cleared.body).toEqual({ key: "images.avifQuality", value: 50, source: "default", requiresRestart: false, restartPending: false });
+
+    const get = await asAdmin().get("/admin/settings");
+    const entry = get.body.settings.find((s: { key: string }) => s.key === "images.avifQuality");
+    expect(entry).toMatchObject({ value: 50, source: "default" });
+
+    const again = await asAdmin().delete("/admin/settings/images.avifQuality");
+    expect(again.status).toBe(200);
+    expect(again.body).toMatchObject({ value: 50, source: "default" });
+  });
+
+  it("a machine-derived default (jobs.imageConcurrency) comes back as the DERIVED number, not the static floor, and restart-pending clears with it", async () => {
+    const schema = await asAdmin().get("/admin/settings/schema");
+    const derived = schema.body.entries.find((e: { key: string }) => e.key === "jobs.imageConcurrency").default as number;
+    expect(derived).toBeGreaterThanOrEqual(2);
+
+    const put = await asAdmin().put("/admin/settings/jobs.imageConcurrency", { value: derived + 1 });
+    expect(put.status).toBe(200);
+    expect(put.body).toMatchObject({ source: "database", requiresRestart: true, restartPending: true });
+
+    const cleared = await asAdmin().delete("/admin/settings/jobs.imageConcurrency");
+    expect(cleared.status).toBe(200);
+    expect(cleared.body).toEqual({ key: "jobs.imageConcurrency", value: derived, source: "default", requiresRestart: true, restartPending: false });
+  });
+});
+
 describe("PUT /admin/settings/{key}", () => {
   it("403s for a non-admin (casual) token", async () => {
     const res = await asCasual().put("/admin/settings/images.avifQuality", { value: 60 });

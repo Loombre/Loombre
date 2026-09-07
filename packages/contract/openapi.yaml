@@ -3367,6 +3367,41 @@ paths:
               schema: { $ref: '#/components/schemas/Problem' }
         '422': { $ref: '#/components/responses/UnprocessableEntity' }
         default: { $ref: '#/components/responses/Problem' }
+    delete:
+      operationId: clearAdminSetting
+      tags: [admin]
+      summary: Clear one UI-editable setting's stored override (admin)
+      description: >-
+        The settings screen's "Reset to default". Deletes the stored value
+        so the key resolves to its environment pin (if one is active) or to
+        its registry default again — for a key whose default is derived
+        from this machine (the Background jobs concurrencies), that keeps
+        the derived number tracking the machine, which writing the current
+        default as a value could not. Same ordered checks as PUT up to the
+        pin: 403 (live admin re-verify) -> 404 (unknown or env-only key).
+        An active environment pin is not a conflict here: the stored value
+        under a pin is inert, and clearing it is the housekeeping an
+        operator wants before lifting the pin. Idempotent — a key with no
+        stored value answers 200 with the value already in effect and
+        writes nothing.
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-zA-Z][a-zA-Z0-9]*(\.[a-zA-Z][a-zA-Z0-9]*)+$'
+          description: A scope:'ui' registry key, as for PUT.
+      responses:
+        '200':
+          description: Override cleared (or none existed); the value now in effect
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UpdateSettingResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Problem' }
 
   # ──────── Admin: provider API keys (Addendum A, decisions A6/A9) ──────────
   # Deliberately NOT nested under /admin/settings/{key}: a

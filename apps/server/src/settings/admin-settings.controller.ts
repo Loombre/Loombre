@@ -30,7 +30,7 @@
 // Provider-key statuses ride on GET /admin/settings's `providerKeys` alone
 // (mission spec's "GET never exists for key VALUES anywhere").
 
-import { Body, Controller, Get, Param, Put, Req } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Put, Req } from "@nestjs/common";
 import { nowMs as clockNowMs } from "@loombre/shared";
 import type { AuthenticatedRequest } from "../gateway/auth.guard.js";
 import { SettingsService } from "./settings.service.js";
@@ -74,6 +74,20 @@ export class AdminSettingsController {
     return this.settingsService.updateSetting({
       key,
       value: body["value"],
+      actorUserId: req.user!.userId,
+      nowMs: clockNowMs(),
+      instancePath: req.originalUrl,
+    });
+  }
+
+  /** Clear a stored override — the settings screen's Reset (see
+   *  settings.service.ts's clearSetting for the ordering and why a pin is
+   *  not a 409 here). Answers 200 with the value now in effect, like PUT,
+   *  so the UI can repaint without a second GET. */
+  @Delete(":key")
+  async clearSetting(@Param("key") key: string, @Req() req: AuthenticatedRequest): Promise<UpdateSettingResponseDto> {
+    return this.settingsService.clearSetting({
+      key,
       actorUserId: req.user!.userId,
       nowMs: clockNowMs(),
       instancePath: req.originalUrl,

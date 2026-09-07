@@ -1944,7 +1944,11 @@ export interface paths {
          */
         put: operations["updateAdminSetting"];
         post?: never;
-        delete?: never;
+        /**
+         * Clear one UI-editable setting's stored override (admin)
+         * @description The settings screen's "Reset to default". Deletes the stored value so the key resolves to its environment pin (if one is active) or to its registry default again — for a key whose default is derived from this machine (the Background jobs concurrencies), that keeps the derived number tracking the machine, which writing the current default as a value could not. Same ordered checks as PUT up to the pin: 403 (live admin re-verify) -> 404 (unknown or env-only key). An active environment pin is not a conflict here: the stored value under a pin is inert, and clearing it is the housekeeping an operator wants before lifting the pin. Idempotent — a key with no stored value answers 200 with the value already in effect and writes nothing.
+         */
+        delete: operations["clearAdminSetting"];
         options?: never;
         head?: never;
         patch?: never;
@@ -8460,6 +8464,33 @@ export interface operations {
                 };
             };
             422: components["responses"]["UnprocessableEntity"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    clearAdminSetting: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A scope:'ui' registry key, as for PUT. */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Override cleared (or none existed); the value now in effect */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateSettingResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             default: components["responses"]["Problem"];
         };
     };

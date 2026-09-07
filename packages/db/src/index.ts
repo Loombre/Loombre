@@ -620,7 +620,7 @@ export type {
 export {
   listServerSettings,
   getServerSetting,
-  upsertServerSettingAndEmit,
+  upsertServerSettingAndEmit, deleteServerSettingAndEmit,
   emitRedactedSettingsUpdated,
 } from './query/settings.js';
 

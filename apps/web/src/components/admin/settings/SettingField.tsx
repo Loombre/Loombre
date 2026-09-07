@@ -86,7 +86,7 @@ import {
 // against the loaded value, instead of latching it true on each edit — see
 // that module's header for the per-kind rules.
 import { isSettingDraftAtValue } from "../../../lib/setting-draft-parity.js";
-import { apiPut } from "../../../lib/api-client.js";
+import { apiDelete, apiPut } from "../../../lib/api-client.js";
 // browser-admin-F5: error surfaces route through apiErrorMessage, never
 // a bare `err.message` — the RFC 9457 `detail` is the half that says
 // what actually went wrong (see that module's header).
@@ -268,8 +268,28 @@ export function SettingField({ entry, value, source, onChanged, technicalDetails
     void submit(parsed.value, true);
   }
 
+  /** Reset = CLEAR the stored override (DELETE), never PUT the default's
+   *  current number: a machine-derived default (Background jobs) must keep
+   *  tracking the machine, and the source pill must read "default" again. */
+  async function clearOverride(): Promise<boolean> {
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+    try {
+      const result = await apiDelete("/admin/settings/{key}", { params: { path: { key: entry.key } } });
+      setSaved(true);
+      onChanged(result);
+      return true;
+    } catch (err) {
+      setError(apiErrorMessage(err, "Failed to reset this setting."));
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function handleResetToDefault(): void {
-    void submit(entry.default, false).then((ok) => {
+    void clearOverride().then((ok) => {
       if (!ok) return;
       // Reflect the default in every draft representation immediately, and
       // clear `dirty` in this SAME batch — NOT via markDirtyFalseAfter,

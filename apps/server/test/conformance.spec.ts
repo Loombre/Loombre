@@ -424,6 +424,7 @@ const IMPLEMENTED_NON_PUBLIC_EXPECTATIONS: Record<string, number> = {
   getAdminSettings: 200,
   getAdminSettingsSchema: 200,
   updateAdminSetting: 404, // placeholder key never matches a registry entry -> unknown-key 404, before any body validation
+  clearAdminSetting: 404, // same placeholder key -> unknown-key 404
   setAdminProviderKey: 404, // placeholder provider ("tmdb"/"tvdb" only) -> unknown-provider 404, before any body validation
   clearAdminProviderKey: 404, // same reasoning, no body involved at all
 
