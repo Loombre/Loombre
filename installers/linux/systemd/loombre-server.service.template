@@ -14,6 +14,32 @@ ExecStart=__PREFIX__/bin/loombre-server
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=30
+# KillMode=mixed: SIGTERM goes to node ALONE; the rest of the cgroup (the
+# log tee bin/loombre-server wraps stdout in, the embedded postmaster the
+# server supervises, any helper) is only SIGKILLed once node has exited.
+# With the default control-group mode every process got SIGTERM at once:
+# tee died first and node's next console.log crashed on EPIPE, the
+# postmaster went into smart shutdown under the server's own graceful
+# stop — and both landed as spurious crash reports on every clean stop.
+KillMode=mixed
+
+# /run/loombre — where the server writes its controller-IPC discovery and
+# token files (LOOMBRE_IPC_DIR below; the desktop tray, bin/loombre-tray,
+# reads them from here). The ExecStartPre=+ step (the `+` runs it as
+# root, outside the sandbox — the only principal that may hand a directory
+# to a group its owner is not in) creates the directory owned by the
+# service account, re-groups it to the host's local-administrator group
+# and makes it setgid 2750, so the 0640 files the server writes inside
+# inherit that group: an admin's tray can read them, nobody else can list
+# them. Deliberately NOT RuntimeDirectory=: systemd re-applies
+# User:Group + RuntimeDirectoryMode to a RuntimeDirectory when it sets up
+# ExecStart=, after ExecStartPre= has run, which undid exactly this. The
+# ExecStopPost=+ line removes the directory on stop, so no stale
+# discovery file survives; ReadWritePaths lifts ProtectSystem=strict for
+# it (`-`: a missing directory must not fail the unit).
+Environment=LOOMBRE_IPC_DIR=/run/loombre
+ExecStartPre=+__PREFIX__/bin/loombre-ipc-dir-setup /run/loombre __LOOMBRE_USER__
+ExecStopPost=-+__PREFIX__/bin/loombre-ipc-dir-setup --remove /run/loombre
 
 # Hardening (STATE.md P4.1 / docs/PLAN.md §11 systemd unit requirement).
 # ProtectSystem=strict makes the ENTIRE filesystem read-only for this unit
@@ -22,7 +48,7 @@ TimeoutStopSec=30
 # to itself, only to the data dir an operator chose at install time.
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=__DATA_DIR__
+ReadWritePaths=__DATA_DIR__ -/run/loombre
 PrivateTmp=true
 ProtectHome=true
 ProtectKernelTunables=true

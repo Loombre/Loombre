@@ -537,7 +537,7 @@ post-v1 writer behind a setting).
 
 | Platform | Primary channel | Notes |
 |----------|-----------------|-------|
-| Linux | Docker/Compose (canonical) + tarball w/ systemd unit | Your openSUSE box is the reference T2 |
+| Linux | Docker/Compose (canonical) + `.rpm`/`.deb`/tarball w/ systemd units + desktop tray controller (`bin/loombre-tray`, StatusNotifierItem over D-Bus) | Your openSUSE box is the reference T2 |
 | Windows | `.exe` bootstrapper (WiX Burn) wrapping the MSI payload: service registration, firewall rule, tray controller | Embedded PG + bundled ffmpeg; one published artifact per release |
 | macOS | Unsigned .pkg + menubar controller; Homebrew cask (prepared, not yet wired to a publisher — no tap exists) | VideoToolbox path is the differentiator vs the .NET incumbents on Macs |
 

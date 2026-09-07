@@ -38,9 +38,11 @@ very server that was just stopped):
 - **macOS** — click the Loombre menu bar icon and choose **Start Loombre**.
 - **Windows** — right-click the Loombre tray icon and choose **Start
   Loombre**.
-- **Linux, or no icon available** — ask whoever installed Loombre; they
-  can start the service the same way it was set up (see the install guide
-  for your platform), and a computer restart also brings everything back
+- **Linux** — click the Loombre tray icon and choose **Start Loombre**
+  (your desktop asks for an administrator password).
+- **No icon available** — ask whoever installed Loombre; they can start
+  the service the same way it was set up (see the install guide for your
+  platform), and a computer restart also brings everything back
   automatically.
 
 **Running Loombre in Docker?** The shut-down button politely refuses and

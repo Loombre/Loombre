@@ -14,6 +14,10 @@ ExecStart=__PREFIX__/bin/loombre-web
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=30
+# KillMode=mixed — see loombre-server.service.template: SIGTERM reaches
+# node alone (the log tee and any ffmpeg helper are reaped after it
+# exits), so a clean stop no longer files an EPIPE crash report.
+KillMode=mixed
 
 # Hardening — mirrors loombre-server.service.template; see that file for
 # the full rationale. ONE deliberate difference: ReadWritePaths also

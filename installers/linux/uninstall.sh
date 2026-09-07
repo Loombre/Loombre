@@ -104,6 +104,20 @@ elif [ -e "${SHIM_PATH}" ]; then
   echo "uninstall.sh: ${SHIM_PATH} exists but is not a symlink — leaving it alone (never installed by this script)."
 fi
 
+# ── desktop integration (launcher, tray autostart, icons) ──────────────
+#    Everything install.sh's desktop step wrote, and nothing else: the
+#    two .desktop entries and the loombre.{png,svg} icons under hicolor.
+#    A running tray belongs to a desktop session, but its binary is about
+#    to be deleted — stop it so it does not sit there pointing at nothing.
+pkill -x loombre-tray >/dev/null 2>&1 || true
+rm -f /usr/share/applications/loombre.desktop /etc/xdg/autostart/loombre-tray.desktop /usr/share/polkit-1/rules.d/50-loombre.rules
+for _icon_dir in /usr/share/icons/hicolor/*/apps; do
+  rm -f "${_icon_dir}/loombre.png" "${_icon_dir}/loombre.svg"
+done
+command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database -q /usr/share/applications 2>/dev/null || true
+command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor 2>/dev/null || true
+echo "uninstall.sh: removed desktop entries + icons"
+
 # ── app payload ──────────────────────────────────────────────────────────
 if [ -d "${PREFIX}" ]; then
   rm -rf "${PREFIX:?}"

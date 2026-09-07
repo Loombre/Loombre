@@ -56,6 +56,53 @@ drop-in (and the `setcap`/`authbind` alternatives) — this is the one
 systemd-specific piece of that story, kept here as the canonical spot so
 both docs can point at each other instead of drifting out of sync.
 
+## Two more things the units decide
+
+**`/run/loombre` on `loombre-server`** is where the server publishes the
+desktop tray's discovery file and bearer token (`Environment=
+LOOMBRE_IPC_DIR=/run/loombre`). The unit's
+`ExecStartPre=+/opt/loombre/bin/loombre-ipc-dir-setup /run/loombre loombre`
+line (the `+` runs it as root, outside the sandbox) creates the directory
+owned by the service account, hands it to the host's local-administrator
+group — `wheel`, `sudo` or `admin`, whichever exists first, or
+`LOOMBRE_IPC_GROUP` from the env file — and makes it setgid `2750`, so
+the `0640` files the server writes inherit that group: an admin's tray can
+read them, nobody else can list them. Root has to do this: an
+unprivileged process may only `chown` a file to a group it is a member
+of, and `loombre` is deliberately not an administrator. It is not a
+`RuntimeDirectory=` on purpose: systemd re-applies the unit's user, group
+and mode to a runtime directory when it starts the main process, after
+`ExecStartPre` has run, which undid exactly this grant. `ReadWritePaths`
+lists the directory (with a `-`, so a missing one never fails the unit),
+and an `ExecStopPost=+` line removes it on stop, which also retires any
+stale discovery file.
+
+**`PrivateTmp=true` on all three** means each service has its own `/tmp`.
+Transcode staging therefore defaults to `<data dir>/transcode`
+(`LOOMBRE_TRANSCODE_DIR`, set by the `bin/` wrappers), the one path both
+`loombre-server` and `loombre-worker` may write. Moving it elsewhere is a
+two-part change — the env variable, plus a `ReadWritePaths=<path>` drop-in
+on BOTH units, because `ProtectSystem=strict` leaves everything else
+read-only:
+
+```sh
+sudo systemctl edit loombre-server    # [Service]\nReadWritePaths=/mnt/nvme/loombre-staging
+sudo systemctl edit loombre-worker    # the same drop-in
+```
+
+GPU access for hardware transcoding needs no unit change at all: the
+service account is a member of `render`/`video` (the installers add it),
+and systemd applies `/etc/group` membership on every start.
+
+**`KillMode=mixed` on all three.** A stop sends SIGTERM to the Node
+process alone and only SIGKILLs the rest of the control group after it
+has exited. With systemd's default (`control-group`) every process was
+signalled at once: the log `tee` the wrappers use died first, Node's next
+log line crashed on EPIPE, and the embedded PostgreSQL went into shutdown
+under the server's own graceful stop — two spurious crash reports on
+every clean stop. `mixed` lets each process finish in the order the
+software already enforces.
+
 ## Everything else (service management, logs, upgrades)
 
 `docs/install/linux.md` is authoritative — `systemctl start|stop|status

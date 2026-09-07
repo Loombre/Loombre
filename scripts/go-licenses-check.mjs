@@ -32,8 +32,17 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const NATIVE_DIR = join(REPO_ROOT, "packages", "wg-native", "native");
 const GO_LICENSES_VERSION = "v1.6.0";
+
+/** Every Go module in the repo, with the module path go-licenses must
+ *  ignore (the module's own AGPL code is not a third-party dependency).
+ *  A new Go module anywhere in the tree is added HERE, or its dependency
+ *  graph is invisible to the license gate exactly as wg-native's once was
+ *  to license-checker. */
+const GO_MODULES = [
+  { label: "packages/wg-native/native", dir: join(REPO_ROOT, "packages", "wg-native", "native"), modulePath: "loombre.dev/wg-native" },
+  { label: "installers/linux/tray", dir: join(REPO_ROOT, "installers", "linux", "tray"), modulePath: "loombre.dev/linux-tray" },
+];
 
 // Kept in sync with scripts/license-check.mjs's ALLOW list (that file's own
 // comment: "the single source of the allow-list is HERE now" refers to the
@@ -97,7 +106,7 @@ function main() {
   if (!commandAvailable("go", ["version"])) {
     const message =
       "go-licenses-check: Go toolchain not found on PATH — skipping the Go dependency-graph license scan " +
-      "(packages/wg-native/native). Install Go (https://go.dev/dl/) to run this check locally.";
+      `(${GO_MODULES.map((m) => m.label).join(", ")}). Install Go (https://go.dev/dl/) to run this check locally.`;
     if (REQUIRE_WG) {
       console.error(message);
       console.error("go-licenses-check: LOOMBRE_REQUIRE_WG=1 is set — refusing to silently skip.");
@@ -117,16 +126,18 @@ function main() {
     return;
   }
 
-  console.log(`go-licenses-check: scanning packages/wg-native/native's Go dependency graph (allow-list: ${ALLOWED_LICENSES})...`);
-  try {
-    execFileSync(
-      binary,
-      ["check", "--ignore", "loombre.dev/wg-native", "--allowed_licenses", ALLOWED_LICENSES, "."],
-      { cwd: NATIVE_DIR, stdio: "inherit" },
-    );
-  } catch (err) {
-    console.error(`go-licenses-check: FAILED — a dependency's license is not on the allow-list (${err.message}).`);
-    process.exit(1);
+  for (const mod of GO_MODULES) {
+    console.log(`go-licenses-check: scanning ${mod.label}'s Go dependency graph (allow-list: ${ALLOWED_LICENSES})...`);
+    try {
+      execFileSync(
+        binary,
+        ["check", "--ignore", mod.modulePath, "--allowed_licenses", ALLOWED_LICENSES, "."],
+        { cwd: mod.dir, stdio: "inherit" },
+      );
+    } catch (err) {
+      console.error(`go-licenses-check: FAILED — ${mod.label}: a dependency's license is not on the allow-list (${err.message}).`);
+      process.exit(1);
+    }
   }
   console.log("go-licenses-check: PASS");
 }

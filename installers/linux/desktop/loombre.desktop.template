@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=Loombre
+GenericName=Media Server
+Comment=Open the Loombre media server
+Exec=__PREFIX__/bin/loombre-tray --open-web
+Icon=loombre
+Terminal=false
+StartupNotify=false
+Categories=AudioVideo;Video;Player;Network;
+Keywords=media;server;streaming;movies;tv;music;

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=Loombre Tray
+Comment=Loombre status and controls in the system tray
+Exec=__PREFIX__/bin/loombre-tray --autostart
+Icon=loombre
+Terminal=false
+NoDisplay=true
+StartupNotify=false
+X-GNOME-Autostart-enabled=true
+X-KDE-autostart-after=panel

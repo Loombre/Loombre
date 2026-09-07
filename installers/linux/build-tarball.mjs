@@ -151,6 +151,7 @@ export function parseArgs(argv) {
     outDir: join(INSTALLERS_LINUX_DIR, "dist"),
     skipAppBuild: false,
     skipFetchFfmpeg: false,
+    skipTray: false,
     help: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -160,6 +161,7 @@ export function parseArgs(argv) {
     else if (arg === "--out-dir") out.outDir = resolve(argv[++i]);
     else if (arg === "--skip-app-build") out.skipAppBuild = true;
     else if (arg === "--skip-fetch-ffmpeg") out.skipFetchFfmpeg = true;
+    else if (arg === "--skip-tray") out.skipTray = true;
     else if (arg === "--help" || arg === "-h") out.help = true;
     else throw new Error(`build-tarball: unrecognized argument ${JSON.stringify(arg)}`);
   }
@@ -1183,8 +1185,27 @@ export PATH="\${APP_ROOT}/ffmpeg:\${PATH}"
 # and is intentionally the DATA dir (writable under both plain use and the
 # hardened unit's ProtectSystem=strict + ReadWritePaths=<data dir>) rather
 # than APP_ROOT (read-only under that same hardening).
+# The wrappers tee stdout into logs/<name>.log (below) and systemd captures
+# the other side into the journal — neither is a terminal, yet Nest's
+# logger (and any chalk-style library) still emitted ANSI colour codes, so
+# journalctl and the Dashboard's log-tail card showed raw escape sequences.
+# NO_COLOR is the convention every such library honours; FORCE_COLOR=0
+# covers the ones that only read that.
+export NO_COLOR=1
+export FORCE_COLOR=0
 if [ -n "\${LOOMBRE_DATA_DIR:-}" ]; then
   cd "\${LOOMBRE_DATA_DIR}"
+  # Transcode staging (apps/worker/src/transcode/config.ts's
+  # resolveTranscodeStagingRoot) defaults to os.tmpdir()/loombre-transcode,
+  # and the shipped units run with PrivateTmp=true — each unit gets its OWN
+  # /tmp, so the HLS segments the worker wrote there were invisible to the
+  # server that has to serve them (every session sat at "loading" forever).
+  # Default it under the data dir instead: the one path both units may
+  # write (ReadWritePaths=<data dir>) and both see. An explicit
+  # LOOMBRE_TRANSCODE_DIR (env file) still wins — but a custom path outside
+  # the data dir also needs a ReadWritePaths= drop-in on both units.
+  : "\${LOOMBRE_TRANSCODE_DIR:=\${LOOMBRE_DATA_DIR}/transcode}"
+  export LOOMBRE_TRANSCODE_DIR
 fi
 `;
 
@@ -1241,7 +1262,38 @@ exec > >(tee -a "\${LOOMBRE_LOG_FILE}") 2>&1
   // LOOMBRE_WEB_URL (always exported, overridable): the server's IPC/web-url
   // seam (apps/server/src/ipc/web-url.ts) — the tarball's own bin/loombre-web
   // serves the UI on :3000 by default, so point at it by default.
+  //
+  // Controller IPC (apps/server/src/ipc — what bin/loombre-tray talks to):
+  // the discovery + token files land in the data dir by default, which is
+  // 0750 loombre:loombre and therefore unreachable for the desktop user
+  // the tray runs as. The server unit sets LOOMBRE_IPC_DIR=/run/loombre
+  // (Environment=) and its root-privileged ExecStartPre=+ step,
+  // bin/loombre-ipc-dir-setup (below), creates that directory, hands it
+  // to the host's local-administrator group and makes it setgid, so every
+  // file the server creates inside inherits that group. The token stays
+  // 0640; its GROUP defaults here to whatever the directory carries. (The
+  // RUNTIME_DIRECTORY branch stays for a unit that does use
+  // RuntimeDirectory=; the shipped unit deliberately does not — see the
+  // setup script's comment.) The server's own chown to
+  // that group (posix-permissions.ts) then targets the group the file
+  // already has — the one chown an unprivileged process is always
+  // allowed. Found on the reference box: the earlier design resolved the
+  // admin group HERE and let the server chown to it, but chown(2) by a
+  // non-root process may only pick a group it is a member of, and
+  // `loombre` is not in wheel — EPERM, files stayed group loombre, tray
+  // locked out. Explicit LOOMBRE_IPC_DIR / LOOMBRE_IPC_GROUP values (env
+  // file) always win; without systemd (RUNTIME_DIRECTORY unset) the
+  // server keeps its own data-dir + primary-group default.
   const serverEmbeddedWiring = `export LOOMBRE_WEB_URL="\${LOOMBRE_WEB_URL:-http://localhost:3000}"
+if [ -z "\${LOOMBRE_IPC_DIR:-}" ] && [ -n "\${RUNTIME_DIRECTORY:-}" ]; then
+  export LOOMBRE_IPC_DIR="\${RUNTIME_DIRECTORY%%:*}"
+fi
+if [ -z "\${LOOMBRE_IPC_GROUP:-}" ] && [ -n "\${LOOMBRE_IPC_DIR:-}" ] && [ -d "\${LOOMBRE_IPC_DIR}" ]; then
+  _ipc_group="$(stat -c %G "\${LOOMBRE_IPC_DIR}" 2>/dev/null || stat -f %Sg "\${LOOMBRE_IPC_DIR}" 2>/dev/null || true)"
+  if [ -n "\${_ipc_group}" ]; then
+    export LOOMBRE_IPC_GROUP="\${_ipc_group}"
+  fi
+fi
 if [ -z "\${DATABASE_URL:-}" ]; then
   export LOOMBRE_EMBEDDED_PG_VENDOR_DIR="\${LOOMBRE_EMBEDDED_PG_VENDOR_DIR:-\${APP_ROOT}/pg}"
   if [ -z "\${LOOMBRE_EMBEDDED_PG_VERSION:-}" ]; then
@@ -1325,6 +1377,123 @@ exec "\${NODE_BIN}" "\${APP_ROOT}/lib/server/bin/loombre.mjs" "$@"
 `;
   writeFileSync(join(binDir, "loombre"), cliWrapper);
   chmodSync(join(binDir, "loombre"), 0o755);
+
+  // bin/loombre-ipc-dir-setup — the loombre-server unit's
+  // `ExecStartPre=+` step (the `+` runs it with full privileges, outside
+  // User=/CapabilityBoundingSet=/ProtectSystem=, before the server
+  // itself starts as `loombre`). It OWNS /run/loombre: creates it, chowns
+  // it to the service account, re-groups it to the host's local-
+  // administrator group and makes it setgid 2750, so the discovery +
+  // token files the server writes inside inherit that group and an
+  // admin's desktop tray can read them, while every other account cannot
+  // even list the directory. Root is the only principal that can do this
+  // (chown to a group the owner is not in), which is why it is a separate
+  // privileged step rather than something the server does for itself.
+  //
+  // WHY NOT RuntimeDirectory= (found on the reference box, systemd 261):
+  // systemd re-applies User:Group + RuntimeDirectoryMode to a
+  // RuntimeDirectory when it sets up ExecStart= — AFTER ExecStartPre= has
+  // run — so a chgrp/chmod made there is undone before the server ever
+  // writes a file. A directory systemd does not manage keeps what root
+  // gave it. The unit's ExecStopPost=+ line calls this script with
+  // --remove to keep RuntimeDirectory's one nicety: no stale discovery
+  // file survives a stop.
+  //
+  // Group choice: LOOMBRE_IPC_GROUP from the env file when set and
+  // existing, else the first of wheel / sudo / admin that exists (the
+  // macOS installer's `admin` precedent). No admin group at all leaves
+  // the directory owner-only — a headless host loses nothing. Never
+  // fails the unit: a chgrp problem is a tray problem, not a server
+  // problem.
+  const ipcDirSetup = `#!/usr/bin/env bash
+# Generated by installers/linux/build-tarball.mjs — do not edit by hand.
+# Runs as root from loombre-server.service's ExecStartPre=+ / ExecStopPost=+
+# lines; see the generator's comment for the whole story.
+#   loombre-ipc-dir-setup <dir> [owner]   create <dir> (owner:owner, default
+#                                         loombre), then chgrp to the admin
+#                                         group + chmod 2750 (setgid)
+#   loombre-ipc-dir-setup --remove <dir>  delete <dir> (unit stop)
+set -uo pipefail
+if [ "\${1:-}" = "--remove" ]; then
+  _dir="\${2:-}"
+  if [ -n "\${_dir}" ] && [ "\${_dir}" != "/" ] && [ -d "\${_dir}" ]; then
+    rm -rf "\${_dir}"
+  fi
+  exit 0
+fi
+_dir="\${1:-\${RUNTIME_DIRECTORY%%:*}}"
+_owner="\${2:-}"
+if [ -z "\${_dir}" ]; then
+  exit 0
+fi
+if [ ! -d "\${_dir}" ]; then
+  mkdir -p "\${_dir}" || { echo "loombre-ipc-dir-setup: could not create \${_dir}" >&2; exit 0; }
+fi
+if [ -n "\${_owner}" ]; then
+  chown "\${_owner}:\${_owner}" "\${_dir}" || echo "loombre-ipc-dir-setup: could not chown \${_dir} to \${_owner}" >&2
+fi
+_group_exists() {
+  getent group "$1" >/dev/null 2>&1 || grep -q "^$1:" /etc/group 2>/dev/null
+}
+_group="\${LOOMBRE_IPC_GROUP:-}"
+if [ -n "\${_group}" ] && ! _group_exists "\${_group}"; then
+  echo "loombre-ipc-dir-setup: LOOMBRE_IPC_GROUP='\${_group}' is not a group on this host — leaving \${_dir} owner-only" >&2
+  chmod 0750 "\${_dir}" 2>/dev/null || true
+  exit 0
+fi
+if [ -z "\${_group}" ]; then
+  for _candidate in wheel sudo admin; do
+    if _group_exists "\${_candidate}"; then
+      _group="\${_candidate}"
+      break
+    fi
+  done
+fi
+if [ -z "\${_group}" ]; then
+  echo "loombre-ipc-dir-setup: no wheel/sudo/admin group on this host — \${_dir} stays owner-only (set LOOMBRE_IPC_GROUP to grant a tray group)" >&2
+  chmod 0750 "\${_dir}" 2>/dev/null || true
+  exit 0
+fi
+if chgrp "\${_group}" "\${_dir}" && chmod 2750 "\${_dir}"; then
+  exit 0
+fi
+echo "loombre-ipc-dir-setup: could not make \${_dir} setgid to group '\${_group}' — the desktop tray may not be able to read the IPC token" >&2
+exit 0
+`;
+  writeFileSync(join(binDir, "loombre-ipc-dir-setup"), ipcDirSetup);
+  chmodSync(join(binDir, "loombre-ipc-dir-setup"), 0o755);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Step: bin/loombre-tray — the desktop tray controller (installers/linux/tray)
+// ─────────────────────────────────────────────────────────────────────────
+
+const TRAY_SOURCE_DIR = join(INSTALLERS_LINUX_DIR, "tray");
+
+/**
+ * Cross-compiles installers/linux/tray (a Go module — a pure-Go
+ * StatusNotifierItem client, no cgo, no libappindicator) into a single
+ * static ELF at bin/loombre-tray. `go` is already a build prerequisite for
+ * this tarball's release leg (packages/wg-native's c-shared library; the
+ * release workflow's setup-go step), so a missing toolchain is a hard,
+ * explained failure rather than a silently tray-less payload. GOARCH
+ * follows --arch, so a macOS dev host produces the same binary the ubuntu
+ * runner does. The version is stamped in (main.buildVersion) exactly as
+ * build-msi.mjs stamps the Windows tray — the tray shows it in its menu.
+ */
+function buildLinuxTray(stageDir, arch, version) {
+  const goCheck = spawnSync("go", ["version"], { encoding: "utf8", shell: WIN });
+  if (goCheck.error || goCheck.status !== 0) {
+    throw new Error(
+      "build-tarball: the Go toolchain is required to build bin/loombre-tray (installers/linux/tray) — install Go (https://go.dev/dl/, the version in packages/wg-native/native/go.mod) or pass --skip-tray for a tray-less local build",
+    );
+  }
+  const outPath = join(stageDir, "bin", "loombre-tray");
+  run("go", ["build", "-trimpath", "-ldflags", `-s -w -X main.buildVersion=${version}`, "-o", outPath, "."], {
+    cwd: TRAY_SOURCE_DIR,
+    env: { ...process.env, CGO_ENABLED: "0", GOOS: "linux", GOARCH: arch === "arm64" ? "arm64" : "amd64" },
+  });
+  chmodSync(outPath, 0o755);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -1409,7 +1578,12 @@ async function assembleTarball(args) {
   writeWrapperScripts(stageDir);
   writeFileSync(join(stageDir, "VERSION"), version + "\n");
 
-  console.log("--- bundling install.sh / uninstall.sh / loombre.env.template / systemd units ---");
+  if (!args.skipTray) {
+    console.log("--- building bin/loombre-tray (Go, static) ---");
+    buildLinuxTray(stageDir, arch, version);
+  }
+
+  console.log("--- bundling install.sh / uninstall.sh / loombre.env.template / systemd units / desktop entries ---");
   for (const name of ["install.sh", "uninstall.sh"]) {
     cpSync(join(INSTALLERS_LINUX_DIR, name), join(stageDir, name));
     chmodSync(join(stageDir, name), 0o755);
@@ -1420,6 +1594,17 @@ async function assembleTarball(args) {
   cpSync(join(INSTALLERS_LINUX_DIR, "loombre.env.template"), join(stageDir, "loombre.env.template"));
   chmodSync(join(stageDir, "loombre.env.template"), 0o644);
   cpSync(join(INSTALLERS_LINUX_DIR, "systemd"), join(stageDir, "systemd"), { recursive: true });
+  // desktop/: the launcher + tray-autostart .desktop templates and the
+  // hicolor icon set (installers/linux/desktop, generated by
+  // scripts/build-linux-icons.mjs) — rendered/copied into /usr/share and
+  // /etc/xdg by install.sh, and by the .rpm/.deb builders from the same
+  // checkout files. Tarball-root entry like systemd/, never under bin/lib.
+  cpSync(join(INSTALLERS_LINUX_DIR, "desktop"), join(stageDir, "desktop"), { recursive: true });
+  // polkit/: the rule that lets administrators start/stop the units from
+  // the tray with their own password (installers/linux/polkit) —
+  // install.sh copies it to /usr/share/polkit-1/rules.d, the packages
+  // ship it there.
+  cpSync(join(INSTALLERS_LINUX_DIR, "polkit"), join(stageDir, "polkit"), { recursive: true });
 
   console.log("--- packaging tarball ---");
   mkdirSync(args.outDir, { recursive: true });
@@ -1454,7 +1639,7 @@ if (isDirectEntrypoint) {
   if (args.help) {
     console.log(
       "Usage: node installers/linux/build-tarball.mjs [--version <semver>] [--arch x64|arm64] " +
-        "[--out-dir <dir>] [--skip-app-build] [--skip-fetch-ffmpeg]",
+        "[--out-dir <dir>] [--skip-app-build] [--skip-fetch-ffmpeg] [--skip-tray]",
     );
     process.exit(0);
   }

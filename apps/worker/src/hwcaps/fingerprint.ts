@@ -19,6 +19,7 @@
  * it unit-testable with a fake runner exactly like battery.ts.
  */
 import { createHash } from "node:crypto";
+import { BATTERY_RECIPE_VERSION } from "./tables.js";
 import type { CommandRunner } from "./types.js";
 
 function sha256(text: string): string {
@@ -37,7 +38,11 @@ const FINGERPRINT_TIMEOUT_MS = 10_000;
  */
 export async function computeFfmpegBuildHash(runner: CommandRunner, ffmpegPath: string): Promise<string> {
   const result = await runner.run(ffmpegPath, ["-version"], { timeoutMs: FINGERPRINT_TIMEOUT_MS });
-  return sha256(result.stdout);
+  // The battery recipe version rides along (tables.ts
+  // BATTERY_RECIPE_VERSION): what a snapshot proves depends on the argv
+  // that produced it as much as on the binary, and a recipe fix must
+  // re-verify every install rather than wait for an ffmpeg bump.
+  return sha256(`${result.stdout}\nbattery-recipe:${BATTERY_RECIPE_VERSION}`);
 }
 
 interface GpuFingerprintCommand {
@@ -68,21 +73,45 @@ const GPU_FINGERPRINT_COMMAND: Partial<Record<NodeJS.Platform, GpuFingerprintCom
   win32: { bin: "wmic", args: ["path", "win32_VideoController", "get", "name"] },
 };
 
+export interface GpuFingerprintExtras {
+  /** Linux only: linux-devices.ts's formatDeviceAccessSummary() — which
+   *  GPU device nodes exist and whether THIS process may open them. Folded
+   *  into the hash so that an access change (the service account joined
+   *  `render`; the NVIDIA driver got installed) invalidates the snapshot
+   *  and the next boot re-probes on its own. A fix that leaves a stale
+   *  software-only snapshot in place forever is exactly what invalidation
+   *  exists to prevent, and lspci's output alone cannot see it — the PCI
+   *  bus looks identical before and after `usermod`. Ignored on other
+   *  platforms. */
+  deviceAccessSummary?: string;
+}
+
 /**
  * sha256 of the platform's best-effort GPU-identifying command output, or
  * '' on any failure (unknown platform, spawn error, non-zero exit, timeout,
  * or — for Linux — a filter that matched zero lines). Never throws.
+ *
+ * Linux additionally hashes `extras.deviceAccessSummary` beneath the
+ * filtered lspci lines (see GpuFingerprintExtras); when lspci is unusable
+ * but a device summary exists, the summary alone is hashed — a host
+ * without pciutils still gets access-change invalidation.
  */
-export async function computeGpuFingerprint(runner: CommandRunner, platform: NodeJS.Platform): Promise<string> {
+export async function computeGpuFingerprint(
+  runner: CommandRunner,
+  platform: NodeJS.Platform,
+  extras: GpuFingerprintExtras = {},
+): Promise<string> {
   const command = GPU_FINGERPRINT_COMMAND[platform];
   if (!command) return "";
+  const deviceSummary = platform === "linux" ? (extras.deviceAccessSummary ?? "").trim() : "";
   try {
     const result = await runner.run(command.bin, command.args, { timeoutMs: FINGERPRINT_TIMEOUT_MS });
-    if (result.timedOut || result.exitCode !== 0) return "";
-    const filtered = command.filter ? command.filter(result.stdout) : result.stdout;
-    if (filtered.trim() === "") return "";
-    return sha256(filtered);
+    const usable = !result.timedOut && result.exitCode === 0;
+    const filtered = usable ? (command.filter ? command.filter(result.stdout) : result.stdout) : "";
+    const material = [filtered.trim() === "" ? "" : filtered, deviceSummary].filter((part) => part !== "");
+    if (material.length === 0) return "";
+    return sha256(material.join("\n--devices--\n"));
   } catch {
-    return "";
+    return deviceSummary === "" ? "" : sha256(deviceSummary);
   }
 }

@@ -173,6 +173,28 @@ cache during this lane's work.
 | `github.com/google/btree` | v1.1.2 | Apache-2.0 | gvisor's internal ordered-map data structure (connection/route tables). Transitive. |
 | `golang.zx2c4.com/wintun` | v0.0.0-20230126152724-0fa3db229ce2 | MIT | wireguard-go's Windows TUN driver binding — build-tag-gated (`GOOS=windows` only; never compiled into the darwin/linux artifacts, confirmed by `go list -deps` on this host showing it absent from the darwin/arm64 build). Present in `go.mod` as an indirect dependency of `golang.zx2c4.com/wireguard` regardless of target OS (Go's module graph is OS-agnostic even though the BUILD is not); only the Windows CI leg's `go-licenses-check` run actually compiles it in. |
 
+### Second Go module: the Linux desktop tray (`installers/linux/tray`)
+
+`installers/linux/tray` is the Linux counterpart of the Windows tray (C#)
+and the macOS menubar app (Swift): fully-owned original code (AGPL-3.0,
+`installers/linux/tray/**/*.go`) compiled by `installers/linux/
+build-tarball.mjs` into the single static binary `bin/loombre-tray`
+(`CGO_ENABLED=0`, no libappindicator/GTK linkage — it speaks the
+freedesktop StatusNotifierItem protocol directly over D-Bus). Its whole
+third-party graph, verified the same way as wg-native's:
+
+| Component | Version (pinned, `installers/linux/tray/go.mod`) | License | Posture |
+|---|---|---|---|
+| `fyne.io/systray` | v1.12.2 | Apache-2.0 | The StatusNotifierItem + `com.canonical.dbusmenu` implementation (pure Go on Linux). Direct dependency. |
+| `github.com/godbus/dbus/v5` | v5.1.0 | BSD-2-Clause | The D-Bus client library systray is built on; also imported directly for the tray-host presence check. |
+| `golang.org/x/sys` | v0.15.0 | BSD-3-Clause | systray's dependency (a different pin from wg-native's — two independent modules, each tidy on its own). Transitive. |
+
+`scripts/go-licenses-check.mjs` walks BOTH Go modules (its `GO_MODULES`
+list) — a new Go module anywhere in the tree must be added there or its
+graph is invisible to the gate. The tray's own `gofmt`/`go vet`/`go test`
+and its static linux/amd64 cross-build run from `pnpm installers:test`
+(`installers/linux/tray-go.test.mjs`).
+
 Verification method: `go-licenses report ./native` (from
 `packages/wg-native/native`) lists every one of the above with its
 resolved LICENSE file URL; `scripts/go-licenses-check.mjs` enforces the

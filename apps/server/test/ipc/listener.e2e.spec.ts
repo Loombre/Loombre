@@ -125,6 +125,51 @@ describe("IPC listener (real HTTP, ephemeral loopback port)", () => {
     return { Authorization: `Bearer ${handle.token}` };
   }
 
+  describe("ipcDir (LOOMBRE_IPC_DIR — the Linux /run/loombre routing)", () => {
+    it("writes the discovery + token files into ipcDir, keeps crash files under dataDir, and removes them from ipcDir on stop", async () => {
+      // The shared beforeEach listener uses dataDir for both; stand up a
+      // second one with a separate ipcDir to prove the split.
+      const ipcDir = mkdtempSync(join(tmpdir(), "loombre-ipc-e2e-ipcdir-"));
+      const crashDir = join(dataDir, "crashes");
+      mkdirSync(crashDir, { recursive: true });
+      writeFileSync(join(crashDir, "server-crash.log"), "boom\n");
+      const split = new IpcListener({
+        env: {},
+        dataDir,
+        ipcDir,
+        serverPort: 3001,
+        serverTlsMode: "off",
+        version: VERSION,
+        serverPid: SERVER_PID,
+        serverStartedAtMs: SERVER_STARTED_AT_MS,
+        getProvisioningStatus: () => provisioningStatus,
+        listRecentJobs: async () => recentJobs,
+        getWorkerLiveness: async () => workerLiveness === "unavailable" ? null : workerLiveness,
+        sendStopSignal: () => undefined,
+      });
+      const splitHandle = await split.start();
+      try {
+        expect(JSON.parse(readFileSync(discoveryFilePath(ipcDir), "utf8")).port).toBe(splitHandle.port);
+        expect(readFileSync(tokenFilePath(ipcDir), "utf8")).toBe(splitHandle.token);
+        // The SHARED listener's own files (dataDir) are untouched, and this
+        // one wrote nothing there beyond them.
+        expect(JSON.parse(readFileSync(discoveryFilePath(dataDir), "utf8")).port).toBe(handle.port);
+
+        const res = await fetch(`http://${IPC_LOOPBACK_HOST}:${splitHandle.port}${IPC_BASE_PATH}/crash-files`, {
+          headers: { Authorization: `Bearer ${splitHandle.token}` },
+        });
+        expect(res.status).toBe(200);
+        const body = (await res.json()) as CrashFilesResponse;
+        expect(body.files.map((f) => f.path)).toEqual([join(crashDir, "server-crash.log")]);
+      } finally {
+        await split.stop();
+      }
+      expect(() => readFileSync(discoveryFilePath(ipcDir))).toThrow();
+      expect(() => readFileSync(tokenFilePath(ipcDir))).toThrow();
+      rmSync(ipcDir, { recursive: true, force: true });
+    });
+  });
+
   describe("loopback-only", () => {
     it("binds exactly 127.0.0.1 (never 0.0.0.0/::)", () => {
       expect(listener.boundAddress).toBe(IPC_LOOPBACK_HOST);

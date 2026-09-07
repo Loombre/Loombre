@@ -1,8 +1,8 @@
 # Installing Loombre on Linux (rpm, deb, or tarball)
 
 Loombre ships self-contained on Linux: a bundled Node runtime, bundled
-ffmpeg, and an embedded PostgreSQL — no system Node, no system ffmpeg, no
-Docker required.
+ffmpeg, an embedded PostgreSQL, and a desktop tray controller — no system
+Node, no system ffmpeg, no Docker required.
 
 **Docker/Compose is the recommended path** (see `docs/install/docker.md`).
 This page covers the three native alternatives: bare-metal installs,
@@ -236,7 +236,10 @@ tarball's `install.sh` does with default flags:
 
 - create the **`loombre` system user** (adopting the uid of an existing
   `/var/lib/loombre` when that uid is orphaned — see
-  [Migrating from a tarball install](#migrating-from-a-tarball-install-to-a-package));
+  [Migrating from a tarball install](#migrating-from-a-tarball-install-to-a-package))
+  and add it to the **`render` and `video` groups** where they exist, so
+  the worker can open the GPU for hardware transcoding (see
+  [Hardware acceleration](#hardware-acceleration-intel-quick-sync-vaapi-nvidia-nvenc));
 - put the payload at **`/opt/loombre`**;
 - create **`/etc/loombre/loombre.env`** by copying the shipped default
   `/usr/share/loombre/loombre.env` — **only if that file is absent**, so a
@@ -244,6 +247,10 @@ tarball's `install.sh` does with default flags:
 - create **`/var/lib/loombre`** (mode `0750`, owned by `loombre`);
 - install the three units at **`/usr/lib/systemd/system`**;
 - put the `loombre` CLI at **`/usr/bin/loombre`**;
+- install the **desktop tray**: a *Loombre* entry in the application menu
+  (`/usr/share/applications/loombre.desktop`), its icons, and a login
+  autostart entry for the tray (`/etc/xdg/autostart/loombre-tray.desktop`)
+  — see [The desktop tray](#the-desktop-tray);
 - **enable and start** `loombre-server`, `loombre-worker` and
   `loombre-web`, then print the web UI and API URLs.
 
@@ -302,6 +309,26 @@ server uses the **bundled embedded PostgreSQL**: on first start it
 initializes a cluster under the data dir (`/var/lib/loombre`), supervises
 it, and **runs migrations automatically at every boot** — no repo checkout,
 no separate database, no manual migration step, ever.
+
+**Performance tier: set it on anything bigger than a small box.**
+`LOOMBRE_TIER` is not autodetected: unset means Tier 0, the N100 / Pi 5
+posture — two simultaneous conversions, a capped quality ladder, and no
+processor-based HDR tone-mapping at 1080p and above. On a desktop or
+server (a many-core CPU, a discrete GPU) set `LOOMBRE_TIER=2` in the env
+file and restart `loombre-server`; see
+[Hardware acceleration](#hardware-acceleration-intel-quick-sync-vaapi-nvidia-nvenc)
+for why this matters for HDR titles.
+
+**Transcode staging: nothing to do by default.** While a video is being
+converted, its HLS segments live under `/var/lib/loombre/transcode` (the
+`bin/` wrappers default `LOOMBRE_TRANSCODE_DIR` there). That directory
+has to be one **both** `loombre-server` and `loombre-worker` can see: the
+units run with `PrivateTmp=true`, so anything under `/tmp` is private to
+each service and playback would never start. To move staging to faster
+storage, set `LOOMBRE_TRANSCODE_DIR` in the env file **and** add a
+`ReadWritePaths=<that path>` drop-in to both units (`sudo systemctl edit
+loombre-server`, then `loombre-worker`) — the units are
+`ProtectSystem=strict`.
 
 **External PostgreSQL instead?** Point `DATABASE_URL` at your own
 PostgreSQL 17+ instance (first-class and equally tested), and run
@@ -418,6 +445,126 @@ every API call. Restart afterwards:
 sudo systemctl restart loombre-server loombre-worker loombre-web
 ```
 
+### The desktop tray
+
+The Linux counterpart of the macOS menubar app and the Windows tray:
+`/opt/loombre/bin/loombre-tray`, a small static binary that puts a
+Loombre icon in the system tray with the same menu as the other two
+platforms — status, **Open Loombre**, **Start Loombre** / **Stop server**,
+**Shut down Loombre…**, **Reveal crash files**, the version, and **Quit**.
+Every channel installs it the same way:
+
+- **Application menu:** a *Loombre* entry (`/usr/share/applications/
+  loombre.desktop`). Opening it starts the tray if it is not running and
+  opens the web UI in your browser as soon as the server answers.
+- **Starts at every desktop login** (`/etc/xdg/autostart/loombre-tray.desktop`,
+  background only — it never opens a browser uninvited). It is *not*
+  started by the install itself (a package install has no desktop session
+  to start it in): log out and back in, or run `/opt/loombre/bin/loombre-tray`
+  once. To keep it off for your account, copy that file to
+  `~/.config/autostart/` and add `Hidden=true`.
+- **Who can connect:** the server writes the tray's discovery file and
+  bearer token to `/run/loombre/` (a directory the unit's root-run setup
+  step creates, setgid to the admin group), token readable by the host's
+  local-administrator group — `wheel` on Fedora,
+  openSUSE and Arch, `sudo` on Debian and Ubuntu (the same "admins only"
+  rule the macOS installer applies with its `admin` group). If your
+  desktop account is not in that group the tray still runs, says so, and
+  names the exact `usermod` command; **Open Loombre** and **Shut down**
+  keep working regardless, since neither needs the connection. A different
+  group can be granted with `LOOMBRE_IPC_GROUP` in the env file (members
+  can stop the server and list crash files from the tray — nothing more).
+- **Start / shut down** go through systemd — `systemctl start loombre-server
+  loombre-worker loombre-web` and the matching `stop` — so your desktop's
+  polkit agent asks for a password each time, exactly as macOS asks for
+  administrator authorization. The install ships a polkit rule
+  (`/usr/share/polkit-1/rules.d/50-loombre.rules`) so a member of `wheel`,
+  `sudo` or `admin` is asked for **their own** password for these three
+  units only; a distribution with an older, non-JavaScript polkit ignores
+  the rule and asks whatever its default is (root's password on some).
+  **Shut down Loombre…** asks you to click it a second time to confirm
+  (there is no dialog toolkit in a static tray binary), then stops all
+  three services and quits the tray; the services come back at the next
+  boot, or sooner from **Start Loombre**.
+- **Stop server** is the graceful, everyday stop over the tray's own
+  connection (no password). The embedded PostgreSQL stops with the server,
+  so the worker and web UI go idle — the worker logs that its database
+  connection dropped, keeps running, and reconnects by itself the moment
+  **Start Loombre** brings the server back.
+- **Reveal crash files** opens the crash folder when your account can
+  read it; on the packaged layout the data directory belongs to the
+  service account, so it opens the Dashboard's crash card in the browser
+  instead (the same files, through the API) and names the folder in a
+  notification for `sudo ls`.
+- **GNOME:** GNOME Shell has no system tray of its own — install the
+  *AppIndicator and KStatusNotifierItem Support* extension and the icon
+  appears; the tray tells you so with a desktop notification when it finds
+  no tray host. KDE Plasma, Cinnamon, XFCE, MATE, LXQt and Budgie work as
+  they are.
+- **Headless host, no desktop?** Nothing to do — the entries are inert
+  without a session. To switch the server's tray listener off entirely,
+  set `LOOMBRE_IPC_DISABLED=1` in the env file.
+
+### Hardware acceleration (Intel Quick Sync, VAAPI, NVIDIA NVENC)
+
+The worker runs a hardware self-test at boot (and again whenever the
+ffmpeg build, the GPUs on the PCI bus, **or its own access to the GPU
+device nodes** changes) and the admin Dashboard's *Verified hardware
+capabilities* card shows what passed. Three things have to be true on
+Linux for a backend to pass:
+
+1. **Device access.** Intel Quick Sync and VAAPI open a DRM render node
+   (`/dev/dri/renderD*`), which is group `render` (or `video`) and mode
+   `0660`. The install puts the `loombre` account into both groups where
+   they exist; if you installed an earlier build, or created the account
+   yourself, do it by hand and restart the worker — the self-test notices
+   the change and re-runs on its own:
+
+   ```sh
+   sudo usermod -aG render,video loombre
+   sudo systemctl restart loombre-worker
+   ```
+
+   NVIDIA's `/dev/nvidia*` nodes are world-accessible and need no group.
+2. **Runtime libraries.** The bundled ffmpeg loads the vendor runtimes
+   from the host at runtime: for Quick Sync the Intel media driver plus the
+   oneVPL GPU runtime (`intel-media-driver` and `libmfx-gen`/`onevpl-intel-gpu`
+   — package names vary by distro; `vainfo` from `libva-utils` confirms the
+   driver loads), for VAAPI the same media driver (or Mesa's for AMD), for
+   NVENC/CUDA the proprietary NVIDIA driver.
+3. **NVIDIA only: the `nvidia_uvm` module.** CUDA (the decode and
+   tone-mapping side of NVENC) needs it loaded. On a desktop it usually is,
+   but the worker's sandbox (`NoNewPrivileges`) cannot auto-load it, so on
+   a server make it explicit:
+
+   ```sh
+   echo nvidia_uvm | sudo tee /etc/modules-load.d/nvidia-uvm.conf
+   sudo modprobe nvidia_uvm && sudo systemctl restart loombre-worker
+   ```
+
+When something is missing, the worker log says exactly what — every
+self-test run logs the per-backend outcomes and, on Linux, the device
+nodes it could and could not open with the command that fixes it:
+
+```sh
+journalctl -u loombre-worker | grep -E 'hwprobe'
+# or: grep hwprobe /var/lib/loombre/logs/worker.log
+```
+
+A machine with two GPUs (an Intel iGPU and an NVIDIA card is the common
+case) gets both: Quick Sync/VAAPI on the Intel render node and NVENC on
+the NVIDIA card, tried in the order NVENC → Quick Sync → VAAPI → software.
+
+**HDR titles.** An HDR10/HLG source played on a standard-range screen needs
+tone-mapping. The self-test's hardware tone-map checks currently fail on
+Linux (the recipes are being reworked — see the worker log's stderr
+tails), so tone-mapping falls to the processor, which Loombre allows only
+on Tier 1 and 2 (`LOOMBRE_TIER`, above) or when the admin setting
+*transcode.allowToneMapCpu* is `always`. On an unset (Tier 0) install every
+HDR title is refused as unplayable with the reasons `hdr-tone-map-required`
+and `tone-map-refused-by-policy` — set the tier, or the setting, and it
+plays.
+
 ### SELinux (Fedora / RHEL in enforcing mode)
 
 The units execute binaries under `/opt`, for which no Loombre SELinux
@@ -497,9 +644,9 @@ sudo systemctl enable --now loombre-server loombre-worker loombre-web
 ```
 
 (This is the same full shutdown the macOS menubar's "Shut Down Loombre…"
-and the Windows tray's "Shut down Loombre…" perform — on Linux the
-platform's own service manager is the interface, so there is no separate
-Loombre UI for it.)
+and the Windows tray's "Shut down Loombre…" perform — and what the Linux
+tray's **Shut down Loombre…** runs for you, with a polkit password prompt;
+see [The desktop tray](#the-desktop-tray).)
 
 ## Removing Loombre
 
@@ -659,9 +806,20 @@ set — it is incompatible with V8's JIT, i.e. with Node itself; the
 templates document this.)
 
 This means:
-- Loombre cannot write files outside `/var/lib/loombre` (and the web cache dir above)
+- Loombre cannot write files outside `/var/lib/loombre` (and the web cache
+  dir above, and `/run/loombre` — where it publishes the desktop tray's
+  discovery file and token; a root-run `ExecStartPre` step creates that
+  directory, setgid to the admin group, and a stop removes it)
 - No new capabilities or privilege escalation after startup
-- Crash logs and temporary files stay in the private container
+- A stop signals only the Node process (`KillMode=mixed`); the log tee,
+  the embedded PostgreSQL and any ffmpeg helper are cleaned up after it
+  exits, so a clean stop never files a crash report
+- Crash logs and temporary files stay in the private container — which is
+  also why transcode staging lives under the data dir rather than `/tmp`:
+  each service's `/tmp` is its own (see [Configure](#_4-configure))
+- GPU access is by ordinary group membership (`render`/`video`), not by
+  weakening the sandbox — see
+  [Hardware acceleration](#hardware-acceleration-intel-quick-sync-vaapi-nvidia-nvenc)
 
 ---
 
@@ -766,6 +924,59 @@ UUID=XXXX-XXXX  /mnt/usb  exfat  uid=1000,gid=<loombre gid>,umask=027,nofail  0 
 include it; for NFS the export's ownership and mode govern (map `loombre`'s
 uid on the server, or export with `all_squash` and an `anonuid` the service
 can read). Verify the same way: `sudo -u loombre ls /mnt/nas`.
+
+### Playback never starts — the player spins forever
+
+Every play request creates a session, the worker starts converting, and the
+player waits for the first segment that never arrives. Two causes on
+native installs:
+
+- **Transcode staging under `/tmp`** (every 1.0.0-beta.2 install). The
+  worker wrote its segments to `/tmp/loombre-transcode`, but the units run
+  with `PrivateTmp=true`, so the server's `/tmp` is a different directory
+  and it never found them. Fixed from the next release on (the wrappers
+  default `LOOMBRE_TRANSCODE_DIR` to `/var/lib/loombre/transcode`); on an
+  existing install, set it yourself in `/etc/loombre/loombre.env` and
+  restart:
+
+  ```sh
+  echo 'LOOMBRE_TRANSCODE_DIR=/var/lib/loombre/transcode' | sudo tee -a /etc/loombre/loombre.env
+  sudo systemctl restart loombre-server loombre-worker
+  ```
+
+- **A custom staging path outside the data dir** without the matching
+  `ReadWritePaths=` drop-in on both units — `journalctl -u loombre-worker`
+  shows `EROFS`/`EACCES` creating the session directory. See
+  [Configure](#_4-configure).
+
+### Hardware capabilities show "no accelerated paths" on a machine with a GPU
+
+Open the worker log and read the self-test's own explanation:
+
+```sh
+journalctl -u loombre-worker | grep -E 'hwprobe'
+```
+
+The usual finding is `no DRM render node is accessible` — the `loombre`
+account is not in the `render`/`video` group (installs before this
+version did not add it). The log line carries the exact `usermod`
+command; run it, restart the worker, and the self-test re-runs by itself.
+The other causes — a missing oneVPL/media driver, an unloaded
+`nvidia_uvm` — are covered in
+[Hardware acceleration](#hardware-acceleration-intel-quick-sync-vaapi-nvidia-nvenc).
+
+### Tray icon missing, or the tray says it can't read the token
+
+- **No icon at all on GNOME:** install the *AppIndicator and
+  KStatusNotifierItem Support* extension (GNOME Shell ships no tray).
+- **Not running:** it starts at login — log out and in, or run
+  `/opt/loombre/bin/loombre-tray` from a terminal to see its messages.
+- **"Can't read the Loombre IPC token":** your desktop account is not in
+  the local-administrator group the token is readable by (`wheel` or
+  `sudo`; `ls -ld /run/loombre` shows which — the directory is setgid to
+  that group, `drwxr-s---`). Add yourself and log in again:
+  `sudo usermod -aG wheel $USER` (or `sudo`). See
+  [The desktop tray](#the-desktop-tray).
 
 ### Worker service fails to start / keeps restarting
 

@@ -49,11 +49,26 @@ const OUTCOME_GLYPH: Record<TestOutcome, string> = {
   skipped: "SKIP",
 };
 
+/** How much of a failed test's stderr tail the report prints — the last
+ *  few lines are where ffmpeg states the actual reason ("No device
+ *  available for decoder", "Impossible to convert between the formats").
+ *  An exit code alone sent a real diagnosis back to square one. */
+const STDERR_TAIL_LINES = 4;
+
 function formatResults<Subject extends string>(label: string, results: TestResult<Subject>[]): string[] {
   if (results.length === 0) return [`  ${label}: (no candidates)`];
-  return results.map((r) => {
+  return results.flatMap((r) => {
     const base = `  ${label} ${r.subject}: ${OUTCOME_GLYPH[r.outcome]}`;
-    return r.detail ? `${base} — ${r.detail}` : base;
+    const lines = [r.detail ? `${base} — ${r.detail}` : base];
+    if (r.outcome !== "pass" && r.stderrTail) {
+      const tail = r.stderrTail
+        .split("\n")
+        .map((l) => l.trimEnd())
+        .filter((l) => l.length > 0)
+        .slice(-STDERR_TAIL_LINES);
+      for (const line of tail) lines.push(`      | ${line}`);
+    }
+    return lines;
   });
 }
 
@@ -66,7 +81,10 @@ function formatBackend(report: BackendReport): string[] {
 }
 
 /** Human-readable report text — the operator script (`pnpm --filter
- *  @loombre/worker run hwprobe`) prints exactly this to stdout. */
+ *  @loombre/worker run hwprobe`) prints exactly this to stdout, and the
+ *  worker's hwprobe job logs it, so a software-only outcome always arrives
+ *  with its per-test reasons (and, on Linux, the device-access hints that
+ *  usually explain them) instead of a bare "no accelerated paths". */
 export function formatProbeReport(report: ProbeReport): string {
   const lines: string[] = [];
   lines.push(`Loombre hardware capability self-test — ${new Date(report.generatedAtMs).toISOString()}`);
@@ -75,6 +93,20 @@ export function formatProbeReport(report: ProbeReport): string {
   lines.push(`ffmpeg build hash:  ${report.ffmpegBuildHash}`);
   lines.push(`gpu fingerprint:    ${report.gpuFingerprint || "(unavailable — '' sentinel)"}`);
   lines.push("");
+  if (report.deviceAccess) {
+    lines.push("gpu device nodes (as seen by this process):");
+    if (report.deviceAccess.devices.length === 0) {
+      lines.push("  (none — no /dev/dri or /dev/nvidia* nodes)");
+    }
+    for (const d of report.deviceAccess.devices) {
+      const vendor = d.vendor ?? d.vendorId ?? "-";
+      lines.push(`  ${d.path}  ${d.kind}  ${vendor}  ${d.access === "rw" ? "accessible" : "DENIED"}${d.group ? `  (group ${d.group})` : ""}`);
+    }
+    for (const hint of report.deviceAccess.hints) {
+      lines.push(`  ! ${hint}`);
+    }
+    lines.push("");
+  }
   for (const backend of report.backends) {
     lines.push(...formatBackend(backend));
     lines.push("");

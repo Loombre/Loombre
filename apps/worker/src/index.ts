@@ -58,6 +58,7 @@ import {
   assertHwPlatform,
   computeCurrentFingerprint,
   decideInvalidation,
+  formatProbeReport,
   persistProbeReport,
   runRealHwProbeBattery,
 } from "./hwcaps/index.js";
@@ -267,6 +268,16 @@ queue.work(
   async () => {
     const report = await runRealHwProbeBattery();
     await persistProbeReport(db, report);
+    // The full per-test report goes to the worker log (journal + worker.log
+    // on every install shape): the persisted snapshot keeps only the PASS
+    // set, so this is the one place an operator can read WHY a backend
+    // came out software-only. Device-access hints (Linux: a render node
+    // the service account cannot open, a missing nvidia_uvm) are warnings
+    // in their own right — they name the exact command that fixes them.
+    console.log(`worker: hwprobe complete —\n${formatProbeReport(report)}`);
+    for (const hint of report.deviceAccess?.hints ?? []) {
+      console.warn(`worker: hwprobe hint — ${hint}`);
+    }
   },
   { concurrency: 1 },
 );
@@ -679,7 +690,13 @@ async function reapOrphanedTranscodes(): Promise<void> {
 async function checkHwCapabilitiesAndEnqueueIfNeeded(): Promise<void> {
   try {
     const alreadyPending = await hasQueuedOrActiveJobOfType(db, "hwprobe");
-    if (alreadyPending) return;
+    if (alreadyPending) {
+      // Say so: a silent return here reads, from the outside, exactly
+      // like "the probe never runs" (the boot reconcile sweep above is
+      // what unwedges a row a dead predecessor left 'active').
+      console.log("worker: hwcaps boot check — a hwprobe job is already queued or active; not enqueueing another");
+      return;
+    }
 
     const resolved = await computeCurrentFingerprint();
     if (!resolved) {

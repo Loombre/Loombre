@@ -190,7 +190,24 @@ export { extensionForEncodeTest };
  *  binding constraint 2(b) needs no decode step first, just "re-probe the
  *  output ... assert codec identity". */
 export function buildEncodeTestArgs(backend: HwBackend, codec: ProbeEncodeCodec, encoderName: string): string[] {
-  const args = ["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", LAVFI_TESTSRC, "-c:v", encoderName];
+  const args = ["-hide_banner", "-loglevel", "error", "-y"];
+  if (backend === "vaapi") {
+    // *_vaapi encoders accept ONLY vaapi hardware frames — unlike
+    // h264_nvenc/h264_qsv, which take system-memory frames and upload
+    // themselves. A lavfi source is system memory, so the frames have to
+    // be converted and uploaded explicitly, on a device opened up front:
+    // without this the recipe fails on every host that has a working VAAPI
+    // (real-machine finding: Intel Arrow Lake iGPU, exit 218 on all three
+    // codecs while `-vaapi_device … -vf format=nv12,hwupload` encoded
+    // fine by hand). No device path: ffmpeg's own auto-selection tries the
+    // render nodes in order, the same selection the decode test relies on.
+    args.push("-init_hw_device", "vaapi=va", "-filter_hw_device", "va");
+  }
+  args.push("-f", "lavfi", "-i", LAVFI_TESTSRC);
+  if (backend === "vaapi") {
+    args.push("-vf", "format=nv12,hwupload");
+  }
+  args.push("-c:v", encoderName);
   if (backend === "software") {
     if (codec === "av1") {
       args.push(...(encoderName === "libsvtav1" ? ["-preset", "12"] : ["-cpu-used", "8"]));

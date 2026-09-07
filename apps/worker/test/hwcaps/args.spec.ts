@@ -51,6 +51,25 @@ describe("buildEncodeTestArgs", () => {
     expect(args).not.toContain("-preset");
   });
 
+  it("vaapi: opens a vaapi device up front and uploads the lavfi frames (format=nv12,hwupload) — *_vaapi encoders take hardware frames only", () => {
+    const args = buildEncodeTestArgs("vaapi", "h264", "h264_vaapi");
+    expect(args.slice(0, 8)).toEqual(["-hide_banner", "-loglevel", "error", "-y", "-init_hw_device", "vaapi=va", "-filter_hw_device", "va"]);
+    expect(args.indexOf("-init_hw_device")).toBeLessThan(args.indexOf("-i"));
+    expect(args[args.indexOf("-vf") + 1]).toBe("format=nv12,hwupload");
+    expect(args.indexOf("-vf")).toBeGreaterThan(args.indexOf("-i"));
+    expect(args.indexOf("-vf")).toBeLessThan(args.indexOf("-c:v"));
+    expect(args[args.indexOf("-c:v") + 1]).toBe("h264_vaapi");
+    expect(args).toContain("-b:v");
+  });
+
+  it("nvenc/qsv encoders take system-memory frames: no device init, no hwupload", () => {
+    for (const [backend, encoder] of [["nvenc", "hevc_nvenc"], ["qsv", "h264_qsv"]] as const) {
+      const args = buildEncodeTestArgs(backend, "h264", encoder);
+      expect(args).not.toContain("-init_hw_device");
+      expect(args).not.toContain("-vf");
+    }
+  });
+
   it("software av1 via libsvtav1 uses -preset 12; via libaom-av1 uses -cpu-used 8", () => {
     expect(buildEncodeTestArgs("software", "av1", "libsvtav1")).toEqual(
       expect.arrayContaining(["-preset", "12"]),

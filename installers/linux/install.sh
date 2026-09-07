@@ -111,6 +111,26 @@ else
   exit 1
 fi
 
+# ── GPU device access for hardware transcoding (idempotent) ────────────
+# Intel Quick Sync / VAAPI open a DRM render node (/dev/dri/renderD*),
+# which udev makes group `render` (or `video` on older distros), mode
+# 0660. A service account outside those groups gets EACCES, and the
+# worker's hardware self-test then reports software-only — on a box with
+# a perfectly good iGPU. systemd applies the account's supplementary
+# groups from /etc/group on every start, so membership is all it takes
+# (no SupplementaryGroups= in the units: a group that does not exist on
+# the host would fail the unit outright). NVIDIA's /dev/nvidia* nodes are
+# world-accessible and need nothing here.
+for _grp in video render; do
+  if getent group "${_grp}" >/dev/null 2>&1; then
+    if command -v usermod >/dev/null 2>&1; then
+      usermod -aG "${_grp}" "${LOOMBRE_USER}" && echo "install.sh: '${LOOMBRE_USER}' is in group '${_grp}' (GPU device access for hardware transcoding)"
+    elif command -v addgroup >/dev/null 2>&1; then
+      addgroup "${LOOMBRE_USER}" "${_grp}" >/dev/null 2>&1 && echo "install.sh: '${LOOMBRE_USER}' is in group '${_grp}' (GPU device access for hardware transcoding)"
+    fi
+  fi
+done
+
 # ── app payload -> PREFIX (read-only for the service; root-owned) ──────
 mkdir -p "${PREFIX}"
 for entry in bin lib runtime ffmpeg web pg packages VERSION; do
@@ -122,6 +142,8 @@ done
 chown -R root:root "${PREFIX}"
 chmod -R go-w "${PREFIX}"
 chmod 755 "${PREFIX}/bin/loombre-server" "${PREFIX}/bin/loombre-worker" "${PREFIX}/bin/loombre-web" "${PREFIX}/bin/loombre"
+[ -f "${PREFIX}/bin/loombre-ipc-dir-setup" ] && chmod 755 "${PREFIX}/bin/loombre-ipc-dir-setup"
+[ -f "${PREFIX}/bin/loombre-tray" ] && chmod 755 "${PREFIX}/bin/loombre-tray"
 
 # Next runtime cache (installer completeness audit, gap 3): the web app's
 # standalone server.js chdir()s into web/apps/web and writes its runtime
@@ -175,6 +197,56 @@ else
     echo "install.sh: run this yourself to put 'loombre' on PATH:" >&2
     echo "  ${SHIM_MANUAL_CMD}" >&2
   fi
+fi
+
+# ── desktop integration: launcher, tray autostart, icons ───────────────
+#    bin/loombre-tray (the Linux counterpart of the macOS menubar app and
+#    the Windows tray) plus the freedesktop files that put it in the app
+#    menu and start it at every desktop login. Harmless on a headless
+#    host: the .desktop entries are inert without a session, and the tray
+#    is only ever started by one. The templates ship at the tarball root
+#    (desktop/, next to systemd/); the .rpm/.deb render the SAME files at
+#    package-build time. Every step is best-effort — a read-only /usr on
+#    an exotic host must never fail the install.
+if [ -x "${PREFIX}/bin/loombre-tray" ] && [ -d "${SCRIPT_DIR}/desktop" ]; then
+  if mkdir -p /usr/share/applications /etc/xdg/autostart 2>/dev/null \
+     && sed -e "s#__PREFIX__#${PREFIX}#g" "${SCRIPT_DIR}/desktop/loombre.desktop.template" > /usr/share/applications/loombre.desktop 2>/dev/null \
+     && sed -e "s#__PREFIX__#${PREFIX}#g" "${SCRIPT_DIR}/desktop/loombre-tray-autostart.desktop.template" > /etc/xdg/autostart/loombre-tray.desktop 2>/dev/null; then
+    chmod 644 /usr/share/applications/loombre.desktop /etc/xdg/autostart/loombre-tray.desktop
+    echo "install.sh: desktop entries -> /usr/share/applications/loombre.desktop, /etc/xdg/autostart/loombre-tray.desktop"
+  else
+    echo "install.sh: WARNING — could not write the desktop entries (read-only /usr or /etc?); the tray is still runnable as ${PREFIX}/bin/loombre-tray" >&2
+  fi
+  if [ -d "${SCRIPT_DIR}/desktop/icons/hicolor" ]; then
+    _icons_ok=1
+    for _icon in "${SCRIPT_DIR}"/desktop/icons/hicolor/*/apps/loombre.*; do
+      [ -f "${_icon}" ] || continue
+      _icon_rel="${_icon#"${SCRIPT_DIR}"/desktop/icons/hicolor/}"
+      mkdir -p "/usr/share/icons/hicolor/$(dirname "${_icon_rel}")" 2>/dev/null && cp "${_icon}" "/usr/share/icons/hicolor/${_icon_rel}" 2>/dev/null && chmod 644 "/usr/share/icons/hicolor/${_icon_rel}" || _icons_ok=0
+    done
+    if [ "${_icons_ok}" -eq 1 ]; then
+      echo "install.sh: icons -> /usr/share/icons/hicolor/*/apps/loombre.{png,svg}"
+    else
+      echo "install.sh: WARNING — could not copy every icon into /usr/share/icons/hicolor (continuing)" >&2
+    fi
+  fi
+  # polkit: let local administrators start/stop the units from the tray
+  # with their own password (some distributions otherwise ask for root's).
+  # Only JavaScript-rules polkit reads it; older polkit ignores the file.
+  if [ -f "${SCRIPT_DIR}/polkit/50-loombre.rules" ]; then
+    if mkdir -p /usr/share/polkit-1/rules.d 2>/dev/null && cp "${SCRIPT_DIR}/polkit/50-loombre.rules" /usr/share/polkit-1/rules.d/50-loombre.rules 2>/dev/null; then
+      chmod 644 /usr/share/polkit-1/rules.d/50-loombre.rules
+      echo "install.sh: polkit rule -> /usr/share/polkit-1/rules.d/50-loombre.rules (administrators manage loombre-* units with their own password)"
+    else
+      echo "install.sh: WARNING — could not install the polkit rule (the tray's Start/Shut down will use the distribution's default prompt)" >&2
+    fi
+  fi
+  # Refresh the desktop caches when the host has the tools (menus pick the
+  # new entry up without a re-login); absent tools are not an error.
+  command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database -q /usr/share/applications 2>/dev/null || true
+  command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor 2>/dev/null || true
+else
+  echo "install.sh: no bin/loombre-tray or desktop/ in this tarball — skipping desktop integration"
 fi
 
 # ── data dir (the ProvisioningInterface caller's app-data dir — P4.2) ──
@@ -382,6 +454,11 @@ else
     echo "install.sh: status    -> systemctl status loombre-server loombre-web loombre-worker"
     echo "install.sh: first boot provisions + migrates the bundled database; give it a few seconds."
   fi
+fi
+
+if [ -x "${PREFIX}/bin/loombre-tray" ]; then
+  echo "install.sh: desktop tray -> starts at your next desktop login (or run ${PREFIX}/bin/loombre-tray now); 'Loombre' is in the application menu."
+  echo "install.sh:               the tray needs your desktop account in the local-administrator group (wheel, sudo, or admin) to connect — see docs/install/linux.md."
 fi
 
 echo "install.sh: done. Loombre ${VERSION} installed at ${PREFIX}."

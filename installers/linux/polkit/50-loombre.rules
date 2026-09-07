@@ -1,0 +1,28 @@
+// Loombre :: /usr/share/polkit-1/rules.d/50-loombre.rules
+//
+// Lets a local administrator start, stop or restart Loombre's three
+// services from a desktop session with THEIR OWN password — what the
+// desktop tray's "Start Loombre" and "Shut down Loombre…" do through
+// `systemctl`. Without this rule some distributions (openSUSE) resolve
+// systemd's manage-units action to root's password, and others to the
+// admin group's; this pins the admin groups (wheel on Fedora/openSUSE/Arch,
+// sudo on Debian/Ubuntu, admin elsewhere) to self-authentication, cached
+// for a few minutes (AUTH_SELF_KEEP), and touches nothing else: any other
+// unit, and any other user, keeps the distribution's default policy.
+//
+// Only polkit builds with JavaScript rules read this file (polkit >= 0.106:
+// Fedora, RHEL 9+, openSUSE, Debian 12+, Ubuntu 23.10+). Older polkit
+// ignores it and the distribution default applies.
+polkit.addRule(function (action, subject) {
+  if (action.id !== "org.freedesktop.systemd1.manage-units") {
+    return polkit.Result.NOT_HANDLED;
+  }
+  var unit = action.lookup("unit") || "";
+  if (!/^loombre-(server|worker|web)\.service$/.test(unit)) {
+    return polkit.Result.NOT_HANDLED;
+  }
+  if (subject.isInGroup("wheel") || subject.isInGroup("sudo") || subject.isInGroup("admin")) {
+    return polkit.Result.AUTH_SELF_KEEP;
+  }
+  return polkit.Result.NOT_HANDLED;
+});

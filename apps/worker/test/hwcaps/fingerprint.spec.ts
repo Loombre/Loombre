@@ -2,6 +2,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { computeFfmpegBuildHash, computeGpuFingerprint } from "../../src/hwcaps/fingerprint.js";
+import { BATTERY_RECIPE_VERSION } from "../../src/hwcaps/tables.js";
 import { createFakeRunner, okResult, failResult, timeoutResult } from "./helpers.js";
 
 function sha256(text: string): string {
@@ -9,11 +10,12 @@ function sha256(text: string): string {
 }
 
 describe("computeFfmpegBuildHash", () => {
-  it("hashes the full `ffmpeg -version` stdout (version + configuration)", async () => {
+  it("hashes the full `ffmpeg -version` stdout (version + configuration) together with the battery recipe version", async () => {
     const stdout = "ffmpeg version 8.1.1\nconfiguration: --enable-videotoolbox --enable-gpl\n";
     const runner = createFakeRunner(() => okResult(stdout));
     const hash = await computeFfmpegBuildHash(runner, "/opt/homebrew/bin/ffmpeg");
-    expect(hash).toBe(sha256(stdout));
+    expect(hash).toBe(sha256(`${stdout}\nbattery-recipe:${BATTERY_RECIPE_VERSION}`));
+    expect(hash).not.toBe(sha256(stdout), "a recipe change must invalidate a snapshot taken with the old recipe");
     expect(runner.calls).toEqual([{ bin: "/opt/homebrew/bin/ffmpeg", args: ["-version"], options: { timeoutMs: 10_000 } }]);
   });
 
@@ -93,6 +95,38 @@ describe("computeGpuFingerprint", () => {
   it("linux: lspci exits 0 but zero VGA/3D lines match -> '' (not a hash of nothing)", async () => {
     const runner = createFakeRunner(() => okResult("00:00.0 Host bridge: Intel Corporation Device 1234\n"));
     expect(await computeGpuFingerprint(runner, "linux")).toBe("");
+  });
+
+  it("linux: a device-access summary is hashed BENEATH the lspci lines, so the same PCI bus with different access yields a different fingerprint", async () => {
+    const lspci = "01:00.0 VGA compatible controller: Intel Corporation Device 7d67\n";
+    const runner = createFakeRunner(() => okResult(lspci));
+    const denied = await computeGpuFingerprint(runner, "linux", { deviceAccessSummary: "/dev/dri/renderD128 drm-render 0x8086 denied" });
+    const granted = await computeGpuFingerprint(runner, "linux", { deviceAccessSummary: "/dev/dri/renderD128 drm-render 0x8086 rw" });
+    const plain = await computeGpuFingerprint(runner, "linux");
+    expect(denied).toBe(sha256(`${lspci.trimEnd()}\n--devices--\n/dev/dri/renderD128 drm-render 0x8086 denied`.replace(lspci.trimEnd(), lspci.trimEnd())));
+    expect(denied).not.toBe(granted);
+    expect(plain).toBe(sha256(lspci.trimEnd()));
+    expect(plain).not.toBe(denied);
+  });
+
+  it("linux: an empty/whitespace device summary changes nothing (pre-existing hosts keep their fingerprint)", async () => {
+    const lspci = "01:00.0 VGA compatible controller: NVIDIA Corporation Device 2486";
+    const runner = createFakeRunner(() => okResult(lspci));
+    expect(await computeGpuFingerprint(runner, "linux", { deviceAccessSummary: "   " })).toBe(sha256(lspci));
+    expect(await computeGpuFingerprint(runner, "linux", { deviceAccessSummary: "" })).toBe(sha256(lspci));
+  });
+
+  it("linux: with lspci unusable (no pciutils), the device summary alone still fingerprints — and its absence still yields ''", async () => {
+    const summary = "/dev/dri/renderD128 drm-render 0x8086 denied";
+    expect(await computeGpuFingerprint(createFakeRunner(() => failResult(127, "lspci: not found")), "linux", { deviceAccessSummary: summary })).toBe(sha256(summary));
+    expect(await computeGpuFingerprint(createFakeRunner(() => timeoutResult()), "linux", { deviceAccessSummary: summary })).toBe(sha256(summary));
+    expect(await computeGpuFingerprint(createFakeRunner(() => { throw new Error("boom"); }), "linux", { deviceAccessSummary: summary })).toBe(sha256(summary));
+    expect(await computeGpuFingerprint(createFakeRunner(() => failResult(127)), "linux", {})).toBe("");
+  });
+
+  it("darwin/win32 ignore a device summary entirely (their backends open no lockable device node)", async () => {
+    const runner = createFakeRunner(() => okResult("Chipset Model: Apple M3 Max\n"));
+    expect(await computeGpuFingerprint(runner, "darwin", { deviceAccessSummary: "irrelevant" })).toBe(sha256("Chipset Model: Apple M3 Max\n"));
   });
 
   it("a thrown runner still degrades to '' rather than propagating", async () => {

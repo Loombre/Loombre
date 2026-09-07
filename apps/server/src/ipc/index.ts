@@ -21,7 +21,7 @@ import { resolveAppPaths } from "../cli/app-paths.js";
 import { getProvisioningController } from "../bootstrap/provisioning.js";
 import { DbProvider } from "../common/db.provider.js";
 import type { TlsMode } from "../tls/config.js";
-import { resolveIpcEnablement } from "./env.js";
+import { resolveIpcDir, resolveIpcEnablement } from "./env.js";
 import { IpcListener, type IpcListenerDeps, type IpcListenerHandle } from "./listener.js";
 import type { RecentJobSignal } from "./worker-liveness.js";
 
@@ -78,6 +78,7 @@ export async function wireServerIpc(
   const listener = new IpcListener({
     env,
     dataDir,
+    ipcDir: resolveIpcDir(env, dataDir),
     serverPort: opts.serverPort,
     serverTlsMode: opts.serverTlsMode,
     // LOOMBRE_VERSION_FULL (not the bare LOOMBRE_VERSION) — matches

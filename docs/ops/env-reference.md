@@ -57,7 +57,7 @@ Assumption: variable names and defaults below are Loombre's own environment-vari
 
 **Conversion staging directory.** The folder Loombre uses to hold video temporarily while it's being converted. Needs enough free space for whatever is converting right now — Loombre cleans these files up automatically once it's done.
 
-- **Technical details:** Root directory transcode session staging directories are created under (docs/PLAYBACK.md §9 binding constraint 3). Default: <os.tmpdir()>/loombre-transcode.
+- **Technical details:** Root directory transcode session staging directories are created under (docs/PLAYBACK.md §9 binding constraint 3). Default: <os.tmpdir()>/loombre-transcode — except the native Linux installs (rpm/deb/tarball), whose bin/ wrappers default it to <LOOMBRE_DATA_DIR>/transcode: their systemd units run with PrivateTmp=true, so a /tmp path is private to each service and the server could never serve what the worker wrote. Must be readable and writable by BOTH loombre-server and loombre-worker (a custom path on those installs also needs a ReadWritePaths= drop-in on both units).
 - **Default when unset:** `/tmp/loombre-transcode`
 
 ### ffmpeg / ffprobe
@@ -379,7 +379,7 @@ This page covers only registry-backed settings. The operational variables below 
 - `LOOMBRE_WEB_PORT` — the web UI service's own port (default 3000 — read by the web process, not the server/worker; see [systemd](/ops/systemd) and each platform's [Install](/install/) page).
 - `LOOMBRE_SERVER_ORIGIN` — where the web process reaches the server's API (Compose default: the server container's own address).
 - `LOOMBRE_WEB_URL` — the web UI URL the server uses for links and its CORS default (Compose default: `http://localhost:<LOOMBRE_WEB_PORT>`).
-- `LOOMBRE_TIER` — performance-tier override for the tier autodetector.
+- `LOOMBRE_TIER` — performance tier 0/1/2 (docs/PLAN.md §9.1); unset means Tier 0 — there is no autodetection — which refuses processor HDR tone-mapping at 1080p and above; set 2 on desktop/server-class hosts.
 - `LOOMBRE_ALLOW_TRANSCODE` — transcode kill-switch.
 - `LOOMBRE_MAX_STREAM_BITRATE` — per-stream bitrate ceiling.
 - `LOOMBRE_TRANSCODE_WORKER_CONCURRENCY` — worker transcode-job concurrency.

@@ -2,7 +2,7 @@
 // Loombre :: apps/server/src/ipc/env.spec.ts
 
 import { describe, expect, it } from "vitest";
-import { resolveIpcEnablement, resolveIpcGroupName, resolveIpcWindowsExtraGrants } from "./env.js";
+import { resolveIpcDir, resolveIpcEnablement, resolveIpcGroupName, resolveIpcWindowsExtraGrants } from "./env.js";
 
 describe("resolveIpcEnablement", () => {
   it("is disabled when LOOMBRE_DATA_DIR is unset", () => {
@@ -36,6 +36,20 @@ describe("resolveIpcEnablement", () => {
     for (const v of ["0", "false", ""]) {
       expect(resolveIpcEnablement({ LOOMBRE_DATA_DIR: "/x", LOOMBRE_IPC_DISABLED: v }).enabled).toBe(true);
     }
+  });
+});
+
+describe("resolveIpcDir", () => {
+  it("defaults to the data dir (transport.ts: the discovery files live under the app-data dir)", () => {
+    expect(resolveIpcDir({}, "/var/lib/loombre")).toBe("/var/lib/loombre");
+  });
+
+  it("honours LOOMBRE_IPC_DIR (trimmed) — the Linux /run/loombre routing the server unit sets up", () => {
+    expect(resolveIpcDir({ LOOMBRE_IPC_DIR: " /run/loombre " }, "/var/lib/loombre")).toBe("/run/loombre");
+  });
+
+  it("treats an empty/whitespace LOOMBRE_IPC_DIR as unset", () => {
+    expect(resolveIpcDir({ LOOMBRE_IPC_DIR: "   " }, "/var/lib/loombre")).toBe("/var/lib/loombre");
   });
 });
 

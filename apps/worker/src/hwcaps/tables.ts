@@ -190,6 +190,18 @@ export const TONE_MAP_CANDIDATES_BY_BACKEND: Partial<Record<HwBackend, readonly 
  *  (deterministic; verified empirically that a real 2s/25fps lavfi
  *  encode->decode round-trip yields exactly 50 on this box for every
  *  codec tried). */
+/**
+ * Bumped whenever a recipe in args.ts/tables.ts changes what a test can
+ * PROVE (a fixed argv, a new marker, a changed filter chain). Folded into
+ * the ffmpeg build hash (fingerprint.ts), so a persisted snapshot taken
+ * with the old recipe is invalidated on the next worker boot and re-run —
+ * otherwise a recipe fix ships and every existing install keeps the
+ * verdict the broken recipe produced until its ffmpeg or GPU changes.
+ * History: 1 = the original battery; 2 = vaapi encode uploads its lavfi
+ * frames (args.ts buildEncodeTestArgs).
+ */
+export const BATTERY_RECIPE_VERSION = 2;
+
 export const TEST_CLIP_RATE = 25;
 export const TEST_CLIP_DURATION_SEC = 2;
 export const EXPECTED_DECODE_FRAME_COUNT = TEST_CLIP_RATE * TEST_CLIP_DURATION_SEC;

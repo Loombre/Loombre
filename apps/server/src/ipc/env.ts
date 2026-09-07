@@ -53,6 +53,20 @@ export function resolveIpcEnablement(env: NodeJS.ProcessEnv): IpcEnablementResul
   return { enabled: true, reason: "LOOMBRE_DATA_DIR is set and LOOMBRE_IPC_DISABLED is not — IPC listener enabled." };
 }
 
+/** Where the discovery + token files are written. Default: the app-data
+ *  dir itself (transport.ts's "under the platform app-data dir", what the
+ *  Windows tray and the macOS menubar read). LOOMBRE_IPC_DIR overrides it
+ *  for hosts where the data dir is not traversable by the controller's
+ *  user: the Linux units run as a dedicated account with a 0750 data dir,
+ *  so the Linux server unit routes the files to /run/loombre (a setgid
+ *  directory its root-run setup step creates for the admin group) and
+ *  bin/loombre-tray reads them there. Only the two IPC files move — crash
+ *  files stay under the data dir. */
+export function resolveIpcDir(env: NodeJS.ProcessEnv, dataDir: string): string {
+  const raw = env["LOOMBRE_IPC_DIR"]?.trim();
+  return raw && raw.length > 0 ? raw : dataDir;
+}
+
 /** Orchestrator decision (b): mac/linux discovery+token files are written
  *  0640 with the file GROUP set from LOOMBRE_IPC_GROUP (a POSIX group NAME,
  *  e.g. an installer setting "admin" on macOS), defaulting to the writing

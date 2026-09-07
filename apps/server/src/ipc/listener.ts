@@ -46,10 +46,15 @@ import { resolveWebUrl } from "./web-url.js";
 
 export interface IpcListenerDeps {
   env: NodeJS.ProcessEnv;
-  /** Base directory for discovery/token files + the crash-files listing —
+  /** Base directory for the crash-files listing (and, unless `ipcDir`
+   *  says otherwise, the discovery/token files) —
    *  resolveAppPaths(process.platform, env).dataDir, same seam
    *  apps/server/src/bootstrap/provisioning.ts already uses. */
   dataDir: string;
+  /** Where the discovery + token files are written; defaults to `dataDir`.
+   *  env.ts's resolveIpcDir (LOOMBRE_IPC_DIR) — see its doc for the Linux
+   *  /run/loombre case this exists for. Crash files never move. */
+  ipcDir?: string;
   /** The MAIN server's own already-bound HTTP(S) port (NOT this listener's
    *  own ephemeral port) — used only for the webUrl fallback. */
   serverPort: number;
@@ -97,8 +102,14 @@ export class IpcListener {
 
   constructor(private readonly deps: IpcListenerDeps) {}
 
+  /** The directory the two discovery files live in (deps.ipcDir, else the
+   *  data dir) — every read/write/remove of them goes through this. */
+  private get ipcDir(): string {
+    return this.deps.ipcDir ?? this.deps.dataDir;
+  }
+
   async start(): Promise<IpcListenerHandle> {
-    const stale = detectStaleDiscoveryFile(this.deps.dataDir);
+    const stale = detectStaleDiscoveryFile(this.ipcDir);
     if (stale.found) {
       console.log(
         stale.stale
@@ -136,7 +147,7 @@ export class IpcListener {
     this.serverStartedAtMs = this.deps.serverStartedAtMs ?? Math.round(Date.now() - process.uptime() * 1000);
 
     const written = writeDiscoveryFiles(
-      this.deps.dataDir,
+      this.ipcDir,
       { port: address.port, pid: this.serverPid, startedAtMs: this.serverStartedAtMs },
       this.deps.env,
     );
@@ -149,16 +160,19 @@ export class IpcListener {
     // instance.killSync())`. 'exit' listeners must be synchronous;
     // removeDiscoveryFiles is. Tracked on `this` (not fire-and-forget) so
     // stop() can remove it again — see the field's own doc comment.
-    this.exitHandler = () => removeDiscoveryFiles(this.deps.dataDir);
+    const ipcDir = this.ipcDir;
+    this.exitHandler = () => removeDiscoveryFiles(ipcDir);
     process.once("exit", this.exitHandler);
 
-    console.log(`ipc: listening on ${IPC_LOOPBACK_HOST}:${address.port} (loopback-only, data dir ${this.deps.dataDir})`);
+    console.log(
+      `ipc: listening on ${IPC_LOOPBACK_HOST}:${address.port} (loopback-only, discovery files in ${ipcDir}${ipcDir === this.deps.dataDir ? "" : `, data dir ${this.deps.dataDir}`})`,
+    );
 
     return { port: address.port, token: this.token, stop: () => this.stop() };
   }
 
   async stop(): Promise<void> {
-    removeDiscoveryFiles(this.deps.dataDir);
+    removeDiscoveryFiles(this.ipcDir);
     if (this.exitHandler !== null) {
       process.removeListener("exit", this.exitHandler);
       this.exitHandler = null;

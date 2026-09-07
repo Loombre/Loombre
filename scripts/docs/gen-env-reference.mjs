@@ -254,7 +254,7 @@ const COMPOSE_VAR_NOTES = [
   ["LOOMBRE_WEB_PORT", "the web UI service's own port (default 3000 — read by the web process, not the server/worker; see [systemd](/ops/systemd) and each platform's [Install](/install/) page)."],
   ["LOOMBRE_SERVER_ORIGIN", "where the web process reaches the server's API (Compose default: the server container's own address)."],
   ["LOOMBRE_WEB_URL", "the web UI URL the server uses for links and its CORS default (Compose default: `http://localhost:<LOOMBRE_WEB_PORT>`)."],
-  ["LOOMBRE_TIER", "performance-tier override for the tier autodetector."],
+  ["LOOMBRE_TIER", "performance tier 0/1/2 (docs/PLAN.md §9.1); unset means Tier 0 — there is no autodetection — which refuses processor HDR tone-mapping at 1080p and above; set 2 on desktop/server-class hosts."],
   ["LOOMBRE_ALLOW_TRANSCODE", "transcode kill-switch."],
   ["LOOMBRE_MAX_STREAM_BITRATE", "per-stream bitrate ceiling."],
   ["LOOMBRE_TRANSCODE_WORKER_CONCURRENCY", "worker transcode-job concurrency."],

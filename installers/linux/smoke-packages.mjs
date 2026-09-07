@@ -305,10 +305,12 @@ async function lifecycle(distro, family, artifact, version, args) {
     assert(!/libxml2/.test(deps), `libxml2 must be self-provided, not a dependency:\n${deps}`);
     c.must("test -f /opt/loombre/pg/*/*/lib/libxml2.so.2 && test -f /opt/loombre/pg/*/*/lib/LICENSE.libxml2.txt", {}, "vendored libxml2.so.2 + license present beside PostgreSQL");
     const files = c.must(pm.files).stdout.split("\n");
-    for (const p of ["/usr/bin/loombre", "/usr/lib/sysusers.d/loombre.conf", "/usr/share/loombre/loombre.env", "/usr/share/doc/loombre/copyright", "/opt/loombre/bin/loombre-server"]) {
+    for (const p of ["/usr/bin/loombre", "/usr/lib/sysusers.d/loombre.conf", "/usr/share/loombre/loombre.env", "/usr/share/doc/loombre/copyright", "/opt/loombre/bin/loombre-server", "/opt/loombre/bin/loombre-tray", "/usr/share/applications/loombre.desktop", "/etc/xdg/autostart/loombre-tray.desktop", "/usr/share/icons/hicolor/256x256/apps/loombre.png", "/usr/share/icons/hicolor/scalable/apps/loombre.svg", "/usr/share/polkit-1/rules.d/50-loombre.rules"]) {
       assert(files.includes(p), `package file list lacks ${p}`);
     }
     assert(!files.includes("/etc/loombre/loombre.env"), "the live env file must not be package-owned");
+    // GPU device access: the scriptlets join render/video when the host has them.
+    c.must('for g in video render; do if getent group "$g" >/dev/null; then id -nG loombre | tr " " "\\n" | grep -qx "$g" || { echo "loombre not in $g"; exit 1; }; fi; done', {}, "loombre is in every render/video group the host has");
     assert(files.some((f) => f.includes("/[id]/") || f.includes("/[itemType]/")), "bracket directories must be listed verbatim (no glob expansion)");
     // koffi (WireGuard's FFI layer): exactly the glibc build for THIS arch,
     // resolvable as koffi's sibling scope package; no musl build, no other

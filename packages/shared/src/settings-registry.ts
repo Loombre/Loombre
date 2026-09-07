@@ -395,7 +395,7 @@ const ENV_ONLY_ENTRIES: SettingsRegistryEntry[] = [
     default: "/tmp/loombre-transcode",
     category: "paths",
     description: "The folder Loombre uses to hold video temporarily while it's being converted. Needs enough free space for whatever is converting right now — Loombre cleans these files up automatically once it's done.",
-    technicalDetails: "Root directory transcode session staging directories are created under (docs/PLAYBACK.md §9 binding constraint 3). Default: <os.tmpdir()>/loombre-transcode.",
+    technicalDetails: "Root directory transcode session staging directories are created under (docs/PLAYBACK.md §9 binding constraint 3). Default: <os.tmpdir()>/loombre-transcode — except the native Linux installs (rpm/deb/tarball), whose bin/ wrappers default it to <LOOMBRE_DATA_DIR>/transcode: their systemd units run with PrivateTmp=true, so a /tmp path is private to each service and the server could never serve what the worker wrote. Must be readable and writable by BOTH loombre-server and loombre-worker (a custom path on those installs also needs a ReadWritePaths= drop-in on both units).",
     requiresRestart: true,
     scope: "env-only",
     envVar: "LOOMBRE_TRANSCODE_DIR",

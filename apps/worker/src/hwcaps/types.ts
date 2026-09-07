@@ -12,6 +12,8 @@
  * VerifiedBackendCapability shapes.
  */
 
+import type { AccelDeviceNode } from "./linux-devices.js";
+
 /** §8.2 candidate backend set — identical to the engine's HardwareBackend
  *  union. */
 export type HwBackend = 'videotoolbox' | 'qsv' | 'vaapi' | 'nvenc' | 'amf' | 'd3d11va' | 'software';
@@ -117,4 +119,15 @@ export interface ProbeReport {
   gpuFingerprint: string;
   generatedAtMs: number;
   backends: BackendReport[];
+  /** Linux only (linux-devices.ts): the GPU device nodes this process can
+   *  and cannot open, plus the operator hints derived from them. Printed
+   *  and logged with the report so a software-only outcome carries its
+   *  own explanation; never persisted (the snapshot schema is the §2.5
+   *  capability shape, and the fingerprint already folds access in). */
+  deviceAccess?: {
+    devices: AccelDeviceNode[];
+    hints: string[];
+  };
 }
+
+

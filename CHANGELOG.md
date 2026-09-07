@@ -20,6 +20,94 @@ axis; nothing before `1.0.0-beta.1` was ever released.
 
 ## [Unreleased]
 
+### Added
+
+- Linux: a desktop tray controller (`bin/loombre-tray`), the counterpart of
+  the macOS menubar app and the Windows tray — status, Open Loombre, Start
+  Loombre / Stop server, Shut down Loombre…, Reveal crash files, version —
+  with an application-menu entry and a login autostart entry on every
+  channel (rpm, deb, tarball). A single static binary speaking the
+  freedesktop StatusNotifierItem protocol over D-Bus (KDE, Cinnamon, XFCE,
+  MATE, LXQt, Budgie natively; GNOME with the AppIndicator extension).
+  Start and shut down go through systemd with a polkit prompt; the tray's
+  connection to the server is readable by the host's local-administrator
+  group (`wheel`/`sudo`), via `/run/loombre` (created setgid to that group
+  by a root-run step of the server unit) and the new `LOOMBRE_IPC_DIR`
+  override.
+- Linux: the worker's hardware self-test now inventories the GPU device
+  nodes it can and cannot open (`/dev/dri/renderD*`, `/dev/nvidia*`), logs
+  per-backend outcomes plus the exact fix for a denied node or a missing
+  `nvidia_uvm`, and folds device access into its invalidation fingerprint —
+  so fixing group membership and restarting the worker re-probes on its
+  own instead of leaving a stale software-only snapshot in place.
+
+### Fixed
+
+- Settings → Libraries: a restricted library's Stash connection could not
+  be reached from a fresh install. The only entry point was the row menu in
+  the main list, which a restricted library joins last — after the admin
+  has opted in, set a PIN, granted themselves access, and unlocked
+  restricted content on that device. The library's row under "Not visible
+  to you" now carries a Stash button; connecting Stash is server
+  configuration and never needed the unlock.
+- Linux (rpm, deb, tarball): playback never started — the worker staged
+  HLS segments under `/tmp`, which the units' `PrivateTmp=true` makes
+  private to each service, so the server could never find them. The
+  wrappers now default `LOOMBRE_TRANSCODE_DIR` to `<data dir>/transcode`
+  (the env file documents the override and its `ReadWritePaths=` caveat).
+  Existing 1.0.0-beta.2 installs: set that variable in
+  `/etc/loombre/loombre.env` and restart, or upgrade.
+- Linux: Intel Quick Sync and VAAPI were never detected because the
+  `loombre` service account could not open `/dev/dri/renderD*` (not in the
+  `render`/`video` group). The installers (and every package upgrade) now
+  add it to both groups where they exist; a manual `usermod -aG
+  render,video loombre` + worker restart fixes an existing install.
+- Hardware self-test: the VAAPI encode check could never pass — `*_vaapi`
+  encoders take hardware frames only, and the check fed them a software
+  source with no device and no upload. It now opens a VAAPI device and
+  uploads the frames. The self-test's recipe version is folded into its
+  invalidation key, so every install re-verifies on its next worker start
+  instead of keeping the old verdict; the logged report also carries the
+  last stderr lines of every failed check.
+- Worker and server: an idle database connection dropping (the embedded
+  PostgreSQL stopping with the server, a restart) was an unhandled pool
+  error that both processes filed as a crash and exited on — the tray's
+  "Stop server" cost a worker crash report and a restart every time. The
+  pool now logs the drop and reconnects on the next query; the worker's
+  job-queue error log is throttled while the database is away.
+- Linux: the tray's polkit prompt asked for the root password on
+  openSUSE. A shipped polkit rule lets `wheel`/`sudo`/`admin` members
+  start, stop and restart the three Loombre units with their own password.
+- Admin Dashboard: opening the "unmatched items" list re-flowed the
+  two-column layout and crushed the job queue and event log into a sliver
+  (a nowrap path was allowed to set the column's minimum width). The grid
+  and its columns now have a zero minimum and the paths truncate in place.
+- Linux: the service wrappers now export `NO_COLOR=1`/`FORCE_COLOR=0`, so
+  `journalctl` and the Dashboard's log tail no longer show raw ANSI colour
+  codes from the server's logger.
+- Metadata: every TMDB image URL was built without a size segment
+  (`https://image.tmdb.org/t/p//<file>` — TMDB's base URL ends at `/t/p/`
+  and the default had its `original` stripped), so every poster, backdrop
+  and logo download failed with 404 and no artwork ever appeared. URLs now
+  carry `original`.
+- Linux tray: "Reveal crash files" opens the Dashboard's crash card when
+  the crash folder is not readable by the desktop user (the packaged data
+  directory belongs to the service account) instead of a file-manager
+  error.
+- Docs: `LOOMBRE_TIER` is not autodetected — unset means Tier 0, which
+  refuses processor HDR tone-mapping at 1080p and above (every HDR title
+  "unplayable" on a capable box with no verified hardware tone-map). The
+  Linux env template, the Docker env example and the environment reference
+  now say so and tell desktop/server hosts to set 2.
+- Linux tray: with the server stopped, the tray briefly reported a
+  permissions problem (the discovery search fell through to the
+  service-owned data directory); it now reports "not running".
+- Linux: a clean `systemctl stop` filed two spurious crash reports every
+  time (an EPIPE from the wrapper's log tee dying first, and the embedded
+  PostgreSQL shutting down under the server). The units now use
+  `KillMode=mixed`, so the Node process is signalled alone and the rest
+  of the control group is reaped after it exits.
+
 ## [1.0.0-beta.2] — 2026-09-05 (pre-release)
 
 The second tester build: beta.1's code plus the two fixes that landed

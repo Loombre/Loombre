@@ -13,18 +13,35 @@
  * check) never pays the cost of a full battery run.
  */
 import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { resolveFfmpeg } from "../probe/ffprobe.js";
 import { buildListEncodersArgs, parseEncoderNames } from "./args.js";
 import { runProbeBattery } from "./battery.js";
 import { createRealCommandRunner } from "./command-runner.js";
 import { computeFfmpegBuildHash, computeGpuFingerprint } from "./fingerprint.js";
+import { describeLinuxAccelDevices, deviceAccessHints, formatDeviceAccessSummary, type AccelDeviceNode } from "./linux-devices.js";
 import { candidatesForPlatform } from "./platforms.js";
 import { probeFileReal } from "./probe-file.js";
 import type { ProbeReport } from "./types.js";
 
 const ENCODER_LIST_TIMEOUT_MS = 10_000;
+
+/** Linux: the GPU device-node inventory + access check (linux-devices.ts)
+ *  that both fingerprints and the printed/logged report fold in. Other
+ *  platforms: nothing — their backends open no device node the process
+ *  could be locked out of. */
+function currentDeviceAccess(): { devices: AccelDeviceNode[]; hints: string[]; summary: string } | null {
+  if (process.platform !== "linux") return null;
+  const devices = describeLinuxAccelDevices();
+  let user = "loombre";
+  try {
+    user = userInfo().username;
+  } catch {
+    /* an account without a passwd entry — keep the installer's default name */
+  }
+  return { devices, hints: deviceAccessHints(devices, { user }), summary: formatDeviceAccessSummary(devices) };
+}
 
 export interface CurrentFingerprint {
   platform: NodeJS.Platform;
@@ -43,9 +60,10 @@ export async function computeCurrentFingerprint(): Promise<CurrentFingerprint | 
   const resolved = resolveFfmpeg();
   if (!resolved.ok) return null;
   const runner = createRealCommandRunner();
+  const deviceAccess = currentDeviceAccess();
   const [ffmpegBuildHash, gpuFingerprint] = await Promise.all([
     computeFfmpegBuildHash(runner, resolved.binary.path),
-    computeGpuFingerprint(runner, process.platform),
+    computeGpuFingerprint(runner, process.platform, deviceAccess ? { deviceAccessSummary: deviceAccess.summary } : {}),
   ]);
   return { platform: process.platform, ffmpegBuildHash, gpuFingerprint };
 }
@@ -71,9 +89,10 @@ export async function runRealHwProbeBattery(): Promise<ProbeReport> {
   });
   const encoders = parseEncoderNames(encodersResult.stdout);
 
+  const deviceAccess = currentDeviceAccess();
   const [ffmpegBuildHash, gpuFingerprint] = await Promise.all([
     computeFfmpegBuildHash(runner, ffmpegPath),
-    computeGpuFingerprint(runner, process.platform),
+    computeGpuFingerprint(runner, process.platform, deviceAccess ? { deviceAccessSummary: deviceAccess.summary } : {}),
   ]);
 
   const workDir = await mkdtemp(join(tmpdir(), "loombre-hwprobe-"));
@@ -99,6 +118,7 @@ export async function runRealHwProbeBattery(): Promise<ProbeReport> {
       gpuFingerprint,
       generatedAtMs: Date.now(),
       backends: result.backends,
+      ...(deviceAccess ? { deviceAccess: { devices: deviceAccess.devices, hints: deviceAccess.hints } } : {}),
     };
   } finally {
     await rm(workDir, { recursive: true, force: true }).catch(() => undefined);

@@ -227,6 +227,49 @@ systemctl status loombre-server
 and where it lives: `/usr/lib/systemd/system/` on the package channels,
 `/etc/systemd/system/` on the tarball.)
 
+#### Playback never starts (the player spins forever)
+
+**Symptom:** Every video sits at "loading"; direct-played files may work,
+converted ones never start
+
+**Cause:** On 1.0.0-beta.2 the worker staged its HLS segments under `/tmp`,
+which `PrivateTmp=true` makes private to each service — the server could
+not see them. Later builds stage under `/var/lib/loombre/transcode`.
+
+**Fix (existing beta.2 install):**
+```bash
+echo 'LOOMBRE_TRANSCODE_DIR=/var/lib/loombre/transcode' | sudo tee -a /etc/loombre/loombre.env
+sudo systemctl restart loombre-server loombre-worker
+```
+Details and the custom-path caveat: [Linux guide →
+Configure](linux.md#_4-configure).
+
+#### Hardware acceleration not detected (Intel Quick Sync / VAAPI / NVENC)
+
+**Symptom:** The Dashboard's capability card shows software only on a
+machine with a GPU
+
+**Cause:** Usually the `loombre` account cannot open `/dev/dri/renderD*`
+(not in the `render`/`video` group — installs before this version did not
+add it); sometimes a missing oneVPL/media driver, or NVIDIA's `nvidia_uvm`
+module not loaded.
+
+**Fix:**
+```bash
+journalctl -u loombre-worker | grep hwprobe      # the self-test says exactly what failed and why
+sudo usermod -aG render,video loombre
+sudo systemctl restart loombre-worker            # the self-test re-runs on its own
+```
+Full checklist: [Linux guide → Hardware
+acceleration](linux.md#hardware-acceleration-intel-quick-sync-vaapi-nvidia-nvenc).
+
+#### No tray icon / the tray can't connect
+
+See [Linux guide → The desktop tray](linux.md#the-desktop-tray): GNOME
+needs the AppIndicator extension; the tray starts at login; connecting
+requires your account in the local-administrator group (`wheel` or
+`sudo`).
+
 #### Tarball extraction failed (tarball channel only)
 
 **Symptom:** Extract command hangs or gives a partial directory

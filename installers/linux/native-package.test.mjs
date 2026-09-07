@@ -42,7 +42,12 @@ import { fileURLToPath } from "node:url";
 import {
   ARCHES,
   DEFAULT_PATHS,
+  DESKTOP_ENTRIES,
+  DESKTOP_INTEGRATION_PATHS,
+  HICOLOR_ICON_FILES,
+  HW_ACCESS_GROUPS,
   PACKAGE_META,
+  POLKIT_RULES,
   PAYLOAD_ENTRIES,
   SERVICES,
   STOP_ORDER,
@@ -159,6 +164,14 @@ for (const { svc, file } of UNIT_TEMPLATES) {
     assert.match(viaJs, /^EnvironmentFile=\/etc\/loombre\/loombre\.env$/m);
     assert.match(viaJs, /^User=loombre$/m);
     assert.doesNotMatch(viaJs, /^MemoryDenyWriteExecute=/m, "MDWE is incompatible with V8's JIT — the templates document why it must stay absent");
+    assert.match(viaJs, /^KillMode=mixed$/m, "SIGTERM must reach node alone — control-group mode kills the log tee (EPIPE crash file on every stop) and the embedded postmaster out from under the server");
+    assert.doesNotMatch(viaJs, /^RuntimeDirectory=/m, "systemd re-applies User:Group + mode to a RuntimeDirectory at ExecStart setup, undoing the setgid grant — the IPC dir is owned by the ExecStartPre step instead");
+    if (svc === "loombre-server") {
+      assert.match(viaJs, /^ExecStartPre=\+\/opt\/loombre\/bin\/loombre-ipc-dir-setup \/run\/loombre loombre$/m);
+      assert.match(viaJs, /^ExecStopPost=-\+\/opt\/loombre\/bin\/loombre-ipc-dir-setup --remove \/run\/loombre$/m);
+      assert.match(viaJs, /^Environment=LOOMBRE_IPC_DIR=\/run\/loombre$/m);
+      assert.match(viaJs, /^ReadWritePaths=\/var\/lib\/loombre -\/run\/loombre$/m);
+    }
     assert.doesNotMatch(viaJs, /__[A-Z_]+__/, "unrendered placeholder");
   });
 }
@@ -225,6 +238,7 @@ function makePayload(root, { version = "1.0.0-beta.1", arch = "arm64", withTempl
   };
   put("VERSION", `${version}\n`);
   for (const bin of ["loombre", "loombre-server", "loombre-worker", "loombre-web"]) put(`bin/${bin}`, "#!/usr/bin/env bash\nexit 0\n", 0o755);
+  put("bin/loombre-tray", "\x7fELF fake static tray\n", 0o755);
   put("lib/server/dist/main.js", "console.log('server')\n");
   put("lib/server/node_modules/.pnpm/foo@1/node_modules/foo/index.js", "module.exports = 1\n");
   put("lib/server/node_modules/.pnpm/foo@1/node_modules/foo/package.json", JSON.stringify({ name: "foo", version: "1.0.0", license: "MIT" }));
@@ -247,6 +261,9 @@ function makePayload(root, { version = "1.0.0-beta.1", arch = "arm64", withTempl
   if (withTemplates) {
     for (const svc of SERVICES) put(`systemd/${svc}.service.template`, readFileSync(path.join(LINUX_DIR, "systemd", `${svc}.service.template`), "utf8"));
     put("loombre.env.template", readFileSync(path.join(LINUX_DIR, "loombre.env.template"), "utf8"));
+    for (const entry of DESKTOP_ENTRIES) put(entry.template, readFileSync(path.join(LINUX_DIR, ...entry.template.split("/")), "utf8"));
+    for (const rel of HICOLOR_ICON_FILES) put(`desktop/icons/hicolor/${rel}`, readFileSync(path.join(LINUX_DIR, "desktop", "icons", "hicolor", ...rel.split("/"))));
+    put(POLKIT_RULES.source, readFileSync(path.join(LINUX_DIR, ...POLKIT_RULES.source.split("/")), "utf8"));
   }
   // A world-writable file — the staging step must clamp it (install.sh does
   // chmod -R go-w on the payload).
@@ -276,7 +293,7 @@ test("PAYLOAD_ENTRIES mirrors install.sh's payload copy list; TARBALL_ONLY_ENTRI
   const m = /for entry in ([a-zA-Z ]+); do/.exec(installSh);
   assert.ok(m, "install.sh: payload copy loop not found");
   assert.deepEqual([...PAYLOAD_ENTRIES].sort(), m[1].trim().split(/\s+/).sort());
-  assert.deepEqual([...TARBALL_ONLY_ENTRIES].sort(), ["install.sh", "loombre.env.template", "systemd", "uninstall.sh"]);
+  assert.deepEqual([...TARBALL_ONLY_ENTRIES].sort(), ["desktop", "install.sh", "loombre.env.template", "polkit", "systemd", "uninstall.sh"]);
 });
 
 test("payloadPgLibRelative: finds the single pg/<platform>/<version>/lib dir and refuses ambiguity", () => {
@@ -339,6 +356,26 @@ test("assemblePackageRoot: builds the FHS tree — payload under /opt/loombre, e
     }
     assert.equal(readFileSync(at("usr/lib/sysusers.d/loombre.conf"), "utf8"), sysusersConf(DEFAULT_PATHS));
     assert.equal(readlinkSync(at("usr/bin/loombre")), "/opt/loombre/bin/loombre");
+    // Desktop integration: rendered launcher + autostart entries (real files,
+    // Exec pointing into the prefix), the full hicolor icon set, 0644.
+    const launcher = readFileSync(at("usr/share/applications/loombre.desktop"), "utf8");
+    assert.match(launcher, /^Exec=\/opt\/loombre\/bin\/loombre-tray --open-web$/m);
+    assert.match(launcher, /^Icon=loombre$/m);
+    assert.doesNotMatch(launcher, /__[A-Z_]+__/);
+    const autostart = readFileSync(at("etc/xdg/autostart/loombre-tray.desktop"), "utf8");
+    assert.match(autostart, /^Exec=\/opt\/loombre\/bin\/loombre-tray --autostart$/m);
+    assert.match(autostart, /^NoDisplay=true$/m);
+    for (const rel of HICOLOR_ICON_FILES) {
+      const icon = at(`usr/share/icons/hicolor/${rel}`);
+      assert.ok(lstatSync(icon).isFile(), `icon ${rel} missing or not a regular file`);
+      assert.equal(statSync(icon).mode & 0o777, 0o644);
+    }
+    assert.ok(!existsSync(at("opt/loombre/desktop")), "desktop/ is a tarball-channel dir, never shipped under /opt");
+    const rules = readFileSync(at("usr/share/polkit-1/rules.d/50-loombre.rules"), "utf8");
+    assert.match(rules, /org\.freedesktop\.systemd1\.manage-units/);
+    assert.match(rules, /loombre-\(server\|worker\|web\)/);
+    assert.equal(statSync(at("usr/share/polkit-1/rules.d/50-loombre.rules")).mode & 0o777, 0o644);
+    assert.ok(!existsSync(at("opt/loombre/polkit")), "polkit/ is a tarball-channel dir, never shipped under /opt");
     assert.ok(statSync(at("var/lib/loombre")).isDirectory());
     const copyright = readFileSync(at("usr/share/doc/loombre/copyright"), "utf8");
     assert.ok(copyright.includes("18.4.0") && copyright.includes("GNU AFFERO GENERAL PUBLIC LICENSE") && copyright.includes("PostgreSQL Database Management System"));
@@ -482,6 +519,12 @@ test("rpm spec: %files is the short recursive form (no per-file globs: Next.js s
   for (const svc of SERVICES) assert.match(files, new RegExp(`^/usr/lib/systemd/system/${svc}\\.service$`, "m"));
   assert.match(files, /^\/usr\/lib\/sysusers\.d\/loombre\.conf$/m);
   assert.match(files, /^\/usr\/bin\/loombre$/m);
+  for (const p of DESKTOP_INTEGRATION_PATHS) assert.match(files, new RegExp(`^${p.replace(/[.\/]/g, "\\$&")}$`, "m"), `desktop integration file ${p} missing from %files`);
+  assert.doesNotMatch(files, /^%dir \/usr\/share\/icons/m, "hicolor size dirs belong to hicolor-icon-theme");
+  assert.doesNotMatch(files, /^%dir \/usr\/share\/applications$/m);
+  assert.doesNotMatch(files, /^%dir \/etc\/xdg/m);
+  assert.match(files, /^\/usr\/share\/polkit-1\/rules\.d\/50-loombre\.rules$/m);
+  assert.doesNotMatch(files, /^%dir \/usr\/share\/polkit-1/m, "rules.d belongs to polkit");
   assert.match(files, /^%license \/usr\/share\/licenses\/loombre\/LICENSE$/m);
   assert.match(files, /^%doc \/usr\/share\/doc\/loombre\/copyright$/m);
   assert.doesNotMatch(files, /\/usr\/local/);
@@ -528,6 +571,10 @@ test("rpm scriptlets: systemd tolerated absent everywhere; enable on fresh insta
   // flag; manual-start lines otherwise; no enable on upgrades.
   assert.match(post, /mkdir -p \/opt\/loombre\/web\/apps\/web\/\.next\/cache \|\| :/);
   assert.match(post, /chown loombre:loombre \/opt\/loombre\/web\/apps\/web\/\.next\/cache \|\| :/);
+  // GPU device access: join render/video when they exist, every install AND
+  // upgrade, never fatal (a software-only host is a valid outcome).
+  assert.match(post, new RegExp(`for _grp in ${HW_ACCESS_GROUPS.join(" ")}; do\\n  if getent group "\\$_grp" >/dev/null 2>&1; then\\n    usermod -aG "\\$_grp" loombre \\|\\| echo`));
+  assert.ok(post.indexOf("usermod -aG") < post.indexOf("systemctl daemon-reload"), "group membership must land before any unit is (re)started");
   assert.match(post, /find \/var\/lib\/loombre -mindepth 1 -maxdepth 1 ! -user loombre -print -quit/);
   assert.match(post, /chown -R loombre:loombre \/var\/lib\/loombre \|\| echo/);
   assert.match(post, /if \[ ! -e \/etc\/loombre\/loombre\.env \]; then\n  cp \/usr\/share\/loombre\/loombre\.env \/etc\/loombre\/loombre\.env \|\| echo "loombre: WARNING[^\n]*" >&2\nfi/);
@@ -647,6 +694,9 @@ test("deb maintainer scripts: no conffile; preinst guard on a first install only
   assert.match(postinst, /adduser --quiet --system \$\{_adopt_uid:\+--uid "\$_adopt_uid"\} --ingroup loombre --home \/var\/lib\/loombre --no-create-home --shell \/usr\/sbin\/nologin --gecos "Loombre media server" loombre/);
   assert.match(postinst, /if ! dpkg-statoverride --list \/var\/lib\/loombre >\/dev\/null 2>&1; then\n\s+dpkg-statoverride --update --add loombre loombre 0750 \/var\/lib\/loombre/);
   assert.match(postinst, /dpkg-statoverride --update --add loombre loombre 0755 \/opt\/loombre\/web\/apps\/web\/\.next\/cache/);
+  assert.match(postinst, new RegExp(`for _grp in ${HW_ACCESS_GROUPS.join(" ")}; do\\n\\s+if getent group "\\$_grp" >/dev/null 2>&1; then\\n\\s+usermod -aG "\\$_grp" loombre \\|\\| echo`));
+  assert.ok(postinst.indexOf("usermod -aG") > postinst.indexOf("adduser --quiet --system"), "the account must exist before it joins a group");
+  assert.ok(postinst.indexOf("usermod -aG") < postinst.indexOf("deb-systemd-invoke start"), "group membership must land before any unit is started");
   assert.match(postinst, /find \/var\/lib\/loombre -mindepth 1 -maxdepth 1 ! -user loombre -print -quit/);
   assert.match(postinst, /if \[ ! -e \/etc\/loombre\/loombre\.env \]; then\n\s+cp \/usr\/share\/loombre\/loombre\.env \/etc\/loombre\/loombre\.env \|\| echo "loombre: WARNING[^\n]*" >&2\n\s+fi/);
   assert.match(postinst, /chown root:loombre \/etc\/loombre\/loombre\.env \|\| true/);
