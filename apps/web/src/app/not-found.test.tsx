@@ -129,6 +129,12 @@ function importSpecifiers(source: string): string[] {
  * resolves to nothing on disk. TS source is written with `.js` specifiers
  * (NodeNext style) that resolve to `.tsx`/`.ts` on disk.
  */
+/** The walk reasons in forward-slash paths on every host (the fake tree's
+ *  keys are POSIX; Windows fs accepts "/" too), so OS paths are normalised
+ *  once and `path.posix` does the arithmetic — a win32 `path.resolve` would
+ *  turn "/w/src/app" into "D:\\w\\src\\app" and resolve nothing. */
+const toPosix = (file: string): string => file.split(path.sep).join("/");
+
 function resolveFirstParty(
   specifier: string,
   importer: string,
@@ -137,9 +143,9 @@ function resolveFirstParty(
 ): string | undefined {
   let base: string;
   if (specifier.startsWith("./") || specifier.startsWith("../")) {
-    base = path.resolve(path.dirname(importer), specifier);
+    base = path.posix.resolve(path.posix.dirname(importer), specifier);
   } else if (specifier.startsWith("@/")) {
-    base = path.join(srcRoot, specifier.slice(2));
+    base = path.posix.join(srcRoot, specifier.slice(2));
   } else {
     return undefined;
   }
@@ -148,8 +154,8 @@ function resolveFirstParty(
     base,
     `${stem}.tsx`,
     `${stem}.ts`,
-    path.join(base, "index.tsx"),
-    path.join(base, "index.ts"),
+    path.posix.join(base, "index.tsx"),
+    path.posix.join(base, "index.ts"),
   ];
   return candidates.find((candidate) => exists(candidate));
 }
@@ -164,7 +170,8 @@ function scanBoundaryGraph(input: {
   const visited: string[] = [];
   const unresolved: string[] = [];
   const seen = new Set<string>();
-  const queue = [...input.entries];
+  const srcRoot = toPosix(input.srcRoot);
+  const queue = input.entries.map(toPosix);
 
   while (queue.length > 0) {
     const file = queue.shift();
@@ -176,10 +183,10 @@ function scanBoundaryGraph(input: {
 
     for (const specifier of importSpecifiers(source)) {
       if (specifier.endsWith(".css")) {
-        css.push(`${path.relative(input.srcRoot, file)} imports ${specifier}`);
+        css.push(`${path.posix.relative(srcRoot, file)} imports ${specifier}`);
         continue;
       }
-      const resolved = resolveFirstParty(specifier, file, input.srcRoot, input.exists);
+      const resolved = resolveFirstParty(specifier, file, srcRoot, input.exists);
       if (resolved === undefined) {
         unresolved.push(specifier);
         continue;

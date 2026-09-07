@@ -646,6 +646,9 @@ describe("T2/RG7 — real connector crash -> backoff -> auto-restart, surfaced t
   });
 });
 
+/** vitest.config.ts's formula (LOOMBRE_TEST_TIME_SCALE: ubuntu 1, windows 3, macOS 10). */
+const TIME_SCALE = Math.max(1, Number(process.env["LOOMBRE_TEST_TIME_SCALE"] ?? "1") || 1);
+
 describe("T2/RG7 — connector resumes on boot if the tunnel state row says enabled", () => {
   it("a SECOND server boot (simulating a restart) resumes the real stub connector from remote_tunnel_state + the keyring credential", async () => {
     await request(app.getHttpServer()).post("/admin/remote/tunnel/token").set("Authorization", `Bearer ${adminToken}`).send({ token: "good-token" });
@@ -685,8 +688,10 @@ describe("T2/RG7 — connector resumes on boot if the tunnel state row says enab
     // Explicit generous budget: this test does TWO full Nest boots + two real
     // stub-connector spawns/health-waits, which can exceed the suite's default
     // 5s testTimeout (TIME_SCALE=1 on the ubuntu leg) under CI load — the
-    // 2nd-boot resume race that intermittently flaked here.
-  }, 30_000);
+    // 2nd-boot resume race that intermittently flaked here. Scaled like the
+    // suite's own timeouts (vitest.config.ts): a fixed 30s lost the first
+    // macOS gate leg, where two boots on the 3-core runner outran it.
+  }, 30_000 * TIME_SCALE);
 
   it("does nothing when the tunnel state row is disabled (the common case — every other server boot)", async () => {
     // beforeEach already disabled + cleared the token — remote_tunnel_state

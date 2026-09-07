@@ -21,7 +21,7 @@
 // preventDefault() then a client-side router navigation.
 
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Suspense, act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -301,7 +301,9 @@ describe("restricted zone — no raw <a href> navigation (QA browser-restricted-
     collect(`${srcRoot}/components/restricted`);
 
     const resolveSpecifier = (fromFile: string, specifier: string): string | null => {
-      const base = resolve(dirname(fromFile), specifier).replace(/\.js$/, "");
+      // Forward slashes on every host: the seeds are "/"-joined above and the
+      // closure's slices are compared against "/"-spelled names below.
+      const base = resolve(dirname(fromFile), specifier).split(sep).join("/").replace(/\.js$/, "");
       for (const candidate of [`${base}.tsx`, `${base}.ts`, `${base}/index.tsx`, `${base}/index.ts`]) {
         if (existsSync(candidate)) return candidate;
       }
@@ -325,7 +327,7 @@ describe("restricted zone — no raw <a href> navigation (QA browser-restricted-
   it("every link the zone can render is a next/link, not a document navigation", () => {
     // fileURLToPath on the STRING form: under the jsdom environment the
     // global URL is jsdom's, and node:url rejects its instances.
-    const srcRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
+    const srcRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..").split(sep).join("/");
     const rawAnchorWithHref = /<a\s[^>]*href=/;
 
     const offenders = zoneRenderClosure(srcRoot)
@@ -341,7 +343,7 @@ describe("restricted zone — no raw <a href> navigation (QA browser-restricted-
   // silently narrows the walk back to two directories takes the "ALL →"
   // class of defect right back out of view.
   it("the closure reaches components the zone renders from OUTSIDE its own directories", () => {
-    const srcRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
+    const srcRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..").split(sep).join("/");
     const closure = zoneRenderClosure(srcRoot).map((file) => file.slice(srcRoot.length + 1));
 
     // app/restricted/page.tsx's rails shell — shared with the public home.
