@@ -12,6 +12,7 @@
 // Every enqueue and lifecycle transition is mirrored into the `jobs` table
 // via src/ledger.ts so the admin UI never has to read pg-boss internals.
 
+import { createErrorLogThrottle } from './error-log-throttle.js';
 import { PgBoss } from 'pg-boss';
 import { uuidv7 } from './ids.js';
 import { createLedger, type Ledger } from './ledger.js';
@@ -136,8 +137,15 @@ export function createJobQueue(connectionString: string, options: CreateJobQueue
   const startRetryWindowMs = options.startRetryWindowMs ?? 90_000;
   const startRetryIntervalMs = options.startRetryIntervalMs ?? 2_000;
 
+  // Throttled: while the database is away (the native Linux installs stop
+  // the server — and with it the embedded PostgreSQL — from the tray; the
+  // worker stays up and reconnects when it returns), pg-boss raises one
+  // error per poll. The first prints in full, repeats are counted (see
+  // error-log-throttle.ts).
+  const errorLog = createErrorLogThrottle();
   boss.on('error', (err: unknown) => {
-    console.error('[@loombre/jobs] pg-boss error:', err);
+    const line = errorLog.record(err, Date.now());
+    if (line !== null) console.error(`[@loombre/jobs] pg-boss error: ${line}`);
   });
 
   /** Every work() registration, so ready() can report whether they landed.

@@ -41,8 +41,41 @@ pg.types.setTypeParser(20, (value: string) => Number.parseInt(value, 10));
 // objects cross a boundary" spirit) — pass the raw text through unchanged.
 pg.types.setTypeParser(1082, (value: string) => value);
 
+/** node-postgres emits 'error' on the Pool whenever an IDLE client's
+ *  backend dies under it (the server is restarting, the embedded
+ *  PostgreSQL that the server process hosts went down with it, a network
+ *  blip). An unhandled 'error' event throws — an uncaughtException that
+ *  both apps' crash handlers file as a crash and exit on. That is the
+ *  wrong reflex for a database that is merely away: the pool drops the
+ *  dead client, the next query gets a fresh one, and the process rides
+ *  the outage out (the native Linux tray's "Stop server" used to cost a
+ *  worker crash file + restart every time). The handler logs and nothing
+ *  else; a query that actually needs the database still fails loudly at
+ *  its own call site. Repeats of one message are counted rather than
+ *  printed, since a pool with several idle clients reports the same
+ *  outage several times. */
+function attachPoolErrorHandler(pool: pg.Pool): void {
+  let lastMessage: string | null = null;
+  let repeats = 0;
+  let lastLoggedAtMs = 0;
+  pool.on('error', (err: Error) => {
+    const message = `${err.name}: ${err.message}`;
+    const now = Date.now();
+    if (message === lastMessage && now - lastLoggedAtMs < 60_000) {
+      repeats += 1;
+      return;
+    }
+    const suffix = repeats > 0 ? ` (previous message repeated ${repeats} more time${repeats === 1 ? '' : 's'})` : '';
+    repeats = 0;
+    lastMessage = message;
+    lastLoggedAtMs = now;
+    console.warn(`[@loombre/db] idle database connection dropped — ${message}${suffix}; the pool will reconnect on the next query`);
+  });
+}
+
 export function createDb(connectionString: string): Kysely<DB> {
   const pool = new pg.Pool({ connectionString });
+  attachPoolErrorHandler(pool);
   const dialect = new PostgresDialect({ pool });
   return new Kysely<DB>({ dialect });
 }

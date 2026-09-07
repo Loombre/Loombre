@@ -29,7 +29,24 @@ import type {
 } from '../provider.js';
 
 const API_BASE = 'https://api.themoviedb.org/3';
-const DEFAULT_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
+/** TMDB image URLs are `<secure_base_url><size><file_path>`: the base from
+ *  /configuration ends at `/t/p/` and carries NO size segment, and
+ *  file_path starts with a slash. The size this module asks for is always
+ *  `original` (the image pipeline downscales at ingest — CLAUDE.md
+ *  invariant 9), so the base is completed with it here, once. A base
+ *  without the size ("…/t/p//poster.jpg") is a 404 for every image —
+ *  which is exactly what every install had until this was pinned. */
+const TMDB_IMAGE_HOST_BASE = 'https://image.tmdb.org/t/p/';
+const TMDB_IMAGE_SIZE = 'original';
+
+/** `<base>/original` with exactly one slash between them, whatever shape
+ *  the base arrived in (TMDB's own `secure_base_url` ends with a slash;
+ *  a base that already names a size is left alone). */
+export function resolveImageBaseUrl(secureBaseUrl: string | undefined): string {
+  const base = (secureBaseUrl && secureBaseUrl.trim().length > 0 ? secureBaseUrl.trim() : TMDB_IMAGE_HOST_BASE).replace(/\/+$/, '');
+  if (/\/(original|w\d+|h\d+)$/.test(base)) return base;
+  return `${base}/${TMDB_IMAGE_SIZE}`;
+}
 
 // ============================================================================
 // raw TMDB response shapes (only the fields this module reads)
@@ -318,9 +335,9 @@ export function createTmdbProvider(deps: TmdbProviderDeps): MetadataProvider {
   async function imageBaseUrl(): Promise<string> {
     try {
       const config = await get<TmdbConfigurationResponse>('/configuration', {}, 'details');
-      return config.images?.secure_base_url ?? DEFAULT_IMAGE_BASE.replace(/original$/, '');
+      return resolveImageBaseUrl(config.images?.secure_base_url);
     } catch {
-      return DEFAULT_IMAGE_BASE.replace(/original$/, '');
+      return resolveImageBaseUrl(undefined);
     }
   }
 

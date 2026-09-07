@@ -21,6 +21,7 @@ import {
   createTmdbProvider,
   mapEpisodeDetails,
   mapImages,
+  resolveImageBaseUrl,
   mapMovieDetails,
   mapSeasonDetails,
   mapSeriesDetails,
@@ -93,6 +94,18 @@ describe('tmdb mappers (fixture-based, no network)', () => {
     expect(mapped.people.some((p) => p.role === 'guest' && p.name === 'Sean Bean')).toBe(true);
   });
 
+  it('resolveImageBaseUrl always ends in a size segment — TMDB\'s secure_base_url has none, and a base without one 404s every image', () => {
+    expect(resolveImageBaseUrl('https://image.tmdb.org/t/p/')).toBe('https://image.tmdb.org/t/p/original');
+    expect(resolveImageBaseUrl('https://image.tmdb.org/t/p')).toBe('https://image.tmdb.org/t/p/original');
+    expect(resolveImageBaseUrl(undefined)).toBe('https://image.tmdb.org/t/p/original');
+    expect(resolveImageBaseUrl('')).toBe('https://image.tmdb.org/t/p/original');
+    expect(resolveImageBaseUrl('https://image.tmdb.org/t/p/original')).toBe('https://image.tmdb.org/t/p/original');
+    expect(resolveImageBaseUrl('https://image.tmdb.org/t/p/w500/')).toBe('https://image.tmdb.org/t/p/w500');
+    const url = `${resolveImageBaseUrl('https://image.tmdb.org/t/p/')}/uPgQovJ9mrao9ejjnnc0jQrhAtA.jpg`;
+    expect(url).toBe('https://image.tmdb.org/t/p/original/uPgQovJ9mrao9ejjnnc0jQrhAtA.jpg');
+    expect(url).not.toMatch(/\/\/[^/]*$/);
+  });
+
   it('mapImages builds absolute URLs from the image base + file_path, tagged by kind', () => {
     const json = fixture<{ posters: { file_path: string; width: number; height: number }[]; backdrops: unknown[]; logos: unknown[] }>(
       'movie-images'
@@ -162,5 +175,8 @@ describe('createTmdbProvider (fake fetch + dedicated live DB)', () => {
 
     const images = await provider.fetchImages(results[0]!.ref);
     expect(images.length).toBeGreaterThan(0);
+    for (const image of images) {
+      expect(image.url).toMatch(/^https:\/\/image\.tmdb\.org\/t\/p\/original\/[^/]+$/);
+    }
   });
 });

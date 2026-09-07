@@ -168,6 +168,11 @@
   padding: var(--space-2xs) var(--space-sm);
   border-radius: var(--radius-sm);
   background: var(--color-surface-hover);
+
+  /* The path below is nowrap + ellipsis; without this the row's
+     min-width:auto lets that path widen the whole dashboard column
+     instead of truncating (see admin/page.module.css's .body note). */
+  min-width: 0;
 }
 
 .unmatchedMain {

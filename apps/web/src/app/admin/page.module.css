@@ -38,7 +38,14 @@
 
 .body {
   display: grid;
-  grid-template-columns: 2fr 1fr;
+
+  /* minmax(0, …), not bare fr: a grid track's implicit minimum is its
+     content's min-content width, so one nowrap child (the unmatched-items
+     list's monospace paths, once its disclosure opens) re-flowed the split
+     from 731/365 to 1145/89 and crushed the job queue and event log into
+     an 89px column — measured on the reference box. Zero minimum keeps the
+     2:1 split whatever a child's content wants. */
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
   gap: var(--space-lg);
   align-items: start;
 }
@@ -47,6 +54,10 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-lg);
+
+  /* Same rule one level down: a flex item's default min-width:auto would
+     otherwise let a nowrap descendant dictate the column's width. */
+  min-width: 0;
 }
 
 /* Deliberately NOT composed with ui/Card.module.css's `.card` (that class's
@@ -140,6 +151,6 @@
 
 @media (width <= 767.98px) {
   .body {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
