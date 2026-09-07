@@ -155,6 +155,18 @@ function isHwPlatform(platform: NodeJS.Platform): platform is HwPlatform {
  *  session sweeper suspends on. */
 const HEARTBEAT_SUSPEND_CUTOFF_KEY = "sessions.heartbeatSuspendCutoffMs";
 
+/** Mirrors apps/server/src/playback/resolve-policy.ts's parseEnvTier and
+ *  apps/server/src/settings/settings.service.ts's resolveTier exactly —
+ *  duplicated, like the latter, rather than imported: dependency-cruiser
+ *  forbids catalog/ reaching into playback/, and the function is three
+ *  lines. Unset or unparseable means Tier 0 (no autodetection). */
+function resolveSystemTier(env: NodeJS.ProcessEnv): 0 | 1 | 2 {
+  const raw = env["LOOMBRE_TIER"];
+  if (raw === "1") return 1;
+  if (raw === "2") return 2;
+  return 0;
+}
+
 @Controller()
 export class AdminController {
   constructor(
@@ -242,9 +254,11 @@ export class AdminController {
       // constant `loombre --version` and the release manifest builder read.
       version: LOOMBRE_VERSION_FULL,
       os: mapOs(os.platform()),
-      // Tier detection (docs/PLAN.md §9, Tier-0/1/2 hardware classes) is a
-      // future wave; Tier-0 is the safe floor default until it lands.
-      tier: 0,
+      // The SAME LOOMBRE_TIER read the playback policy makes (resolve-policy.ts
+      // parseEnvTier; unset = 0): the Dashboard's Server card said T0 on a
+      // box whose plans were being cut at Tier 2. Autodetection (docs/PLAN.md
+      // §9.1) is still future work — this only stops the two reads disagreeing.
+      tier: resolveSystemTier(process.env),
       nodeVersion: process.version,
       uptimeMs: Math.round(process.uptime() * 1000),
       storagePool,

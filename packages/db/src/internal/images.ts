@@ -22,6 +22,11 @@ export interface UpsertImageInput {
   dominantColor?: string | null;
   filePath: string;
   createdAtMs: number;
+  /** Provider URL (`url:…`) or local path the set was rendered from
+   *  (migrations/0046). Omitted/undefined leaves the column NULL
+   *  ("unknown") — only the image consumer, which knows the source it
+   *  just rendered, records it. */
+  sourceRef?: string | null;
 }
 
 /**
@@ -44,6 +49,7 @@ export async function upsertImage(db: DbOrTx, input: UpsertImageInput): Promise<
       dominant_color: input.dominantColor ?? null,
       file_path: input.filePath,
       created_at_ms: input.createdAtMs,
+      source_ref: input.sourceRef ?? null,
     })
     .onConflict((oc) =>
       oc.columns(['entity_type', 'entity_id', 'kind', 'width']).doUpdateSet({
@@ -53,6 +59,7 @@ export async function upsertImage(db: DbOrTx, input: UpsertImageInput): Promise<
         dominant_color: (eb) => eb.ref('excluded.dominant_color'),
         file_path: (eb) => eb.ref('excluded.file_path'),
         created_at_ms: (eb) => eb.ref('excluded.created_at_ms'),
+        source_ref: (eb) => eb.ref('excluded.source_ref'),
       })
     )
     .returningAll()
@@ -81,6 +88,31 @@ export async function hasOriginalImage(db: DbOrTx, entityType: string, entityId:
     .where('width', 'is', null)
     .executeTakeFirst();
   return row !== undefined;
+}
+
+/**
+ * The "original" (width IS NULL) row for (entityType, entityId, kind), or
+ * undefined when none exists — the image consumer's (apps/worker/src/
+ * image/consumer.ts) stable-identity read: it compares the row's
+ * `source_ref` against the source it is about to render and skips the
+ * download + re-encode when they match and the file is still on disk.
+ * Distinct from `hasOriginalImage` (existence only, for the Stash
+ * mapper) because the caller needs `source_ref` and `file_path`.
+ */
+export async function getOriginalImageForKind(
+  db: DbOrTx,
+  entityType: string,
+  entityId: string,
+  kind: ImagesTable['kind']
+): Promise<Pick<ImageRow, 'id' | 'file_path' | 'source_ref'> | undefined> {
+  return db
+    .selectFrom('images')
+    .select(['id', 'file_path', 'source_ref'])
+    .where('entity_type', '=', entityType)
+    .where('entity_id', '=', entityId)
+    .where('kind', '=', kind)
+    .where('width', 'is', null)
+    .executeTakeFirst();
 }
 
 // ============================================================================

@@ -78,6 +78,10 @@ axis; nothing before `1.0.0-beta.1` was ever released.
 - Linux: the tray's polkit prompt asked for the root password on
   openSUSE. A shipped polkit rule lets `wheel`/`sudo`/`admin` members
   start, stop and restart the three Loombre units with their own password.
+- Admin Dashboard: the Server card reported Tier 0 regardless of
+  `LOOMBRE_TIER` (a hard-coded placeholder) while playback plans were being
+  cut at the configured tier; it now reports the same value the planner
+  reads.
 - Admin Dashboard: opening the "unmatched items" list re-flowed the
   two-column layout and crushed the job queue and event log into a sliver
   (a nowrap path was allowed to set the column's minimum width). The grid
@@ -85,6 +89,18 @@ axis; nothing before `1.0.0-beta.1` was ever released.
 - Linux: the service wrappers now export `NO_COLOR=1`/`FORCE_COLOR=0`, so
   `journalctl` and the Dashboard's log tail no longer show raw ANSI colour
   codes from the server's logger.
+- Metadata: a match enqueued an image download for EVERY poster and
+  backdrop the provider returned (hundreds per film), and since one file
+  is kept per item and kind, each download overwrote the last — artwork
+  changed on every page refresh while the queue drained. One poster and
+  one backdrop are now chosen up front (preferred language, textless
+  backdrops, then the provider's votes and resolution).
+- Metadata: artwork now has a stable identity per item and kind. The
+  image table records which provider URL or local file each rendered set
+  came from (`images.source_ref`, migration 0046), and an image job whose
+  source matches the one already on disk is a no-op — a re-match or a
+  second provider landing on the same artwork no longer re-downloads,
+  re-encodes, or changes the served bytes.
 - Metadata: every TMDB image URL was built without a size segment
   (`https://image.tmdb.org/t/p//<file>` — TMDB's base URL ends at `/t/p/`
   and the default had its `original` stripped), so every poster, backdrop

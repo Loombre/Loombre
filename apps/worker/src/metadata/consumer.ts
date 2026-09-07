@@ -36,6 +36,7 @@
 // constructed ONCE when this factory runs and reused for the life of the
 // worker process.
 
+import { selectPrimaryImages } from './select-images.js';
 import type { JobHandler, JobPayloads } from '@loombre/jobs';
 import type { DbOrTx } from '@loombre/db/internal';
 import {
@@ -404,8 +405,12 @@ export function metadataConsumerHandler(deps: MetadataConsumerDeps): JobHandler<
       }
     });
 
-    for (const image of matched.images) {
-      if (image.kind !== 'poster' && image.kind !== 'backdrop') continue;
+    // ONE poster and ONE backdrop (select-images.ts): the image pipeline
+    // keeps a single file per (entity, kind), so every extra job for the
+    // same kind would only overwrite the last — and change the artwork on
+    // each page refresh while the queue drained (435 jobs for one film on
+    // the reference box).
+    for (const image of selectPrimaryImages(matched.images)) {
       await deps.enqueueImageJob({
         entityType: 'catalog_item',
         entityId: item.id,

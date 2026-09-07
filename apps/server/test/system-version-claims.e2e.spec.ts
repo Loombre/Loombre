@@ -30,7 +30,7 @@
 
 import "reflect-metadata";
 import { readFileSync } from "node:fs";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -116,6 +116,28 @@ function currentVersionDescription(): string {
   expect(property, "openapi.yaml has no SystemUpdateInfo.currentVersion").toBeTruthy();
   return String(property!.description ?? "");
 }
+
+describe("SystemInfo.tier follows LOOMBRE_TIER — the same read the playback policy makes", () => {
+  const original = process.env["LOOMBRE_TIER"];
+  afterEach(() => {
+    if (original === undefined) delete process.env["LOOMBRE_TIER"];
+    else process.env["LOOMBRE_TIER"] = original;
+  });
+
+  it("reports 2 when LOOMBRE_TIER=2 (the Dashboard's Server card used to say T0 on a box planning at Tier 2)", async () => {
+    process.env["LOOMBRE_TIER"] = "2";
+    const info = await get("/system/info");
+    expect(info.status, JSON.stringify(info.body)).toBe(200);
+    expect(info.body.tier).toBe(2);
+  });
+
+  it("reports 0 when LOOMBRE_TIER is unset or unparseable — no autodetection, unset means Tier 0", async () => {
+    delete process.env["LOOMBRE_TIER"];
+    expect((await get("/system/info")).body.tier).toBe(0);
+    process.env["LOOMBRE_TIER"] = "fast";
+    expect((await get("/system/info")).body.tier).toBe(0);
+  });
+});
 
 describe("d3-b11: SystemUpdateInfo.currentVersion vs SystemInfo.version", () => {
   it("the two endpoints report the two DIFFERENT constants they are each built on", async () => {

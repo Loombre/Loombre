@@ -30,9 +30,24 @@ describe('createErrorLogThrottle', () => {
     expect(throttle.record(new Error('a'), 30)).toBe('Error: a');
   });
 
-  it('renders non-Error values as strings', () => {
+  it('renders non-Error values as strings — plain objects by their message, never "[object Object]"', () => {
     const throttle = createErrorLogThrottle();
     expect(throttle.record('plain string', 0)).toBe('plain string');
-    expect(throttle.record({ toString: () => 'custom' }, 1)).toBe('custom');
+    expect(throttle.record({ message: 'terminating connection due to administrator command', name: 'error' }, 1)).toBe(
+      'error: terminating connection due to administrator command',
+    );
+    expect(throttle.record({ message: 'connect ECONNREFUSED 127.0.0.1:5433' }, 2)).toBe('connect ECONNREFUSED 127.0.0.1:5433');
+    expect(throttle.record({ code: 'ECONNRESET', queue: 'scan' }, 3)).toBe('{"code":"ECONNRESET","queue":"scan"}');
+    expect(throttle.record({ toString: () => 'custom' }, 4)).toBe('{}');
+  });
+
+  it('the repeat summary uses the same rendering (the field failure: "[object Object]" after 9 repeats)', () => {
+    const throttle = createErrorLogThrottle({ windowMs: 1000 });
+    const envelope = { message: 'terminating connection due to administrator command', name: 'error' };
+    expect(throttle.record(envelope, 0)).toBe('error: terminating connection due to administrator command');
+    for (let i = 1; i <= 9; i += 1) expect(throttle.record(envelope, i * 10)).toBeNull();
+    expect(throttle.record({ message: 'connect ECONNREFUSED 127.0.0.1:5433' }, 100)).toBe(
+      '(previous error repeated 9 more times) connect ECONNREFUSED 127.0.0.1:5433',
+    );
   });
 });

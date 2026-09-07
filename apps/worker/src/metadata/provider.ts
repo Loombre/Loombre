@@ -160,6 +160,14 @@ export interface ProviderImageRef {
   url: string;
   width?: number | null;
   height?: number | null;
+  /** ISO 639-1 language of any text on the image; null/absent = language-
+   *  neutral (a textless backdrop). Ranking input for select-images.ts —
+   *  the consumer stores ONE poster and ONE backdrop per item. */
+  language?: string | null;
+  /** Provider community rating of the image itself (TMDB vote_average /
+   *  vote_count), when it has one. Ranking input, never shown. */
+  voteAverage?: number | null;
+  voteCount?: number | null;
 }
 
 // ============================================================================

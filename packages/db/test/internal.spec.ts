@@ -40,6 +40,7 @@ import {
   replaceItemTags,
   upsertImage,
   hasOriginalImage,
+  getOriginalImageForKind,
 } from '../src/internal/index.js';
 import { resolveTestDatabaseUrl } from '../src/testing.js';
 
@@ -382,6 +383,39 @@ describe('src/internal (P1.13)', () => {
         .execute();
       expect(rows).toHaveLength(1);
       expect(rows[0]!.file_path).toBe('/data/images/a/poster-orig-v2.webp');
+    });
+  });
+
+  describe('images.source_ref (0046) — stable identity per (entity, kind)', () => {
+    it('upsert records and overwrites source_ref; getOriginalImageForKind returns the width-NULL row only', async () => {
+      expect(await getOriginalImageForKind(db, 'catalog_item', itemId, 'backdrop')).toBeUndefined();
+
+      const base = {
+        entityType: 'catalog_item',
+        entityId: itemId,
+        kind: 'backdrop' as const,
+        source: 'provider' as const,
+        height: 1080,
+        blurhash: null,
+        createdAtMs: 1,
+      };
+      // Omitted sourceRef → NULL ("unknown"), never ''.
+      await upsertImage(db, { ...base, width: null, filePath: '/data/images/a/backdrop-orig.webp' });
+      expect((await getOriginalImageForKind(db, 'catalog_item', itemId, 'backdrop'))?.source_ref).toBeNull();
+
+      await upsertImage(db, { ...base, width: null, filePath: '/data/images/a/backdrop-orig.webp', sourceRef: 'url:https://img.example/a.jpg' });
+      await upsertImage(db, { ...base, width: 1280, height: 720, filePath: '/data/images/a/backdrop-1280.webp', sourceRef: 'url:https://img.example/a.jpg' });
+
+      const original = await getOriginalImageForKind(db, 'catalog_item', itemId, 'backdrop');
+      expect(original).toMatchObject({ file_path: '/data/images/a/backdrop-orig.webp', source_ref: 'url:https://img.example/a.jpg' });
+
+      // A re-render from a different source overwrites the reference in place (same row, no duplicate).
+      await upsertImage(db, { ...base, width: null, filePath: '/data/images/a/backdrop-orig.webp', createdAtMs: 2, sourceRef: 'url:https://img.example/b.jpg' });
+      const rows = await db.selectFrom('images').select(['width', 'source_ref']).where('entity_id', '=', itemId).where('kind', '=', 'backdrop').execute();
+      expect(rows).toHaveLength(2);
+      expect(rows.find((r) => r.width === null)?.source_ref).toBe('url:https://img.example/b.jpg');
+      expect(rows.find((r) => r.width === 1280)?.source_ref).toBe('url:https://img.example/a.jpg');
+      expect((await getOriginalImageForKind(db, 'catalog_item', itemId, 'backdrop'))?.source_ref).toBe('url:https://img.example/b.jpg');
     });
   });
 

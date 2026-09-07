@@ -24,9 +24,10 @@
 // change could destabilize, so "job start" gives the freshest possible
 // value without any polling loop.
 
+import { access } from 'node:fs/promises';
 import type { JobHandler } from '@loombre/jobs';
 import type { DbOrTx } from '@loombre/db/internal';
-import { upsertImage, type UpsertImageInput } from '@loombre/db/internal';
+import { getOriginalImageForKind, upsertImage, type UpsertImageInput } from '@loombre/db/internal';
 import { isProviderSource } from './download.js';
 import { runImagePipeline, type RunImagePipelineInput } from './pipeline.js';
 import { getWorkerSettingValue, loadWorkerEffectiveSettings } from '../settings/effective-settings.js';
@@ -69,12 +70,35 @@ function sourceFor(sourcePath: string): UpsertImageInput['source'] {
   return isProviderSource(sourcePath) ? 'provider' : 'local';
 }
 
+/**
+ * Stable image identity per (entity, kind): when the original row already
+ * on file was rendered from this very source (`images.source_ref`,
+ * migrations/0046) and its file is still on disk, there is nothing to do —
+ * a metadata re-match or a second provider in a chain that lands on the
+ * same artwork must not re-download, re-encode, or churn the served bytes.
+ * A missing file (pruned cache, moved data dir) or a NULL/different
+ * source_ref renders as before. Only the original's presence is checked:
+ * the variants are written by the same job that wrote it, so they are
+ * either all present or the row set predates the file's disappearance.
+ */
+async function alreadyRenderedFrom(db: DbOrTx, payload: { entityType: string; entityId: string; kind: string; sourcePath: string }): Promise<boolean> {
+  const existing = await getOriginalImageForKind(db, payload.entityType, payload.entityId, payload.kind as UpsertImageInput['kind']);
+  if (existing === undefined || existing.source_ref === null || existing.source_ref !== payload.sourcePath) return false;
+  try {
+    await access(existing.file_path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function imageConsumerHandler(deps: ImageConsumerDeps): JobHandler<'image'> {
   const clock = deps.clock ?? (() => Date.now());
 
   return async (payload) => {
     const exists = await entityExists(deps.db, payload.entityType, payload.entityId);
     if (!exists) return;
+    if (await alreadyRenderedFrom(deps.db, payload)) return;
 
     const settingsResult = await loadWorkerEffectiveSettings(deps.db);
     const avifEnabled = getWorkerSettingValue(settingsResult, 'images.avifEnabled', true);
@@ -114,6 +138,7 @@ export function imageConsumerHandler(deps: ImageConsumerDeps): JobHandler<'image
       dominantColor: result.dominantColor,
       filePath: result.original.filePath,
       createdAtMs: now,
+      sourceRef: payload.sourcePath,
     });
 
     for (const variant of result.variants) {
@@ -130,6 +155,7 @@ export function imageConsumerHandler(deps: ImageConsumerDeps): JobHandler<'image
         dominantColor: result.dominantColor,
         filePath: variant.filePath,
         createdAtMs: now,
+        sourceRef: payload.sourcePath,
       });
     }
   };

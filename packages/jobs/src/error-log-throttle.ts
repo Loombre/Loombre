@@ -23,6 +23,20 @@ export interface ErrorLogThrottleOptions {
 
 function messageOf(err: unknown): string {
   if (err instanceof Error) return `${err.name}: ${err.message}`;
+  // pg-boss also emits plain objects carrying a message (its own error
+  // envelopes) — String() on those is "[object Object]", which is what
+  // the first throttled summary line printed on the reference box.
+  if (typeof err === 'object' && err !== null) {
+    const record = err as { name?: unknown; message?: unknown };
+    if (typeof record.message === 'string') {
+      return typeof record.name === 'string' && record.name.length > 0 ? `${record.name}: ${record.message}` : record.message;
+    }
+    try {
+      return JSON.stringify(err).slice(0, 500);
+    } catch {
+      return Object.prototype.toString.call(err);
+    }
+  }
   return String(err);
 }
 

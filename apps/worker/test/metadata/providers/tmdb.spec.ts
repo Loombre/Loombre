@@ -111,7 +111,12 @@ describe('tmdb mappers (fixture-based, no network)', () => {
       'movie-images'
     );
     const images = mapImages(json, 'https://image.tmdb.org/t/p/original');
-    expect(images).toContainEqual({ kind: 'poster', url: 'https://image.tmdb.org/t/p/original/poster1.jpg', width: 2000, height: 3000 });
+    expect(images).toContainEqual(expect.objectContaining({ kind: 'poster', url: 'https://image.tmdb.org/t/p/original/poster1.jpg', width: 2000, height: 3000 }));
+    for (const image of images) {
+      expect(image).toHaveProperty('language');
+      expect(image).toHaveProperty('voteAverage');
+      expect(image).toHaveProperty('voteCount');
+    }
     expect(images.some((i) => i.kind === 'backdrop')).toBe(true);
   });
 });

@@ -96,6 +96,7 @@ export {
   setImageDominantColor,
   copyDominantColorToVariants,
   hasOriginalImage,
+  getOriginalImageForKind,
 } from './images.js';
 
 export type { EventRow, WriteEventInput } from './events.js';

@@ -10,7 +10,7 @@
 // Connection: DATABASE_URL env var, default
 //   postgres://loombre:loombre@localhost:5442/loombre
 
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -150,6 +150,49 @@ describe('imageConsumerHandler', () => {
     const rows = await db.selectFrom('images').select('source').where('entity_id', '=', itemId).execute();
     expect(rows.length).toBeGreaterThan(0);
     expect(rows.every((r) => r.source === 'provider')).toBe(true);
+  });
+
+  it('stable identity: a second job for the same (entity, kind, source) neither re-fetches nor rewrites; a new source does', async () => {
+    const itemId = await insertItem('Stable Artwork Movie');
+    const png = await sharp({ create: { width: 100, height: 100, channels: 3, background: 'teal' } }).png().toBuffer();
+    let fetches = 0;
+    const fetchImpl = async (): Promise<Response> => {
+      fetches += 1;
+      const { Readable } = await import('node:stream');
+      const stream = Readable.toWeb(Readable.from([png])) as unknown as ReadableStream;
+      return { ok: true, status: 200, statusText: 'OK', body: stream } as Response;
+    };
+    const handler = imageConsumerHandler({ db, dataDir: workDir, execute: runVariantJob, fetchImpl });
+    const sourcePath = 'url:https://93.184.216.34/poster-a.jpg';
+
+    await handler({ entityType: 'catalog_item', entityId: itemId, kind: 'poster', sourcePath }, { jobId: 'img-job-stable-1' });
+    const first = await db.selectFrom('images').select(['id', 'width', 'file_path', 'source_ref', 'created_at_ms']).where('entity_id', '=', itemId).orderBy('width').execute();
+    expect(first.length).toBeGreaterThan(1);
+    expect(first.every((r) => r.source_ref === sourcePath)).toBe(true);
+    const originalPath = first.find((r) => r.width === null)!.file_path;
+    const bytesBefore = await readFile(originalPath);
+
+    // Same (entity, kind, source) again — a metadata re-match landing on
+    // the same artwork. No fetch, no re-encode, no row churn.
+    await handler({ entityType: 'catalog_item', entityId: itemId, kind: 'poster', sourcePath }, { jobId: 'img-job-stable-2' });
+    expect(fetches).toBe(1);
+    const second = await db.selectFrom('images').select(['id', 'width', 'file_path', 'source_ref', 'created_at_ms']).where('entity_id', '=', itemId).orderBy('width').execute();
+    expect(second).toEqual(first);
+    expect(Buffer.compare(await readFile(originalPath), bytesBefore)).toBe(0);
+
+    // The file went away (pruned cache) — the same source renders again.
+    await rm(originalPath);
+    await handler({ entityType: 'catalog_item', entityId: itemId, kind: 'poster', sourcePath }, { jobId: 'img-job-stable-3' });
+    expect(fetches).toBe(2);
+    await expect(readFile(originalPath)).resolves.toBeInstanceOf(Buffer);
+
+    // A different source for the same (entity, kind) renders and re-points the rows.
+    const otherSource = 'url:https://93.184.216.34/poster-b.jpg';
+    await handler({ entityType: 'catalog_item', entityId: itemId, kind: 'poster', sourcePath: otherSource }, { jobId: 'img-job-stable-4' });
+    expect(fetches).toBe(3);
+    const third = await db.selectFrom('images').select(['source_ref']).where('entity_id', '=', itemId).execute();
+    expect(third).toHaveLength(first.length);
+    expect(third.every((r) => r.source_ref === otherSource)).toBe(true);
   });
 
   it('content-class safety: writes nothing (no rows, no files) for an entity that does not exist', async () => {

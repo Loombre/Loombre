@@ -560,6 +560,10 @@ export interface ImagesTable {
   dominant_color: string | null;
   file_path: string;
   created_at_ms: number;
+  /** Provider URL (`url:…`) or local path the rendered set was built from
+   *  — migrations/0046_images_source_ref.sql. NULL = unknown (pre-0046
+   *  row). The image job compares it to skip a re-download + re-encode. */
+  source_ref: string | null;
 }
 
 // ============================================================================

@@ -76,6 +76,10 @@ interface TmdbImageFile {
   file_path: string;
   width?: number | null;
   height?: number | null;
+  /** ISO 639-1 of the text on the image; null for textless artwork. */
+  iso_639_1?: string | null;
+  vote_average?: number | null;
+  vote_count?: number | null;
 }
 
 interface TmdbImages {
@@ -278,15 +282,18 @@ export function mapEpisodeDetails(ep: TmdbEpisode, seasonNumber: number, externa
 
 export function mapImages(images: TmdbImages | undefined, imageBaseUrl: string): ProviderImageRef[] {
   const refs: ProviderImageRef[] = [];
-  for (const p of images?.posters ?? []) {
-    refs.push({ kind: 'poster', url: `${imageBaseUrl}${p.file_path}`, width: p.width ?? null, height: p.height ?? null });
-  }
-  for (const b of images?.backdrops ?? []) {
-    refs.push({ kind: 'backdrop', url: `${imageBaseUrl}${b.file_path}`, width: b.width ?? null, height: b.height ?? null });
-  }
-  for (const l of images?.logos ?? []) {
-    refs.push({ kind: 'logo', url: `${imageBaseUrl}${l.file_path}`, width: l.width ?? null, height: l.height ?? null });
-  }
+  const ref = (kind: ProviderImageRef['kind'], file: TmdbImageFile): ProviderImageRef => ({
+    kind,
+    url: `${imageBaseUrl}${file.file_path}`,
+    width: file.width ?? null,
+    height: file.height ?? null,
+    language: file.iso_639_1 ?? null,
+    voteAverage: file.vote_average ?? null,
+    voteCount: file.vote_count ?? null,
+  });
+  for (const p of images?.posters ?? []) refs.push(ref('poster', p));
+  for (const b of images?.backdrops ?? []) refs.push(ref('backdrop', b));
+  for (const l of images?.logos ?? []) refs.push(ref('logo', l));
   return refs;
 }
 
