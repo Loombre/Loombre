@@ -268,7 +268,8 @@ describe("root boundary module graph contributes no CSS (browser-player-F13)", (
       exists: existsSync,
     });
 
-    expect(scan.visited).toEqual(expect.arrayContaining(presentBoundaries));
+    // `visited` is the walk's forward-slash spelling of every OS path it read.
+    expect(scan.visited).toEqual(expect.arrayContaining(presentBoundaries.map(toPosix)));
     expect(
       scan.css,
       "a root App Router boundary's module graph pulls CSS: Next will emit a boundary CSS " +
