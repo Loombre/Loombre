@@ -34,7 +34,11 @@
      Admin UI (FIX WAVE FX1): the "Stash" row-menu action, gated on a
      library's restricted content class — apps/web/src/components/settings/
      sections/LibrariesSection.tsx (RowMenu entry + the StashModal it
-     opens). The dialog itself, its three tabs, and the GET-on-open /
+     opens; the same file's HiddenLibraryRow puts a direct Stash button on
+     a restricted library listed under "Not visible to you" — the admin
+     Stash routes are existence-scoped, apps/server/src/plugins/
+     admin-stash.service.ts's getLibraryByIdAdmin, so no grant or unlock
+     is needed to connect). The dialog itself, its three tabs, and the GET-on-open /
      explicit-Save shape each tab owns — apps/web/src/components/admin/
      libraries/StashModal.tsx, StashConnectionPanel.tsx (status card +
      verbatim statusDetail + tri-state genre control),
@@ -92,6 +96,16 @@ way that library already has its own name and its own folders (see
 that library's row and choose **Stash** from its **⋯** menu — this option
 only appears for restricted libraries. It opens a window with three tabs:
 **Connection**, **Path mappings**, and **Sync**, covered in turn below.
+
+You don't need to be able to *see* the library first. A restricted
+library only joins your main Libraries list once you hold a grant on it
+and have unlocked restricted content on this device; until then it's
+listed further down the same page, under **Not visible to you**, and that
+row carries a **Stash** button directly. Connecting Stash is server
+configuration rather than viewing, so it never waits for the unlock — you
+can point a freshly created restricted library at your Stash database
+straight away, or connect one you administer for someone else without
+ever holding a grant on it yourself.
 
 [SCREENSHOT: A restricted library's row menu, showing the Stash action]
 

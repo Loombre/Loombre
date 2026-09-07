@@ -374,3 +374,124 @@ describe("LibrariesSection — d3-d9: duplicate library names stay distinguishab
     expect(dialogLabel()).toContain("/srv/media/movies");
   });
 });
+
+// Stash reachability ("the Stash setup UI doesn't seem to exist"): the
+// Stash action lived ONLY on LibraryRow's menu, and a
+// restricted library reaches that row LAST — after the admin has opted in,
+// set a PIN, granted themselves access, and unlocked this device. Until
+// then it sits under "Not visible to you" with a grant button and nothing
+// else, so the one surface that connects Stash was unreachable from a fresh
+// install. The /admin/libraries/{id}/stash-* routes are existence-scoped
+// admin routes (getLibraryByIdAdmin — the same scoping the grant itself
+// rides on), so the hidden row can offer Stash directly; the visible row's
+// menu entry is pinned here too, since nothing covered it before.
+describe("LibrariesSection — Stash is reachable for every restricted library the admin can administer", () => {
+  const STASH_CONNECTION = {
+    libraryId: "lib-r",
+    configured: false,
+    sqlitePath: null,
+    enabled: false,
+    genreTagNames: null,
+    blobsPath: null,
+    status: "never_connected",
+    statusDetail: null,
+    lastSeenSchemaVersion: null,
+    lastConnectedAtMs: null,
+    lastCheckedAtMs: null,
+  };
+
+  const HIDDEN_GENERAL_LIBRARY = {
+    id: "lib-g",
+    name: "someone-elses-movies",
+    mediaKind: "movie",
+    paths: ["/mnt/theirs"],
+    contentClass: "general",
+    createdAtMs: 0,
+    updatedAtMs: 0,
+  };
+
+  function mockScopes(viewer: unknown[], admin: unknown[]): void {
+    apiGetMock.mockImplementation((path: string, init?: unknown) => {
+      if (path === "/libraries") {
+        return Promise.resolve({ items: scopeOf(init) === "admin" ? admin : viewer, nextCursor: null });
+      }
+      if (path === "/admin/libraries/{id}/stash-connection") return Promise.resolve(STASH_CONNECTION);
+      return Promise.reject(new Error(`unexpected apiGet(${path})`));
+    });
+  }
+
+  function stashButtons(): HTMLButtonElement[] {
+    return Array.from(view!.container.querySelectorAll("button")).filter(
+      (b) => (b.textContent ?? "").trim() === "Stash",
+    ) as HTMLButtonElement[];
+  }
+
+  function dialogLabel(): string {
+    const dialog = view!.container.querySelector('[role="dialog"]');
+    if (!dialog) throw new Error("no dialog open");
+    return dialog.getAttribute("aria-label") ?? "";
+  }
+
+  function stashConnectionReads(): unknown[][] {
+    return apiGetMock.mock.calls.filter(([path]) => path === "/admin/libraries/{id}/stash-connection");
+  }
+
+  it("offers Stash in a VISIBLE restricted library's row menu and opens the Stash dialog for that library", async () => {
+    mockScopes([...LIBRARIES, RESTRICTED_LIBRARY], [...LIBRARIES, RESTRICTED_LIBRARY]);
+    await render();
+
+    const trigger = view!.container.querySelector('button[aria-label^="Manage qa-restricted"]');
+    expect(trigger).not.toBeNull();
+    await click(trigger as HTMLButtonElement);
+    await click(buttonFor("Stash"));
+
+    expect(dialogLabel()).toBe("Stash — qa-restricted");
+    expect(stashConnectionReads()).toHaveLength(1);
+    expect(stashConnectionReads()[0]![1]).toEqual({ params: { path: { id: "lib-r" } } });
+  });
+
+  it("never offers Stash on a general library's row menu", async () => {
+    mockScopes(LIBRARIES, LIBRARIES);
+    await render();
+
+    await click(view!.container.querySelector('button[aria-label^="Manage Movies"]') as HTMLButtonElement);
+
+    expect(buttonFor("Provider chain")).toBeTruthy();
+    expect(stashButtons()).toHaveLength(0);
+  });
+
+  it("offers Stash on a 'Not visible to you' restricted row — no grant and no unlock needed — and opens the same dialog", async () => {
+    mockScopes(LIBRARIES, [...LIBRARIES, RESTRICTED_LIBRARY]);
+    await render();
+
+    // The row is still the hidden one: no row menu, the grant still offered.
+    expect(view!.container.querySelector('[aria-label^="Manage qa-restricted"]')).toBeNull();
+    expect(buttonFor("Grant yourself access")).toBeTruthy();
+
+    const stash = stashButtons();
+    expect(stash).toHaveLength(1);
+    await click(stash[0]!);
+
+    expect(dialogLabel()).toBe("Stash — qa-restricted");
+    expect(stashConnectionReads()).toHaveLength(1);
+    expect(stashConnectionReads()[0]![1]).toEqual({ params: { path: { id: "lib-r" } } });
+  });
+
+  it("does not offer Stash on a hidden GENERAL library — only the grant", async () => {
+    mockScopes(LIBRARIES, [...LIBRARIES, HIDDEN_GENERAL_LIBRARY]);
+    await render();
+
+    expect(view!.container.textContent ?? "").toContain("someone-elses-movies");
+    expect(buttonFor("Grant yourself access")).toBeTruthy();
+    expect(stashButtons()).toHaveLength(0);
+  });
+
+  it("tells the admin, in the hidden group's own copy, that Stash can be connected from there without unlocking", async () => {
+    mockScopes(LIBRARIES, [...LIBRARIES, RESTRICTED_LIBRARY]);
+    await render();
+
+    const note = Array.from(view!.container.querySelectorAll("p")).find((p) => (p.textContent ?? "").includes("Not visible to you") || (p.textContent ?? "").includes("not in your own list"));
+    expect(note?.textContent ?? "").toMatch(/Stash/);
+    expect(note?.textContent ?? "").toMatch(/without unlocking/i);
+  });
+});

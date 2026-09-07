@@ -259,7 +259,8 @@ export function AddLibrarySheet({
           {granted ? (
             <p className={styles.note}>
               Access granted. Unlock restricted content to see and manage “{created.name}” here — scanning and
-              its other admin actions live on its row once it is visible.
+              its other admin actions live on its row once it is visible. Its Stash connection does not wait for
+              that: it is offered on its row under “Not visible to you” right away.
             </p>
           ) : (
             // d3-d6: dismissing WITHOUT a grant is now an informed choice —

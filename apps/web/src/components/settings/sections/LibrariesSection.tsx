@@ -34,7 +34,8 @@
 // were unreachable forever. The pane now also reads the ADMINISTRATION-
 // scoped listing (GET /libraries?scope=admin, admin-only) and renders the
 // DIFFERENCE between the two scopes as a separate "Not visible to you"
-// group with the grant attached. The main list above it is untouched: it
+// group with the grant attached (and, for a restricted library, its Stash
+// action — see HiddenLibraryRow). The main list above it is untouched: it
 // is still exactly the viewer-scoped answer, never a merge of the two.
 //
 //   - "state"/"last scan" — Library carries neither field (ground-truthed:
@@ -283,17 +284,30 @@ function LibraryRow({
 
 /** d3-d5: the "Not visible to you" group — the libraries the
  *  administration-scoped listing knows about that the viewer-scoped one
- *  withholds. Deliberately NOT a LibraryRow: none of that row's actions
- *  (scan, provider chain, stash, edit, delete) belong on a library this
- *  admin cannot see the contents of, and its live scan badge would be
- *  meaningless here. The one action offered is the one that ENDS this
- *  state. */
+ *  withholds. Deliberately NOT a LibraryRow: the actions that read or
+ *  change a library's CONTENTS (scan, provider chain, edit, delete) do not
+ *  belong on a library this admin cannot see the contents of, and its
+ *  live scan badge would be meaningless here. The grant is the action
+ *  that ENDS this state.
+ *
+ *  Stash is the one exception. A restricted library reaches the main list
+ *  LAST — after the admin has opted in, set a PIN, granted themselves
+ *  access, and unlocked this device — and an admin connecting Stash for
+ *  someone else's library may never hold a grant at all; with the action
+ *  only on LibraryRow's menu, the Stash setup was unreachable from a fresh
+ *  install. Connecting Stash is server configuration, not viewing: the
+ *  /admin/libraries/{id}/stash-* routes are existence-scoped admin routes
+ *  (getLibraryByIdAdmin — the same scoping the grant itself rides on), so
+ *  this row offers it directly, keyed off the same contentClass check the
+ *  visible row's menu entry uses. */
 function HiddenLibraryRow({
   library,
+  onStash,
   onGrant,
   granting,
 }: {
   library: Library;
+  onStash: () => void;
   onGrant: () => void;
   granting: boolean;
 }): React.JSX.Element {
@@ -310,6 +324,11 @@ function HiddenLibraryRow({
         {library.contentClass === "restricted" && <Tag>restricted</Tag>}
       </div>
       <div className={styles.rowEnd}>
+        {library.contentClass === "restricted" && (
+          <Button type="button" variant="ghost" onClick={onStash}>
+            Stash
+          </Button>
+        )}
         <Button type="button" variant="ghost" onClick={onGrant} disabled={granting}>
           {granting ? "Granting…" : "Grant yourself access"}
         </Button>
@@ -471,9 +490,11 @@ export function LibrariesSection({ heading }: { heading: string | null }): React
           </h2>
           <p className={styles.note}>
             These libraries exist on this server but are not in your own list — either you hold no access grant on
-            them, or they are restricted and this device is locked (the lock in the header). Granting yourself
-            access is gate 4 of docs/PLAN.md §6.4; a restricted library also needs that unlock before it appears
-            above.
+            them, or they are restricted and this device is locked (the lock in the header — it only appears once
+            your profile has a birth date showing you are an adult, you have opted in to restricted content and set
+            a PIN there, and you hold a grant on at least one restricted library). Granting yourself access is gate
+            4 of docs/PLAN.md §6.4; a restricted library also needs that unlock before it appears above. Connecting
+            a restricted library to Stash is server configuration, not viewing — do it from here, without unlocking.
           </p>
           <div className={styles.list}>
             {hiddenFromViewer.map((lib) => (
@@ -481,6 +502,7 @@ export function LibrariesSection({ heading }: { heading: string | null }): React
                 key={lib.id}
                 library={lib}
                 granting={granting === lib.id}
+                onStash={() => setManagingStash(lib)}
                 onGrant={() => void handleGrantSelf(lib)}
               />
             ))}
