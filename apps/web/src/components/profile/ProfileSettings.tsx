@@ -290,6 +290,12 @@ function ProfileSection(): React.JSX.Element {
           onChange={setBirthDate}
           maxDate={maxBirthDate}
         />
+        {/* The age check for restricted content reads this field; without
+            it the Restricted entry never appears, with no other cue (owner
+            report, Linux reference box). Stated here, next to the field. */}
+        <p id="account-birth-date-hint" className={styles.hint}>
+          Optional — except for restricted content, which needs it for the age check.
+        </p>
       </div>
       <div className={styles.actions}>
         {error && (

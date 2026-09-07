@@ -496,6 +496,19 @@ export function LibrariesSection({ heading }: { heading: string | null }): React
         </div>
       )}
 
+      {/* Restricted content has NO discoverable path while any of its
+          gates fail (the sidebar entry and every /restricted route are
+          absent by design, U10) — so the one admin surface that creates
+          restricted libraries spells the gates out. Static on purpose:
+          there is no GET that reports another account's gates, and the
+          admin's own case is covered by the same three lines. */}
+      <p className={styles.explainer} data-testid="restricted-gates-explainer">
+        <strong>Restricted content</strong> stays hidden from an account — no sidebar entry, no link — until all three
+        are true for it: a birth date on its Profile (the age check), restricted content opted in with a PIN (Profile
+        → Restricted content), and a library with content class <em>Restricted</em> that the account is granted access
+        to (Add library → Restricted, then Permissions). That includes your own account.
+      </p>
+
       <button type="button" className={styles.addTile} onClick={() => setAdding(true)}>
         + Add library
       </button>

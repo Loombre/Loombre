@@ -152,6 +152,16 @@ function setTextareaValue(el: HTMLTextAreaElement, value: string): void {
 }
 
 describe("LibrariesSection — LD-5 (owner QA, 2026-08-10): no duplicate heading", () => {
+  it("spells out the three restricted-content gates on this admin surface (the zone has no discoverable path while any gate fails)", async () => {
+    await render();
+    const explainer = view!.container.querySelector('[data-testid="restricted-gates-explainer"]');
+    expect(explainer).not.toBeNull();
+    const text = explainer!.textContent ?? "";
+    expect(text).toContain("birth date");
+    expect(text).toContain("PIN");
+    expect(text).toContain("granted access");
+  });
+
   it("renders exactly one heading, carrying the page title AND the count — no separate 'Libraries · N' sub-heading", async () => {
     await render();
 

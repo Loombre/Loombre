@@ -62,7 +62,7 @@ export function StashModal({ library, onClose }: { library: Library; onClose: ()
   useEffect(reload, [library.id]);
 
   return (
-    <Modal title={`Stash — ${library.name}`} onClose={onClose}>
+    <Modal title={`Stash — ${library.name}`} onClose={onClose} size="wide">
       <div className={styles.wrap}>
         <SegmentedControl options={[...TABS]} defaultValue="Connection" onChange={(v) => setTab(v as Tab)} />
 

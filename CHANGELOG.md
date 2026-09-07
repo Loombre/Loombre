@@ -156,6 +156,15 @@ axis; nothing before `1.0.0-beta.1` was ever released.
   `LOOMBRE_JOBS_SUBTITLE_EXTRACT_CONCURRENCY`, and the existing
   `LOOMBRE_TRANSCODE_WORKER_CONCURRENCY`). Changes apply on the next
   restart. Image jobs previously ran at a fixed two.
+- Web: the Stash setup dialog was clipped by the generic 480 px modal
+  frame (both path fields cut off, the Save button outside the visible
+  dialog, with no visible horizontal scrollbar on overlay-scrollbar
+  desktops). Modals now have a wide variant the Stash dialog uses.
+- Web: restricted content is invisible until three conditions hold for an
+  account, and nothing said so. The Libraries screen now spells them out
+  (birth date, opt-in with PIN, a granted Restricted library), the Profile
+  birth-date field says the age check needs it, and the user guide lists
+  the same three.
 - Settings: **Reset to default** now clears the stored value instead of
   writing the default's current number, so the setting reads "default"
   again and a machine-derived default keeps tracking the machine. New

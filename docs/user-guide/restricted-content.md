@@ -68,10 +68,19 @@ behind a click:
 
 ## Turning this on
 
-If you'd like restricted content available to you and it isn't yet, ask
-whoever administers your Loombre — they'll need to grant you access to the
-specific library, and then you can opt in and set your own PIN from your
-[account settings](account-settings.md).
+Restricted content stays completely hidden — no entry in the sidebar, no
+link anywhere — until all three of these are true for your account:
+
+1. **A birth date on your profile.** The age check reads it; without one
+   the answer is always "no". Set it under **Profile**.
+2. **Opted in, with a PIN.** From your [account settings](account-settings.md)
+   under Restricted content.
+3. **Access to a restricted library.** Whoever administers your Loombre
+   creates a library with the content class *Restricted* and grants you
+   access to it — this applies to administrators' own accounts too.
+
+If you have done your two and still see nothing, the third is the one to
+ask about.
 
 ## Next
 

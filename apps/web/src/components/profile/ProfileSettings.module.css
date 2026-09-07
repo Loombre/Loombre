@@ -117,3 +117,10 @@
 .linkChevron {
   color: var(--color-text-subtle);
 }
+
+/* A one-line field note (the birth-date age-check hint). */
+.hint {
+  margin: var(--space-2xs) 0 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}

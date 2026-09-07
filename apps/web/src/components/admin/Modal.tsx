@@ -17,10 +17,17 @@ export function Modal({
   title,
   onClose,
   children,
+  size = "default",
 }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
+  /** "wide" for panels that need more than the 480px per-field-editor
+   *  frame (the Stash setup: two path inputs, a status card, a Save row —
+   *  measured 668px of content inside a 480px dialog on the Linux
+   *  reference box, Save clipped entirely). The dialog then sizes to
+   *  min(760px, 92vw) and its body scrolls; never a horizontal scrollbar. */
+  size?: "default" | "wide";
 }): React.JSX.Element {
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
@@ -37,7 +44,12 @@ export function Modal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className={`${overlayStyles.dialog} ${styles.dialog}`} role="dialog" aria-modal="true" aria-label={title}>
+      <div
+        className={`${overlayStyles.dialog} ${styles.dialog}${size === "wide" ? ` ${styles.dialogWide}` : ""}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+      >
         <div className={styles.header}>
           <h3 className={styles.title}>{title}</h3>
           <button type="button" className={styles.close} onClick={onClose} aria-label="Close">

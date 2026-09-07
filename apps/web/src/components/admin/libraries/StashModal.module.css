@@ -12,7 +12,11 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
-  min-width: min(620px, 90vw);
+
+  /* Modal's size="wide" (min(760px, 92vw)) is what actually makes room —
+     this floor only keeps the two path inputs readable on a viewport
+     narrower than the wide frame. */
+  min-width: min(620px, 88vw);
 }
 
 .errorText {

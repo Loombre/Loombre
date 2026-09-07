@@ -91,6 +91,12 @@ describe("StashModal", () => {
     view = null;
   });
 
+  it("uses the WIDE modal frame — its two path inputs, status card and Save row were clipped inside the 480px default (Linux reference box)", async () => {
+    view = renderIntoBody(<StashModal library={library()} onClose={() => {}} />);
+    const dialog = view.container.querySelector('[role="dialog"]')!;
+    expect(dialog.className).toMatch(/dialogWide/);
+  });
+
   it("titles the dialog with the library name", async () => {
     view = renderIntoBody(<StashModal library={library()} onClose={() => {}} />);
     await act(async () => {});

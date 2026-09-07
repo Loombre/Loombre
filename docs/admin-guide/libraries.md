@@ -56,6 +56,18 @@ access the same way you'd grant anyone else, so a newly created
 restricted library is invisible to everybody until you do. See
 [Users & permissions](users-permissions.md) for granting access.
 
+### Restricted libraries
+
+A library created with the content class **Restricted** is invisible to
+every account — including yours — until that account meets three
+conditions: a birth date on its Profile, restricted content opted in with a
+PIN, and an explicit grant on the library (**Permissions** in the
+library's **⋯** menu; the Add library dialog offers **Grant myself
+access** when you create one). Nothing in the interface hints at
+restricted content before then, by design; the Libraries screen carries a
+short reminder of the three conditions. See [Users & permissions](users-permissions.md)
+for what a grant does and does not do.
+
 ## What scanning does
 
 Once a library has paths, Loombre scans it — walking through the folder,

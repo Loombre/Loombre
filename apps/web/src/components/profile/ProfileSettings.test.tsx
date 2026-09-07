@@ -249,6 +249,13 @@ describe("ProfileSettings", () => {
     });
   }
 
+  it("the birth-date field says restricted content's age check needs it (the only cue the zone gives)", async () => {
+    await render();
+    const hint = view!.container.querySelector("#account-birth-date-hint");
+    expect(hint?.textContent).toContain("restricted content");
+    expect(hint?.textContent).toContain("age check");
+  });
+
   it("clearing the birth date PATCHes birthDate: null (the contract's null-to-clear)", async () => {
     await render();
     setNativeValue(birthDateInput(), "");

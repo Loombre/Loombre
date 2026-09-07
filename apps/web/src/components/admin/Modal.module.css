@@ -4,8 +4,15 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
-  max-height: 80vh;
-  overflow-y: auto;
+  max-height: 85vh;
+  overflow: hidden auto;
+}
+
+/* Panels wider than the per-field-editor frame (Modal's `size="wide"`):
+   the dialog grows to the content up to the viewport, so nothing inside is
+   clipped behind an invisible horizontal scrollbar. */
+.dialogWide {
+  width: min(760px, 92vw);
 }
 
 .header {
