@@ -130,7 +130,9 @@ describe.runIf(hasFfmpeg)("classifyFfmpegFailure — real vendored ffmpeg", () =
     expect(result.detail!.length).toBeLessThanOrEqual(200);
   });
 
-  it("classifies a chmod-000 (unreadable) input as transcode-input-unreadable", () => {
+  // POSIX mode bits do not deny reads on Windows: chmod 000 leaves the file
+  // readable there and ffmpeg reports the placeholder's content instead.
+  it.skipIf(process.platform === "win32")("classifies a chmod-000 (unreadable) input as transcode-input-unreadable", () => {
     const unreadablePath = join(scratchDir, "unreadable.mkv");
     writeFileSync(unreadablePath, "placeholder");
     chmodSync(unreadablePath, 0o000);

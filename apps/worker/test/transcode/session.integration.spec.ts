@@ -672,11 +672,17 @@ describe.skipIf(!ffmpegAvailable)("transcode session runtime integration (real f
           "the whole 150s file was staged — a copy-shape remux is not produce-ahead capped",
         ).toBeLessThan(8);
 
-        // ...and it is a CAP, not a stall: production keeps moving.
-        await new Promise((r) => setTimeout(r, 2_000));
-        const later = await readRow(sessionId);
-        expect(later.produced_segment!, "the cap stalled production instead of pacing it").toBeGreaterThan(
-          capped.produced_segment!,
+        // ...and it is a CAP, not a stall: production keeps moving. This
+        // window IS time-scaled and polled: it proves progress, not a rate,
+        // and a loaded 3-core runner (the first macOS gate leg lost it at
+        // 0 -> 0 over a fixed 2s) can starve ffmpeg and the 100ms poll
+        // loop for longer than any fixed sleep.
+        await waitFor(
+          async () => {
+            const r = await readRow(sessionId);
+            return r.produced_segment !== null && r.produced_segment > capped.produced_segment! ? r : undefined;
+          },
+          { timeoutMs: 20_000 * TIME_SCALE, label: "the cap stalled production instead of pacing it", diag: () => sessionDiag(raw, sessionId) },
         );
 
         await endPlaybackSession(db, ctx, sessionId, Date.now());
