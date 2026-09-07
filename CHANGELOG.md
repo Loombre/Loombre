@@ -20,6 +20,15 @@ axis; nothing before `1.0.0-beta.1` was ever released.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [1.0.0-beta.3] — 2026-09-07 (pre-release)
+
+The Linux native-install round: everything the openSUSE reference box
+found after beta.2, plus the owner rulings that followed. Betas 1 and 2
+are retired with this release — their downloads and images are removed;
+upgrade in place (migrations 0046-0049 apply on first start).
+
 ### Added
 
 - Linux: a desktop tray controller (`bin/loombre-tray`), the counterpart of

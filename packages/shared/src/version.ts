@@ -5,8 +5,8 @@
 // (dev mode, default) or `pnpm stamp-version --release` (release mode,
 // used by .github/workflows/release.yml before every build-* job).
 
-export const LOOMBRE_VERSION = "1.0.0-beta.2";
+export const LOOMBRE_VERSION = "1.0.0-beta.3";
 export const LOOMBRE_BUILD_MODE: "dev" | "release" = "dev";
-export const LOOMBRE_GIT_SHORTHASH: string | null = "a541123b";
+export const LOOMBRE_GIT_SHORTHASH: string | null = "0395cb16";
 /** "<version>-dev+<shorthash>" in dev builds, exactly "<version>" in release builds — /system/info and `loombre --version` both read this one constant. */
-export const LOOMBRE_VERSION_FULL = "1.0.0-beta.2-dev+a541123b";
+export const LOOMBRE_VERSION_FULL = "1.0.0-beta.3-dev+0395cb16";
