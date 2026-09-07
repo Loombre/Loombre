@@ -93,6 +93,38 @@ Pins **[Library scan speed](/admin-guide/settings-reference#library-scan-speed)*
 
 How many files Loombre examines at once while scanning. Higher is faster but works the machine harder; takes effect on the next scan. When you haven't changed it, Loombre uses half your processor cores (minimum 2).
 
+### `LOOMBRE_JOBS_IMAGE_CONCURRENCY`
+
+Pins **[Image processing at once](/admin-guide/settings-reference#image-processing-at-once)** (`jobs.imageConcurrency`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
+
+How many poster, backdrop and portrait images Loombre processes at the same time. When you haven't changed it, the default is chosen for this machine from its performance tier and processor cores (a quarter of the cores on tier 0, half on tiers 1 and 2, never below 2 — or 4 on tier 2). Higher fills a new library faster but works the machine harder.
+
+- **Technical details:** pg-boss local concurrency of the 'image' consumer; each job renders WebP (+ AVIF when enabled) at three sizes plus blurhash and dominant colour inside worker_threads. Default = max(floor, cores ÷ divisor) with floor/divisor 2/4 (tier 0), 2/2 (tier 1), 4/2 (tier 2). Fixed at consumer registration, hence the restart.
+
+### `LOOMBRE_JOBS_PROBE_CONCURRENCY`
+
+Pins **[File inspections at once](/admin-guide/settings-reference#file-inspections-at-once)** (`jobs.probeConcurrency`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
+
+How many newly found media files Loombre inspects (probes) at the same time after a scan. Defaults to a number chosen for this machine from its performance tier and processor cores, the same way as image processing.
+
+- **Technical details:** pg-boss local concurrency of the 'probe' consumer (one bounded ffprobe run, plus the open-GOP trace scan for hevc/h264, per job). Default = max(floor, cores ÷ divisor) with floor/divisor 2/4 (tier 0), 2/2 (tier 1), 4/2 (tier 2). Fixed at consumer registration, hence the restart.
+
+### `LOOMBRE_JOBS_SUBTITLE_EXTRACT_CONCURRENCY`
+
+Pins **[Subtitle extractions at once](/admin-guide/settings-reference#subtitle-extractions-at-once)** (`jobs.subtitleExtractConcurrency`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
+
+How many subtitle tracks Loombre extracts for playback at the same time. Defaults to a number chosen for this machine from its performance tier and processor cores, the same way as image processing.
+
+- **Technical details:** pg-boss local concurrency of the 'subtitle-extract' consumer (short ffmpeg runs producing segmented WebVTT). Default = max(floor, cores ÷ divisor) with floor/divisor 2/4 (tier 0), 2/2 (tier 1), 4/2 (tier 2). Fixed at consumer registration, hence the restart.
+
+### `LOOMBRE_TRANSCODE_WORKER_CONCURRENCY`
+
+Pins **[Conversion sessions per worker](/admin-guide/settings-reference#conversion-sessions-per-worker)** (`jobs.transcodeConcurrency`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
+
+How many video conversion sessions this worker process supervises at the same time. This is not the conversion limit — that is 'maximum simultaneous conversions' under Video conversion — it only bounds one worker process. Defaults to a number chosen for this machine from its performance tier and processor cores.
+
+- **Technical details:** pg-boss local concurrency of the 'transcode' consumer; admission (transcode.maxSimultaneousTranscodes) is the real cap and this must not be below it. Default = max(floor, cores ÷ divisor) with floor/divisor 4/4 (tier 0), 8/2 (tier 1), 8/2 (tier 2). Fixed at consumer registration, hence the restart.
+
 ### `LOOMBRE_RESTRICTED_ENABLED`
 
 Pins **[Enable restricted content](/admin-guide/settings-reference#enable-restricted-content)** (`restricted.enabled`) to a fixed value — set this and the admin settings screen shows the setting as controlled by the environment, read-only; any value stored from the settings screen is preserved but ignored until the variable is unset again.
@@ -382,7 +414,6 @@ This page covers only registry-backed settings. The operational variables below 
 - `LOOMBRE_TIER` — performance tier 0/1/2 (docs/PLAN.md §9.1); unset means Tier 0 — there is no autodetection — which refuses processor HDR tone-mapping at 1080p and above; set 2 on desktop/server-class hosts.
 - `LOOMBRE_ALLOW_TRANSCODE` — transcode kill-switch.
 - `LOOMBRE_MAX_STREAM_BITRATE` — per-stream bitrate ceiling.
-- `LOOMBRE_TRANSCODE_WORKER_CONCURRENCY` — worker transcode-job concurrency.
 - `LOOMBRE_TRANSCODE_POLL_MS` — worker transcode job-queue poll interval, in milliseconds.
 - `LOOMBRE_SCAN_POLL` — forces the library watcher's polling backend on (`1`) or off (`0`) for every watched path, overriding both automatic rules: network mounts (macOS `/Volumes/<non-boot disk>`) poll, and on macOS so does any library under a privacy-protected folder (Desktop, Documents, Downloads, iCloud Drive, a Photos library) — polling watches with `stat` and never performs the FSEvents open that macOS holds on a consent prompt. It does not lift the protection: a folder that exists but is not yet granted is still listed once at start-up, which holds one libuv threadpool slot until the prompt is answered, so grant Full Disk Access to the runtime binary or keep media outside those folders (see the [macOS install guide](/install/macos)). `0` is the escape hatch for a Mac with that grant in place; `1` for a Linux NFS/CIFS library. See [docs/install/docker.md](/install/docker)'s media-library notes.
 - `LOOMBRE_TMDB_API_KEY` — metadata-provider key (TMDB).

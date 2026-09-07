@@ -31,12 +31,11 @@ export function resolveTranscodeStagingRoot(): string {
  * pile of concurrent ffmpeg children if several are enqueued in a tight
  * window (e.g. a restart replaying a backlog).
  */
-export function resolveTranscodeWorkerConcurrency(): number {
-  const raw = process.env["LOOMBRE_TRANSCODE_WORKER_CONCURRENCY"];
-  if (!raw) return 8;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 8;
-}
+// resolveTranscodeWorkerConcurrency (LOOMBRE_TRANSCODE_WORKER_CONCURRENCY,
+// unset = 8) was replaced on 2026-09-07 by the jobs.transcodeConcurrency
+// setting (packages/shared settings registry: same env var as its pin, a
+// DB row below it, and a tier+cores derived default) — read in
+// apps/worker/src/index.ts's main() through the effective-settings reader.
 
 /** Poll interval for the worker's own per-session control loop (docs/
  *  PLAYBACK.md §9 / binding constraint 1: "polls its own sessions' rows at

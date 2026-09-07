@@ -55,6 +55,7 @@ export type SettingsTier = 0 | 1 | 2;
 export type SettingsCategory =
   | "transcode"
   | "scanner"
+  | "jobs"
   | "images"
   | "restricted"
   | "sessions"
@@ -138,6 +139,17 @@ export interface SettingsRegistryEntry<T = unknown> {
    *  derived-default sentence — the true answer — is the only default
    *  stated (audit fafa47f, AUD-A6b-002; extended per F24-1/F33-6/T04-3). */
   platformDerivedDefault?: boolean;
+  /** The REAL default as a function of the machine (2026-09-07, owner
+   *  direction: job concurrency derives from the hardware tier with the
+   *  core count as the within-tier input, and the UI must show THAT number
+   *  as the default). When present, `registryDefaultForTier` returns this
+   *  instead of `default`/`tierDefaults` whenever the caller supplies a
+   *  DerivedDefaultContext — apps/server's settings service (GET
+   *  /admin/settings + /schema, so "reset to default" targets the derived
+   *  number) and apps/worker's effective-settings reader both do. The
+   *  static `default` stays as the context-free floor (docs generators,
+   *  tests). Pure: no I/O, the caller measures the machine. */
+  deriveDefault?: (ctx: DerivedDefaultContext) => T;
   /** Security review F1: true when this entry's effective/default value
    *  itself EMBEDS a credential (e.g. a connection string with an inline
    *  username:password) rather than merely being sensitive-adjacent
@@ -154,6 +166,33 @@ export interface SettingsRegistryEntry<T = unknown> {
 
 function defineSetting<T>(entry: SettingsRegistryEntry<T>): SettingsRegistryEntry<T> {
   return entry;
+}
+
+/** What `deriveDefault` may look at: the hardware tier (LOOMBRE_TIER) and
+ *  the logical core count (`os.cpus().length`, ≥ 1). */
+export interface DerivedDefaultContext {
+  tier: SettingsTier;
+  cpuCount: number;
+}
+
+/**
+ * The one formula behind every job-concurrency default: a per-tier floor,
+ * and above it a share of the cores — tier 0 (the conservative, unverified
+ * tier) takes a quarter of the cores, tiers 1/2 half. `floors` is
+ * [tier0, tier1, tier2]; `divisor` likewise. Exported so the worker's boot
+ * log and the tests can state the number the UI will show.
+ */
+export function tierCoreConcurrency(ctx: DerivedDefaultContext, floors: readonly [number, number, number], divisors: readonly [number, number, number]): number {
+  const cores = Math.max(1, Math.floor(ctx.cpuCount));
+  return Math.max(floors[ctx.tier], Math.floor(cores / divisors[ctx.tier]));
+}
+
+const JOB_CONCURRENCY_FLOORS: readonly [number, number, number] = [2, 2, 4];
+const JOB_CONCURRENCY_DIVISORS: readonly [number, number, number] = [4, 2, 2];
+const TRANSCODE_CONSUMER_FLOORS: readonly [number, number, number] = [4, 8, 8];
+
+function jobConcurrencyDefault(ctx: DerivedDefaultContext): number {
+  return tierCoreConcurrency(ctx, JOB_CONCURRENCY_FLOORS, JOB_CONCURRENCY_DIVISORS);
 }
 
 // ============================================================================
@@ -573,6 +612,74 @@ const UI_ENTRIES: SettingsRegistryEntry[] = [
       "Hours. Evaluated during scans: a media_files row past the grace window since it was first marked missing is deleted on the next scan of its library.",
     requiresRestart: false,
     scope: "ui",
+  }),
+
+  // ---- jobs (background job concurrency — owner direction 2026-09-07:
+  // tier-derived defaults with the core count as the within-tier input,
+  // every value admin-editable, the derived number shown as the default) ----
+  defineSetting({
+    key: "jobs.imageConcurrency",
+    schema: z.number().int().min(1).max(64),
+    default: 2,
+    deriveDefault: jobConcurrencyDefault,
+    platformDerivedDefault: true,
+    category: "jobs",
+    description:
+      "How many poster, backdrop and portrait images Loombre processes at the same time. When you haven't changed it, the default is chosen for this machine from its performance tier and processor cores (a quarter of the cores on tier 0, half on tiers 1 and 2, never below 2 — or 4 on tier 2). Higher fills a new library faster but works the machine harder.",
+    technicalDetails:
+      "pg-boss local concurrency of the 'image' consumer; each job renders WebP (+ AVIF when enabled) at three sizes plus blurhash and dominant colour inside worker_threads. Default = max(floor, cores ÷ divisor) with floor/divisor 2/4 (tier 0), 2/2 (tier 1), 4/2 (tier 2). Fixed at consumer registration, hence the restart.",
+    requiresRestart: true,
+    scope: "ui",
+    envVar: "LOOMBRE_JOBS_IMAGE_CONCURRENCY",
+    parseEnv: parseEnvPositiveInt,
+  }),
+  defineSetting({
+    key: "jobs.probeConcurrency",
+    schema: z.number().int().min(1).max(64),
+    default: 2,
+    deriveDefault: jobConcurrencyDefault,
+    platformDerivedDefault: true,
+    category: "jobs",
+    description:
+      "How many newly found media files Loombre inspects (probes) at the same time after a scan. Defaults to a number chosen for this machine from its performance tier and processor cores, the same way as image processing.",
+    technicalDetails:
+      "pg-boss local concurrency of the 'probe' consumer (one bounded ffprobe run, plus the open-GOP trace scan for hevc/h264, per job). Default = max(floor, cores ÷ divisor) with floor/divisor 2/4 (tier 0), 2/2 (tier 1), 4/2 (tier 2). Fixed at consumer registration, hence the restart.",
+    requiresRestart: true,
+    scope: "ui",
+    envVar: "LOOMBRE_JOBS_PROBE_CONCURRENCY",
+    parseEnv: parseEnvPositiveInt,
+  }),
+  defineSetting({
+    key: "jobs.subtitleExtractConcurrency",
+    schema: z.number().int().min(1).max(64),
+    default: 2,
+    deriveDefault: jobConcurrencyDefault,
+    platformDerivedDefault: true,
+    category: "jobs",
+    description:
+      "How many subtitle tracks Loombre extracts for playback at the same time. Defaults to a number chosen for this machine from its performance tier and processor cores, the same way as image processing.",
+    technicalDetails:
+      "pg-boss local concurrency of the 'subtitle-extract' consumer (short ffmpeg runs producing segmented WebVTT). Default = max(floor, cores ÷ divisor) with floor/divisor 2/4 (tier 0), 2/2 (tier 1), 4/2 (tier 2). Fixed at consumer registration, hence the restart.",
+    requiresRestart: true,
+    scope: "ui",
+    envVar: "LOOMBRE_JOBS_SUBTITLE_EXTRACT_CONCURRENCY",
+    parseEnv: parseEnvPositiveInt,
+  }),
+  defineSetting({
+    key: "jobs.transcodeConcurrency",
+    schema: z.number().int().min(1).max(64),
+    default: 4,
+    deriveDefault: (ctx) => tierCoreConcurrency(ctx, TRANSCODE_CONSUMER_FLOORS, JOB_CONCURRENCY_DIVISORS),
+    platformDerivedDefault: true,
+    category: "jobs",
+    description:
+      "How many video conversion sessions this worker process supervises at the same time. This is not the conversion limit — that is 'maximum simultaneous conversions' under Video conversion — it only bounds one worker process. Defaults to a number chosen for this machine from its performance tier and processor cores.",
+    technicalDetails:
+      "pg-boss local concurrency of the 'transcode' consumer; admission (transcode.maxSimultaneousTranscodes) is the real cap and this must not be below it. Default = max(floor, cores ÷ divisor) with floor/divisor 4/4 (tier 0), 8/2 (tier 1), 8/2 (tier 2). Fixed at consumer registration, hence the restart.",
+    requiresRestart: true,
+    scope: "ui",
+    envVar: "LOOMBRE_TRANSCODE_WORKER_CONCURRENCY",
+    parseEnv: parseEnvPositiveInt,
   }),
 
   // ---- images ----
@@ -1209,7 +1316,8 @@ export function settingsValueJsonSchema(entry: SettingsRegistryEntry): Record<st
 
 /** Resolves the tier-aware default for one entry — `tierDefaults[tier]` when
  *  present for that tier, else the entry's simple `default`. */
-export function registryDefaultForTier<T>(entry: SettingsRegistryEntry<T>, tier: SettingsTier): T {
+export function registryDefaultForTier<T>(entry: SettingsRegistryEntry<T>, tier: SettingsTier, ctx?: DerivedDefaultContext): T {
+  if (entry.deriveDefault && ctx) return entry.deriveDefault({ ...ctx, tier });
   const tiered = entry.tierDefaults?.[tier];
   return tiered !== undefined ? tiered : entry.default;
 }

@@ -57,6 +57,7 @@ type AdminSettingValue = components["schemas"]["AdminSettingValue"];
 export const CATEGORY_LABELS: Record<string, string> = {
   transcode: "Transcode",
   scanner: "Scanner",
+  jobs: "Background jobs",
   images: "Images",
   restricted: "Restricted content",
   sessions: "Sessions",

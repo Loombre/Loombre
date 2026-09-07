@@ -172,3 +172,33 @@ describe("computeRestartPendingKeys / snapshotRestartSensitiveValues", () => {
     expect(computeRestartPendingKeys(REGISTRY, snapshot, afterColdChange.values)).toEqual(["test.numKnob"]);
   });
 });
+
+describe("deriveDefault entries (jobs.* concurrency)", () => {
+  const DERIVED_ENTRY: SettingsRegistryEntry<number> = {
+    key: "test.derived",
+    schema: z.number().int().min(1).max(64),
+    default: 2,
+    deriveDefault: (ctx) => Math.max(2, Math.floor(ctx.cpuCount / (ctx.tier === 0 ? 4 : 2))),
+    category: "jobs",
+    description: "test",
+    requiresRestart: true,
+    scope: "ui",
+    envVar: "TEST_DERIVED",
+    parseEnv: (raw) => {
+      const n = Number.parseInt(raw, 10);
+      return Number.isFinite(n) ? n : undefined;
+    },
+  };
+
+  it("resolves the machine-derived number as the default when cpuCount is supplied, the static floor otherwise", () => {
+    const withMachine = resolveEffectiveSettings([DERIVED_ENTRY], {}, [], { tier: 2, cpuCount: 20 });
+    expect(withMachine.values["test.derived"]).toMatchObject({ value: 10, source: "default" });
+    const without = resolveEffectiveSettings([DERIVED_ENTRY], {}, [], { tier: 2 });
+    expect(without.values["test.derived"]).toMatchObject({ value: 2, source: "default" });
+  });
+
+  it("an env pin or a DB row still wins over the derived default", () => {
+    expect(resolveEffectiveSettings([DERIVED_ENTRY], { TEST_DERIVED: "3" }, [], { tier: 2, cpuCount: 20 }).values["test.derived"]).toMatchObject({ value: 3, source: "environment" });
+    expect(resolveEffectiveSettings([DERIVED_ENTRY], {}, [{ key: "test.derived", value: 7 }], { tier: 2, cpuCount: 20 }).values["test.derived"]).toMatchObject({ value: 7, source: "database" });
+  });
+});

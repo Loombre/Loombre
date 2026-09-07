@@ -124,6 +124,54 @@ How long a file can be missing before Loombre removes it from your library, in h
 - **Default:** 72
 - **Applies:** immediately — no restart needed.
 
+## Background jobs
+
+How much background work — image processing, file inspection, subtitle extraction, conversion supervision — runs at once. Each default is chosen for this machine from its performance tier and processor cores; the settings screen shows that number, and Reset returns to it.
+
+### Image processing at once
+
+<small>Setting key: `jobs.imageConcurrency`</small>
+
+How many poster, backdrop and portrait images Loombre processes at the same time. When you haven't changed it, the default is chosen for this machine from its performance tier and processor cores (a quarter of the cores on tier 0, half on tiers 1 and 2, never below 2 — or 4 on tier 2). Higher fills a new library faster but works the machine harder.
+
+- **Technical details:** pg-boss local concurrency of the 'image' consumer; each job renders WebP (+ AVIF when enabled) at three sizes plus blurhash and dominant colour inside worker_threads. Default = max(floor, cores ÷ divisor) with floor/divisor 2/4 (tier 0), 2/2 (tier 1), 4/2 (tier 2). Fixed at consumer registration, hence the restart.
+- **Default:** 2
+- **Applies:** after a restart. Saving this shows a reminder banner until the server restarts — Settings → Server → Power has the restart button.
+- **Can be locked:** if `LOOMBRE_JOBS_IMAGE_CONCURRENCY` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+
+### File inspections at once
+
+<small>Setting key: `jobs.probeConcurrency`</small>
+
+How many newly found media files Loombre inspects (probes) at the same time after a scan. Defaults to a number chosen for this machine from its performance tier and processor cores, the same way as image processing.
+
+- **Technical details:** pg-boss local concurrency of the 'probe' consumer (one bounded ffprobe run, plus the open-GOP trace scan for hevc/h264, per job). Default = max(floor, cores ÷ divisor) with floor/divisor 2/4 (tier 0), 2/2 (tier 1), 4/2 (tier 2). Fixed at consumer registration, hence the restart.
+- **Default:** 2
+- **Applies:** after a restart. Saving this shows a reminder banner until the server restarts — Settings → Server → Power has the restart button.
+- **Can be locked:** if `LOOMBRE_JOBS_PROBE_CONCURRENCY` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+
+### Subtitle extractions at once
+
+<small>Setting key: `jobs.subtitleExtractConcurrency`</small>
+
+How many subtitle tracks Loombre extracts for playback at the same time. Defaults to a number chosen for this machine from its performance tier and processor cores, the same way as image processing.
+
+- **Technical details:** pg-boss local concurrency of the 'subtitle-extract' consumer (short ffmpeg runs producing segmented WebVTT). Default = max(floor, cores ÷ divisor) with floor/divisor 2/4 (tier 0), 2/2 (tier 1), 4/2 (tier 2). Fixed at consumer registration, hence the restart.
+- **Default:** 2
+- **Applies:** after a restart. Saving this shows a reminder banner until the server restarts — Settings → Server → Power has the restart button.
+- **Can be locked:** if `LOOMBRE_JOBS_SUBTITLE_EXTRACT_CONCURRENCY` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+
+### Conversion sessions per worker
+
+<small>Setting key: `jobs.transcodeConcurrency`</small>
+
+How many video conversion sessions this worker process supervises at the same time. This is not the conversion limit — that is 'maximum simultaneous conversions' under Video conversion — it only bounds one worker process. Defaults to a number chosen for this machine from its performance tier and processor cores.
+
+- **Technical details:** pg-boss local concurrency of the 'transcode' consumer; admission (transcode.maxSimultaneousTranscodes) is the real cap and this must not be below it. Default = max(floor, cores ÷ divisor) with floor/divisor 4/4 (tier 0), 8/2 (tier 1), 8/2 (tier 2). Fixed at consumer registration, hence the restart.
+- **Default:** 4
+- **Applies:** after a restart. Saving this shows a reminder banner until the server restarts — Settings → Server → Power has the restart button.
+- **Can be locked:** if `LOOMBRE_TRANSCODE_WORKER_CONCURRENCY` is set by whoever installed Loombre, this setting becomes fixed to that value and shows as controlled by the environment here — ask them, or see the [Operator Guide's environment reference](/ops/env-reference).
+
 ## Image quality
 
 Quality and format settings for poster/thumbnail images Loombre generates.

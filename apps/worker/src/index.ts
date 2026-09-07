@@ -20,7 +20,6 @@ import {
   createProcessInspector,
   createTranscodeConsumerHandler,
   reapOrphanedTranscodeSessions,
-  resolveTranscodeWorkerConcurrency,
   terminateAllTranscodeRuns,
 } from "./transcode/index.js";
 import { createSubtitleExtractConsumerHandler } from "./subtitles/index.js";
@@ -28,7 +27,7 @@ import { runScan } from "./scan/scanner.js";
 import { createHashPool, type HashPool } from "./scan/identity/pool.js";
 import { hasUnresponsiveWatcherThread, startWatcher, type WatcherHandle } from "./scan/watcher.js";
 import { bootConsumersBeforeWatchers } from "./boot-order.js";
-import { getWorkerSettingValue, loadWorkerEffectiveSettings, resolveScanConcurrencyFromEffective } from "./settings/effective-settings.js";
+import { getWorkerSettingValue, loadWorkerEffectiveSettings, resolveJobConcurrency, resolveScanConcurrencyFromEffective } from "./settings/effective-settings.js";
 import { runProbe } from "./probe/consumer.js";
 import { createProbeTerminalFailureHook } from "./probe/terminal-failure-hook.js";
 // Imported from the ./probe barrel, not the direct opengop-backfill-consumer.js
@@ -185,13 +184,8 @@ queue.work(
 // ./probe/terminal-failure-hook.ts's header for the full architecture-
 // honest rationale (the scanner never runs ffprobe itself; a terminal
 // probe failure used to be invisible outside the generic jobs ledger).
-queue.work(
-  "probe",
-  async (payload) => {
-    await runProbe({ db }, payload);
-  },
-  { concurrency: cpuDerivedConcurrencyFloor(), onTerminalFailure: createProbeTerminalFailureHook(db) },
-);
+// 'probe' registers in main() after the database is reachable — its
+// concurrency is the jobs.probeConcurrency setting (env > DB > tier+cores).
 
 // Deliverable D: metadata providers behind the registry choke-point
 // (P1.6/P1.7). Providers with missing API keys register but report
@@ -270,7 +264,7 @@ queue.work(
 // utilisation with ~400 jobs queued after a metadata sweep (16 min wall,
 // measured on the Linux reference box). Pipeline work still runs in
 // worker_threads (Tier-0 law), so this only widens the job fan-in.
-queue.work("image", imageConsumerHandler({ db }), { concurrency: cpuDerivedConcurrencyFloor() });
+// 'image' registers in main() — concurrency = jobs.imageConcurrency.
 
 // Phase 3 §11 step 5: hardware capability self-test battery (docs/
 // PLAYBACK.md §8.1). Runs synchronously within the job (the battery itself
@@ -310,11 +304,7 @@ queue.work(
 // 429 at session-CREATE time (apps/worker/src/transcode/index.ts's module
 // header, §2/§8); this cap just bounds how many concurrent ffmpeg
 // children ONE worker process will run.
-queue.work(
-  "transcode",
-  createTranscodeConsumerHandler(db, { workerStartedAtMs: WORKER_STARTED_AT_MS }),
-  { concurrency: resolveTranscodeWorkerConcurrency() },
-);
+// 'transcode' registers in main() — concurrency = jobs.transcodeConcurrency.
 
 // Phase 3 §11 step 6b (Lane B, P3.9(e)): segmented-VTT subtitle side-track
 // extraction (apps/worker/src/subtitles/**) — a small, separate job type
@@ -322,11 +312,7 @@ queue.work(
 // `subtitle.strategy === 'hls-vtt'` (works for direct-play sessions too).
 // Concurrency mirrors 'probe' (short-lived ffmpeg invocations, no
 // throttle/suspend state to manage).
-queue.work(
-  "subtitle-extract",
-  createSubtitleExtractConsumerHandler(db),
-  { concurrency: cpuDerivedConcurrencyFloor() },
-);
+// 'subtitle-extract' registers in main() — concurrency = jobs.subtitleExtractConcurrency.
 
 // Phase 4 lane E: the real data-freedom import consumer (docs/PLAN.md
 // §8.4) — REPLACES the apps/server stub (apps/server/src/common/
@@ -869,6 +855,52 @@ async function main(): Promise<void> {
   } catch (err) {
     console.warn(`worker: provider-enablement boot check failed (will run again next boot): ${err instanceof Error ? err.message : String(err)}`);
   }
+
+  // Job concurrency (owner direction 2026-09-07): the four `jobs.*` settings
+  // — env pin > DB row > a default derived from the hardware tier and the
+  // core count (packages/shared settings registry, one formula shared with
+  // the server so the UI shows the same number). Read HERE, after the
+  // database is reachable (LNX-26), and fixed at registration: pg-boss
+  // sets a consumer's local concurrency once, so these are
+  // requiresRestart:true settings applied by the Power page restart.
+  const bootSettings = await loadWorkerEffectiveSettings(db);
+  const concurrency = {
+    probe: resolveJobConcurrency(bootSettings, "jobs.probeConcurrency"),
+    image: resolveJobConcurrency(bootSettings, "jobs.imageConcurrency"),
+    transcode: resolveJobConcurrency(bootSettings, "jobs.transcodeConcurrency"),
+    subtitleExtract: resolveJobConcurrency(bootSettings, "jobs.subtitleExtractConcurrency"),
+  };
+  console.log(
+    `worker: job concurrency — probe ${concurrency.probe}, image ${concurrency.image}, transcode ${concurrency.transcode}, subtitle-extract ${concurrency.subtitleExtract} (Settings → Advanced → Background jobs)`,
+  );
+  // onTerminalFailure (owner ledger L1, adjudication A-3): once retries are
+  // exhausted, writes an admin-only probe.failed outbox event — see
+  // ./probe/terminal-failure-hook.ts's header.
+  queue.work(
+    "probe",
+    async (payload) => {
+      await runProbe({ db }, payload);
+    },
+    { concurrency: concurrency.probe, onTerminalFailure: createProbeTerminalFailureHook(db) },
+  );
+  // Image ingest pipeline — pre-scaled variants + blurhash, all CPU work in
+  // worker_threads (P1.8 / Tier-0 law); this only widens the job fan-in.
+  queue.work("image", imageConsumerHandler({ db }), { concurrency: concurrency.image });
+  // One job = one playback_sessions row; the handler's promise resolves
+  // only once that session reaches a terminal state (CLAUDE.md invariant
+  // 6). Concurrency is advisory — real admission control is the server's
+  // semaphore + 429 at session create; this bounds one worker process.
+  queue.work(
+    "transcode",
+    createTranscodeConsumerHandler(db, { workerStartedAtMs: WORKER_STARTED_AT_MS }),
+    { concurrency: concurrency.transcode },
+  );
+  // Segmented-VTT subtitle side-track extraction (P3.9(e)).
+  queue.work(
+    "subtitle-extract",
+    createSubtitleExtractConsumerHandler(db),
+    { concurrency: concurrency.subtitleExtract },
+  );
 
   // Assert the consumers ACTUALLY registered before saying so. The ten
   // queue.work() calls at module scope are fire-and-forget, and they run at

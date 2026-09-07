@@ -65,6 +65,11 @@ export const SETTING_TITLES = {
   "remote.cloudflaredPath": "Cloudflare tunnel binary path",
   "remote.tunnelHostname": "Tunnel public hostname",
 
+  "jobs.imageConcurrency": "Image processing at once",
+  "jobs.probeConcurrency": "File inspections at once",
+  "jobs.subtitleExtractConcurrency": "Subtitle extractions at once",
+  "jobs.transcodeConcurrency": "Conversion sessions per worker",
+
   "database.url": "Database connection",
   "http.port": "HTTP port",
   "paths.dataDir": "Data directory",
@@ -85,6 +90,7 @@ export const SETTING_TITLES = {
 export const ADMIN_CATEGORY_TITLES = {
   transcode: { title: "Video conversion & playback quality", blurb: "How Loombre converts video for playback, and how much of it happens at once." },
   scanner: { title: "Library scanning", blurb: "How Loombre watches and scans your library folders." },
+  jobs: { title: "Background jobs", blurb: "How much background work — image processing, file inspection, subtitle extraction, conversion supervision — runs at once. Each default is chosen for this machine from its performance tier and processor cores; the settings screen shows that number, and Reset returns to it." },
   images: { title: "Image quality", blurb: "Quality and format settings for poster/thumbnail images Loombre generates." },
   restricted: { title: "Restricted content", blurb: "Server-wide restricted-content settings — see the User Guide's Restricted content page for what this looks like for someone using the account." },
   sessions: { title: "Playback sessions", blurb: "When an inactive playback session is treated as ended or paused." },
@@ -98,7 +104,7 @@ export const ADMIN_CATEGORY_TITLES = {
   remote: { title: "Remote access", blurb: "Settings for Loombre Remote (embedded WireGuard), the Tunnel path, and the Direct path — the three ways to reach this server from outside your own network." },
 };
 
-export const ADMIN_CATEGORY_ORDER = ["transcode", "scanner", "images", "restricted", "sessions", "updateCheck", "security", "rateLimit", "network", "tls", "mail", "stash", "remote"];
+export const ADMIN_CATEGORY_ORDER = ["transcode", "scanner", "jobs", "images", "restricted", "sessions", "updateCheck", "security", "rateLimit", "network", "tls", "mail", "stash", "remote"];
 
 /** Operator Guide category grouping — env-only entries only. */
 export const ENV_CATEGORY_TITLES = {

@@ -391,8 +391,8 @@ describe("SETTINGS_REGISTRY", () => {
   describe("F5/F6/F11d: scope:'ui' description register", () => {
     const uiEntries = SETTINGS_REGISTRY.filter((e) => e.scope === "ui");
 
-    it("covers all 50 scope:'ui' entries (sanity — keeps this suite honest if the registry grows)", () => {
-      expect(uiEntries.length).toBe(50);
+    it("covers all 54 scope:'ui' entries (sanity — keeps this suite honest if the registry grows)", () => {
+      expect(uiEntries.length).toBe(54);
     });
 
     it("no scope:'ui' description references a repo path (apps/, packages/, scripts/, docs/)", () => {
@@ -561,5 +561,40 @@ describe("SETTINGS_REGISTRY", () => {
         expect(entry.technicalDetails, entry.key).not.toMatch(/\b(A\d{1,2}|AD\d{1,2}|D\d{1,2}|P\d\.\d+)\b/);
       }
     });
+  });
+});
+
+describe("jobs.* concurrency (2026-09-07): tier + cores derived defaults", () => {
+  const cases: Array<[key: string, tier: 0 | 1 | 2, cpuCount: number, expected: number]> = [
+    ["jobs.imageConcurrency", 0, 20, 5], // a quarter of the cores on tier 0
+    ["jobs.imageConcurrency", 0, 4, 2], // never below the tier-0 floor
+    ["jobs.imageConcurrency", 1, 20, 10],
+    ["jobs.imageConcurrency", 2, 20, 10],
+    ["jobs.imageConcurrency", 2, 4, 4], // tier-2 floor
+    ["jobs.probeConcurrency", 2, 20, 10],
+    ["jobs.subtitleExtractConcurrency", 1, 6, 3],
+    ["jobs.transcodeConcurrency", 0, 20, 5],
+    ["jobs.transcodeConcurrency", 0, 8, 4], // tier-0 floor 4
+    ["jobs.transcodeConcurrency", 2, 20, 10],
+    ["jobs.transcodeConcurrency", 2, 8, 8], // tier-2 floor 8
+  ];
+  for (const [key, tier, cpuCount, expected] of cases) {
+    it(`${key} tier ${tier} × ${cpuCount} cores -> ${expected}`, () => {
+      const entry = getSettingsRegistryEntry(key)!;
+      expect(registryDefaultForTier(entry, tier, { tier, cpuCount })).toBe(expected);
+    });
+  }
+
+  it("without a machine context the static floor default stands, and every jobs.* entry is restart-gated, pinnable and bounded 1..64", () => {
+    for (const key of ["jobs.imageConcurrency", "jobs.probeConcurrency", "jobs.subtitleExtractConcurrency", "jobs.transcodeConcurrency"]) {
+      const entry = getSettingsRegistryEntry(key)!;
+      expect(registryDefaultForTier(entry, 2)).toBe(entry.default);
+      expect(entry.requiresRestart).toBe(true);
+      expect(entry.category).toBe("jobs");
+      expect(entry.envVar).toMatch(/^LOOMBRE_/);
+      expect(entry.schema.safeParse(0).success).toBe(false);
+      expect(entry.schema.safeParse(64).success).toBe(true);
+      expect(entry.schema.safeParse(65).success).toBe(false);
+    }
   });
 });

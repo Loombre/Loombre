@@ -227,6 +227,5 @@ export {
 } from "./reaper.js";
 export {
   resolveTranscodeStagingRoot,
-  resolveTranscodeWorkerConcurrency,
   resolveTranscodePollIntervalMs,
 } from "./config.js";

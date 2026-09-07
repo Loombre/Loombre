@@ -144,9 +144,18 @@ axis; nothing before `1.0.0-beta.1` was ever released.
   one title) show their file name.
 - Worker: the provider-enablement check no longer runs before the
   database is reachable (it crashed the worker once per package restart
-  on Linux native installs), image jobs run at the same CPU-derived
-  concurrency as probes instead of a fixed two, and a title's poster and
-  backdrop are queued ahead of its cast portraits.
+  on Linux native installs), and a title's poster and backdrop are queued
+  ahead of its cast portraits.
+- Settings: background job concurrency is now four admin-editable
+  settings under a new **Background jobs** category — image processing,
+  file inspection, subtitle extraction, and conversion sessions per
+  worker. Each default is derived from the machine's performance tier
+  and processor cores and shown as the default in the settings screen
+  (Reset returns to it); each can be pinned by an environment variable
+  (`LOOMBRE_JOBS_IMAGE_CONCURRENCY`, `LOOMBRE_JOBS_PROBE_CONCURRENCY`,
+  `LOOMBRE_JOBS_SUBTITLE_EXTRACT_CONCURRENCY`, and the existing
+  `LOOMBRE_TRANSCODE_WORKER_CONCURRENCY`). Changes apply on the next
+  restart. Image jobs previously ran at a fixed two.
 - Metadata: every TMDB image URL was built without a size segment
   (`https://image.tmdb.org/t/p//<file>` — TMDB's base URL ends at `/t/p/`
   and the default had its `original` stripped), so every poster, backdrop

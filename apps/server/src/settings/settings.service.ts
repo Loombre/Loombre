@@ -35,6 +35,7 @@
 // `secret` flag) — belt-and-braces: even a genuinely-live admin never sees
 // the raw credential over this surface.
 
+import { cpus } from "node:os";
 import { Injectable, type OnApplicationBootstrap } from "@nestjs/common";
 import {
   SETTINGS_REGISTRY,
@@ -226,7 +227,7 @@ export class SettingsService implements OnApplicationBootstrap {
       this.registry,
       process.env,
       rows.map((row) => ({ key: row.key, value: row.value })),
-      { tier },
+      { tier, cpuCount: cpus().length || 1 },
     );
 
     // A4: "unknown rows REPORTED at boot (loud log + admin-notice
@@ -512,7 +513,9 @@ export class SettingsService implements OnApplicationBootstrap {
         scope: entry.scope,
         requiresRestart: entry.requiresRestart,
         ...(entry.envVar !== undefined ? { envVar: entry.envVar } : {}),
-        default: entry.secret ? maskSecretValue(registryDefaultForTier(entry, tier)) : registryDefaultForTier(entry, tier),
+        default: entry.secret
+          ? maskSecretValue(registryDefaultForTier(entry, tier))
+          : registryDefaultForTier(entry, tier, { tier, cpuCount: cpus().length || 1 }),
         valueSchema: settingsValueJsonSchema(entry),
         locked: effective?.locked ?? false,
         ...(effective?.lockedBy !== undefined ? { lockedBy: effective.lockedBy } : {}),

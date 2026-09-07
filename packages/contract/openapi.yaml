@@ -8104,6 +8104,9 @@ components:
       enum:
         - transcode
         - scanner
+        # `jobs` (2026-09-07): background job concurrency — tier+cores
+        # derived defaults, admin-editable (packages/shared settings registry).
+        - jobs
         - images
         - restricted
         - sessions

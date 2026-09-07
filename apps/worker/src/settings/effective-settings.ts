@@ -59,7 +59,7 @@ export async function loadWorkerEffectiveSettings(
     SETTINGS_REGISTRY,
     env,
     rows.map((row) => ({ key: row.key, value: row.value })),
-    { tier },
+    { tier, cpuCount: cpus().length || 1 },
   );
 
   for (const key of result.unknownDbKeys) {
@@ -108,4 +108,14 @@ export function resolveScanConcurrencyFromEffective(result: ResolveEffectiveSett
   }
   const cpuCount = cpus().length || 1;
   return Math.max(2, Math.floor(cpuCount / 2));
+}
+
+/** The four `jobs.*Concurrency` keys (packages/shared settings registry):
+ *  env pin > DB row > the tier+cores derived default, all resolved by the
+ *  shared resolver above — nothing to special-case here, unlike
+ *  scanner.concurrency's older floor override. Clamped to [1, 64] as a
+ *  belt-and-braces guard for the pg-boss registration. */
+export function resolveJobConcurrency(result: ResolveEffectiveSettingsResult, key: `jobs.${string}Concurrency`): number {
+  const value = getWorkerSettingValue<number>(result, key, 2);
+  return Math.min(64, Math.max(1, Math.floor(value)));
 }

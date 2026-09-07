@@ -61,6 +61,10 @@ export interface ResolveEffectiveSettingsOptions {
    *  never reads process.env itself. Defaults to 0 (the conservative tier)
    *  when omitted, matching resolve-policy.ts's own parseEnvTier default. */
   tier?: SettingsTier;
+  /** Logical core count (`os.cpus().length`) for entries with a
+   *  `deriveDefault` — measured by the caller (this module never touches
+   *  `os`). Omitted = those entries fall back to their static `default`. */
+  cpuCount?: number;
 }
 
 export interface ServerSettingRowLike {
@@ -103,8 +107,9 @@ export function resolveEffectiveSettings(
   const notices: SettingsResolutionNotice[] = [];
   const values: Record<string, EffectiveSettingValue> = {};
 
+  const derivedCtx = options.cpuCount !== undefined ? { tier, cpuCount: options.cpuCount } : undefined;
   for (const entry of registry) {
-    const fallbackDefault = registryDefaultForTier(entry, tier);
+    const fallbackDefault = registryDefaultForTier(entry, tier, derivedCtx);
 
     // 1. Env pin — every env-only entry always takes this branch (or falls
     //    to the default branch below when unset); a UI entry takes it only

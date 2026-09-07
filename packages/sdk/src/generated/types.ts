@@ -4335,7 +4335,7 @@ export interface components {
          */
         SettingsScope: "ui" | "env-only";
         /** @enum {string} */
-        SettingsCategory: "transcode" | "scanner" | "images" | "restricted" | "sessions" | "updateCheck" | "security" | "rateLimit" | "database" | "network" | "tls" | "paths" | "ffmpeg" | "stash" | "mail" | "remote";
+        SettingsCategory: "transcode" | "scanner" | "jobs" | "images" | "restricted" | "sessions" | "updateCheck" | "security" | "rateLimit" | "database" | "network" | "tls" | "paths" | "ffmpeg" | "stash" | "mail" | "remote";
         /**
          * @description Closed set of metadata providers with an admin-manageable API key.
          * @enum {string}
