@@ -1087,7 +1087,7 @@ describe('getProgressForItem', () => {
 // system-wide count is not zero by the time this block runs (sequential
 // file execution, same DB, STATE.md's known shared-state convention).
 describe('countActiveTranscodeSessions', () => {
-  it('counts only non-terminal, non-direct-play sessions, system-wide (not ViewerContext-scoped)', async () => {
+  it('counts only non-terminal TRANSCODE-decision sessions, system-wide (not ViewerContext-scoped) — copies never count (owner ruling 2026-09-07)', async () => {
     const baseline = await countActiveTranscodeSessions(db);
 
     const directPlay = await createPlaybackSession(db, adminCtx, {
@@ -1120,11 +1120,12 @@ describe('countActiveTranscodeSessions', () => {
       engineVersion: 'test',
       nowMs: Date.now(),
     });
-    expect(await countActiveTranscodeSessions(db)).toBe(baseline + 2);
-
-    // Ending one drops the count back down.
-    await endPlaybackSession(db, adminCtx, transcodeA!.id, Date.now());
+    // A direct-stream COPY occupies no slot (owner ruling 2026-09-07).
     expect(await countActiveTranscodeSessions(db)).toBe(baseline + 1);
+
+    // Ending the transcode drops the count back down.
+    await endPlaybackSession(db, adminCtx, transcodeA!.id, Date.now());
+    expect(await countActiveTranscodeSessions(db)).toBe(baseline);
 
     await endPlaybackSession(db, casualCtx, transcodeB!.id, Date.now());
     await endPlaybackSession(db, adminCtx, directPlay!.id, Date.now());
@@ -1173,7 +1174,7 @@ describe('evictStalestSuspendedTranscodeSession', () => {
   beforeEach(async () => {
     await rawClient.query(
       "UPDATE playback_sessions SET status = 'ended', updated_at_ms = $1 " +
-        "WHERE status = 'suspended' AND suspended_by_throttle = false AND plan ->> 'decision' != 'direct-play'",
+        "WHERE status = 'suspended' AND plan ->> 'decision' = 'transcode'",
       [Date.now()],
     );
   });
@@ -1218,6 +1219,30 @@ describe('evictStalestSuspendedTranscodeSession', () => {
     const row = await rawClient.query("SELECT status, suspended_by_throttle, last_heartbeat_ms FROM playback_sessions WHERE id = $1", [id]);
     expect(row.rows[0]).toMatchObject({ status: 'suspended', suspended_by_throttle: true });
     expect(Number(row.rows[0].last_heartbeat_ms)).toBe(nowMs - 200_000);
+  });
+
+  it('a THROTTLE-suspended session whose viewer went silent past the hold IS a candidate now (owner ruling 2026-09-07: a paused tab holds its slot for a limited time)', async () => {
+    const nowMs = Date.now();
+    const id = await newSuspendedTranscodeSession({ lastHeartbeatMs: nowMs - 400_000, startedAtMs: nowMs - 600_000, suspendedByThrottle: true });
+    const evicted = await evictStalestSuspendedTranscodeSession(db, { cutoffMs: nowMs - 300_000, nowMs });
+    expect(evicted?.id).toBe(id);
+    expect(evicted?.errorCode).toBe('evicted-for-admission');
+  });
+
+  it('a direct-stream COPY is never a candidate — it holds no slot to reclaim', async () => {
+    const nowMs = Date.now();
+    const session = await createPlaybackSession(db, adminCtx, {
+      itemId: harborLightsItemId,
+      fileId: harborLightsFileId,
+      deviceId: adminDeviceId,
+      plan: { decision: 'direct-stream', reasons: [] },
+      engineVersion: 'test',
+      nowMs: nowMs - 600_000,
+    });
+    await rawClient.query("UPDATE playback_sessions SET status = 'suspended', suspended_by_throttle = false, last_heartbeat_ms = $2 WHERE id = $1", [session!.id, nowMs - 400_000]);
+    const evicted = await evictStalestSuspendedTranscodeSession(db, { cutoffMs: nowMs - 300_000, nowMs });
+    expect(evicted?.id).not.toBe(session!.id);
+    await rawClient.query("UPDATE playback_sessions SET status = 'ended' WHERE id = $1", [session!.id]);
   });
 
   it('returns undefined when no session qualifies', async () => {
@@ -1290,11 +1315,11 @@ describe('evictStalestSuspendedTranscodeSession', () => {
     expect(stillActive.rows[0]?.status).toBe('active');
   });
 
-  it('never evicts a THROTTLE-suspended session (suspended_by_throttle = true) — that encoder is deliberately parked mid-watch, not abandoned', async () => {
+  it('a THROTTLE-suspended session whose viewer still heartbeats is never evicted — the encoder is parked mid-watch, not abandoned (its silent-past-the-hold twin IS a candidate since the 2026-09-07 ruling)', async () => {
     const nowMs = Date.now();
     const cutoffMs = nowMs - 90_000;
     const throttleId = await newSuspendedTranscodeSession({
-      lastHeartbeatMs: nowMs - 500_000,
+      lastHeartbeatMs: nowMs - 5_000,
       startedAtMs: nowMs - 600_000,
       suspendedByThrottle: true,
     });

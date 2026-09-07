@@ -151,3 +151,40 @@ describe("FixMatch — nothing found vs nothing searched (d4-e1)", () => {
     expect(view!.container.textContent).not.toMatch(/no enabled metadata provider/i);
   });
 });
+
+describe("FixMatch — Clear current match (owner ruling 2026-09-07)", () => {
+  it("is two-step: the row offers Clear current match…, a confirm, then POSTs clear-match once", async () => {
+    mount();
+    await deliver({ candidates: [], providersSearched: ["tmdb"] });
+    const buttons = () => Array.from(view!.container.querySelectorAll("button"));
+    const offer = buttons().find((b) => b.textContent?.includes("Clear current match"))!;
+    expect(offer).toBeTruthy();
+    expect(apiPostMock.mock.calls.some(([p]) => p === "/admin/items/{id}/clear-match")).toBe(false);
+    await act(async () => {
+      offer.click();
+    });
+    const confirm = buttons().find((b) => b.textContent === "Clear match")!;
+    expect(confirm).toBeTruthy();
+    expect(view!.container.textContent).toContain("stop matching it automatically");
+    await act(async () => {
+      confirm.click();
+    });
+    await act(async () => {});
+    expect(apiPostMock.mock.calls.filter(([p]) => p === "/admin/items/{id}/clear-match")).toHaveLength(1);
+    expect(apiPostMock).toHaveBeenCalledWith("/admin/items/{id}/clear-match", { params: { path: { id: ITEM_ID } } });
+  });
+
+  it("Keep backs out without a request", async () => {
+    mount();
+    await deliver({ candidates: [], providersSearched: ["tmdb"] });
+    const buttons = () => Array.from(view!.container.querySelectorAll("button"));
+    await act(async () => {
+      buttons().find((b) => b.textContent?.includes("Clear current match"))!.click();
+    });
+    await act(async () => {
+      buttons().find((b) => b.textContent === "Keep")!.click();
+    });
+    expect(apiPostMock.mock.calls.some(([p]) => p === "/admin/items/{id}/clear-match")).toBe(false);
+    expect(buttons().some((b) => b.textContent?.includes("Clear current match"))).toBe(true);
+  });
+});

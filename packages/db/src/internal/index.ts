@@ -33,6 +33,8 @@ export {
   findArtistByName,
   findAlbumByTitle,
   findTrackByNumberOrTitle,
+  setCatalogItemAutoMatch,
+  resetCatalogItemIdentity,
 } from './catalog.js';
 export type { FindMovieInput } from './catalog.js';
 
@@ -58,6 +60,7 @@ export {
   setMediaFileProbeResult,
   deleteMediaFile,
   listMediaFilesForLibrary,
+  listMediaFilesForItem,
   listStaleMissingFiles,
   insertMediaFilePlaceholderForImport,
   hasVideoStreamsNeedingOpenGopBackfill,
@@ -105,6 +108,7 @@ export {
   copyDominantColorToVariants,
   hasOriginalImage,
   getOriginalImageForKind,
+  deleteImagesForEntity,
 } from './images.js';
 
 export type { EventRow, WriteEventInput } from './events.js';
@@ -123,7 +127,9 @@ export type {
   MetadataProvenanceRow,
   UpsertMetadataProvenanceInput,
 } from './provenance.js';
-export { upsertMetadataProvenance, getProvenanceForItem } from './provenance.js';
+export { upsertMetadataProvenance, getProvenanceForItem,
+  deleteProvenanceForItem,
+} from './provenance.js';
 
 export type {
   JobLedgerRow,
@@ -167,6 +173,7 @@ export {
   replaceItemPeople,
   findOrCreateTag,
   replaceItemTags,
+  deleteProviderIdsForItem,
 } from './relations.js';
 
 // Stash SQLite metadata sync (STATE.md K11) — namespaced extension-sandbox

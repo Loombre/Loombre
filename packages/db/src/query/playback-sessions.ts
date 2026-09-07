@@ -1102,7 +1102,14 @@ export async function countActiveTranscodeSessions(db: Kysely<DB>): Promise<numb
     .selectFrom('playback_sessions')
     .select((eb) => eb.fn.countAll<string>().as('count'))
     .where('status', 'in', ['created', 'starting', 'active', 'suspended', 'seeking'])
-    .where(sql<string>`plan ->> 'decision'`, '!=', 'direct-play')
+    // Owner ruling 2026-09-07 (docs/PLAYBACK.md §9 Concurrency): only a
+    // TRANSCODE decision occupies a slot. A direct-stream/remux copy runs an
+    // ffmpeg process too, but it re-encodes nothing — the cap exists to
+    // bound encoder load, and counting copies made a box refuse a
+    // conversion while four paused copies held every slot. Copies are
+    // bounded by the worker's transcode consumer concurrency instead
+    // (jobs.transcodeConcurrency).
+    .where(sql<string>`plan ->> 'decision'`, '=', 'transcode')
     .executeTakeFirst();
   return row ? Number(row.count) : 0;
 }
@@ -1148,10 +1155,18 @@ export async function evictStalestSuspendedTranscodeSession(
   { cutoffMs, nowMs }: { cutoffMs: number; nowMs: number }
 ): Promise<PlaybackSessionRow | undefined> {
   return withTransaction(db, async (trx) => {
+    // Owner ruling 2026-09-07 (docs/PLAYBACK.md §9 Concurrency): a paused
+    // tab holds its slot for a limited time — sessions.pausedSlotHoldMs
+    // (5 min default), which the caller folds into `cutoffMs`. The player
+    // stops heartbeating on pause, so "no heartbeat since the cutoff" IS
+    // the paused (or gone) signal; and the cause of the suspension no
+    // longer matters: a throttle-parked encoder whose viewer paused ten
+    // minutes ago is exactly the slot to hand over. The A5 law still
+    // holds where it matters — an ACTIVE session (one that heartbeats) is
+    // never touched.
     const current = await baseSelect(trx)
       .where('playback_sessions.status', '=', 'suspended')
-      .where('playback_sessions.suspended_by_throttle', '=', false)
-      .where(sql<string>`playback_sessions.plan ->> 'decision'`, '!=', 'direct-play')
+      .where(sql<string>`playback_sessions.plan ->> 'decision'`, '=', 'transcode')
       .where((eb) =>
         eb.or([
           eb.and([

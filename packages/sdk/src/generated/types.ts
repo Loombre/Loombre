@@ -2378,6 +2378,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/items/{id}/clear-match": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Clear a wrong provider match on an enrichable item (admin)
+         * @description Enqueues a `metadata-clear` job: the item's provider match, its provenance, provider-sourced tags/people/images (rows and files) and the provider-filled satellite fields are removed, the title and year go back to what the scanner derives from the first present file's name, and the automatic unmatched sweep skips the item until a candidate is applied with apply-match. Same guarded lookup and 404 posture as apply-match (movie/series/artist/album only).
+         */
+        post: operations["clearItemMatch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/remote/state": {
         parameters: {
             query?: never;
@@ -9218,6 +9240,32 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    clearItemMatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Clear-match job enqueued */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRef"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             default: components["responses"]["Problem"];
         };
     };

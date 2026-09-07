@@ -49,6 +49,7 @@ import {
   upsertMetadataProvenance,
   upsertProviderId,
   upsertSatellite,
+  setCatalogItemAutoMatch,
   withTransaction,
   writeEvent,
 } from '@loombre/db/internal';
@@ -410,6 +411,11 @@ export function metadataConsumerHandler(deps: MetadataConsumerDeps): JobHandler<
         })
       );
       await replaceItemPeople(trx, item.id, peopleInputs);
+
+      // A forced match is the admin's explicit choice — it re-enables the
+      // automatic sweep for this item (migrations/0049; the clear-match
+      // job turns it off).
+      if (payload.forceRef) await setCatalogItemAutoMatch(trx, item.id, true);
 
       if (changedFields.length > 0) {
         await writeEvent(trx, {

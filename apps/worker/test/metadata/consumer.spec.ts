@@ -476,6 +476,9 @@ describe('metadataConsumerHandler', () => {
       .where('item_id', '=', itemId)
       .execute();
     expect(providerIds).toEqual([{ provider: 'tmdb', external_id: '12345' }]);
+    // Migration 0049: a forced match re-enables automatic matching for the item (clear-match turns it off).
+    const flag = await db.selectFrom('catalog_items').select('metadata_auto_match').where('id', '=', itemId).executeTakeFirstOrThrow();
+    expect(flag.metadata_auto_match).toBe(true);
   });
 
   // d4-f3 (backlog #084) SUPERSEDES the original "forceRef against an

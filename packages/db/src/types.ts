@@ -210,6 +210,9 @@ export interface CatalogItemsTable {
   updated_at_ms: number;
   /** GENERATED ALWAYS AS (...) STORED — never insertable/updatable. */
   search_tsv: ColumnType<string, never, never>;
+  /** migrations/0049: false after an admin cleared a wrong match — the
+   *  automatic unmatched sweep skips the item until Fix Match sets it true. */
+  metadata_auto_match: Generated<boolean>;
 }
 
 // ============================================================================
@@ -546,6 +549,9 @@ export interface JobsTable {
 // ============================================================================
 
 /** migrations/0047_metadata_provider_state.sql — see that file's header. */
+/** migrations/0049 — see that file's header. */
+// (column lives on catalog_items; declared in CatalogItemsTable below)
+
 export interface MetadataProviderStateTable {
   provider: string;
   enabled: boolean;

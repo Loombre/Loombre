@@ -68,7 +68,7 @@ import { assemblePlanInput } from "./plan-assembly.js";
 import { UnplayableMediaException } from "./unplayable-media.exception.js";
 import { TranscodeSlotsExhaustedException } from "./transcode-slots-exhausted.exception.js";
 import { transcodeAdmissionGate } from "./transcode-admission.js";
-import { HEARTBEAT_SUSPEND_CUTOFF_MS } from "./session-sweeper.service.js";
+import { HEARTBEAT_SUSPEND_CUTOFF_MS, PAUSED_SLOT_HOLD_MS } from "./session-sweeper.service.js";
 import { toContractPlaybackSession } from "./session-plan.js";
 import { cleanupDirectPlaySubtitleStagingDir } from "./direct-play-subs-cleanup.js";
 
@@ -148,31 +148,37 @@ export class PlaybackSessionsController {
         nowMs: clockNowMs(),
       });
 
-    // Direct-play creates straight through (it occupies no slot); every
-    // other decision goes through the gate, which counts AND inserts inside
-    // ONE critical section — see transcode-admission.ts's header for why a
-    // standalone pre-check here was a check-then-act race that let the cap
-    // be exceeded.
+    // Only a TRANSCODE decision goes through the gate (owner ruling
+    // 2026-09-07, docs/PLAYBACK.md §9): direct-play occupies no slot and a
+    // direct-stream/remux copy re-encodes nothing, so it creates straight
+    // through and is bounded by the worker's transcode consumer
+    // concurrency instead. The gate counts AND inserts inside ONE critical
+    // section — see transcode-admission.ts's header for why a standalone
+    // pre-check here was a check-then-act race that let the cap be
+    // exceeded.
     const admission =
-      planResult.decision === "direct-play"
+      planResult.decision !== "transcode"
         ? ({ admitted: true, created: await create() } as const)
         : await transcodeAdmissionGate.admit({
             cap: planInput.policy.maxSimultaneousTranscodes,
             countActive: () => countActiveTranscodeSessions(this.dbProvider.db),
             create,
-            // SPF-9: one chance to reclaim a slot from a paused-and-
-            // walked-away viewer before refusing this request outright.
-            // Same cutoff the sweeper itself suspends on (sessions.
-            // heartbeatSuspendCutoffMs) — a session isn't a reclaim
-            // candidate until the sweeper itself would already call it
-            // heartbeat-stale.
+            // SPF-9 + owner ruling 2026-09-07: one chance to reclaim a slot
+            // from a viewer who paused (the player stops heartbeating on
+            // pause) or walked away, before refusing this request outright.
+            // A paused tab keeps its slot for sessions.pausedSlotHoldMs
+            // (5 min default); the sweeper's own 90 s cutoff still decides
+            // when the row is SUSPENDED, so the hold can never be shorter
+            // than that.
             reclaim: () => {
               const heartbeatSuspendCutoffMs =
                 (this.settingsService.getEffective("sessions.heartbeatSuspendCutoffMs")?.value as number | undefined) ??
                 HEARTBEAT_SUSPEND_CUTOFF_MS;
+              const pausedSlotHoldMs =
+                (this.settingsService.getEffective("sessions.pausedSlotHoldMs")?.value as number | undefined) ?? PAUSED_SLOT_HOLD_MS;
               const nowMs = clockNowMs();
               return evictStalestSuspendedTranscodeSession(this.dbProvider.db, {
-                cutoffMs: nowMs - heartbeatSuspendCutoffMs,
+                cutoffMs: nowMs - Math.max(pausedSlotHoldMs, heartbeatSuspendCutoffMs),
                 nowMs,
               }).then(Boolean);
             },

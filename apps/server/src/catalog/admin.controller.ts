@@ -596,6 +596,24 @@ export class AdminController {
     );
     return { jobId };
   }
+
+  /** Owner ruling 2026-09-07: clear a wrong provider match. Same guarded
+   *  lookup and 404 posture as apply-match; the reset itself is a worker
+   *  job (packages/jobs MetadataClearJobPayload — the file-name parser and
+   *  the artwork unlinks live there), so this only enqueues. */
+  @Post("admin/items/:id/clear-match")
+  @HttpCode(HttpStatus.ACCEPTED)
+  async clearItemMatch(@Param("id") id: string, @Req() req: AuthenticatedRequest) {
+    await requireAdmin(this.dbProvider.db, req);
+    requireUuidParam(id, "Item not found.", req.originalUrl);
+    const ctx = await resolveViewerRestrictedSurface(this.viewerContextProvider, req);
+    const item = await getEnrichableCatalogItemForAdmin(this.dbProvider.db, ctx, id);
+    if (!item) {
+      throw notFound("Item not found (or not an enrichable type — movie/series/artist/album only).", req.originalUrl);
+    }
+    const jobId = await this.jobQueueProvider.queue.enqueue("metadata-clear", { itemId: id }, { subjectItemId: id });
+    return { jobId };
+  }
 }
 
 const DEFAULT_LOG_TAIL_LINES = 200;

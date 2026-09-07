@@ -65,6 +65,8 @@ export { metadataConsumerHandler, type MetadataConsumerDeps } from './consumer.j
 
 export { metadataSearchConsumerHandler, type MetadataSearchConsumerDeps, type MatchCandidate } from './match-search-consumer.js';
 
+export { metadataClearConsumerHandler, runMetadataClear, sortTitleFor, type MetadataClearConsumerDeps } from './clear-consumer.js';
+
 export {
   metadataRefreshConsumerHandler,
   runMetadataRefresh,

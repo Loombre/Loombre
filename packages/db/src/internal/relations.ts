@@ -43,6 +43,13 @@ export async function upsertProviderId(db: DbOrTx, input: UpsertProviderIdInput)
     .executeTakeFirstOrThrow();
 }
 
+/** Removes every provider match for an item (clear-match): the item is
+ *  "unmatched" again by the Dashboard's own definition (no provider_ids row). */
+export async function deleteProviderIdsForItem(db: DbOrTx, itemId: string): Promise<number> {
+  const result = await db.deleteFrom('provider_ids').where('item_id', '=', itemId).executeTakeFirst();
+  return Number(result.numDeletedRows ?? 0);
+}
+
 export async function getProviderIdsForItem(db: DbOrTx, itemId: string): Promise<ProviderIdRow[]> {
   return db.selectFrom('provider_ids').selectAll().where('item_id', '=', itemId).execute();
 }

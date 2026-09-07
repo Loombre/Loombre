@@ -784,6 +784,22 @@ const UI_ENTRIES: SettingsRegistryEntry[] = [
     scope: "ui",
   }),
 
+  defineSetting({
+    key: "sessions.pausedSlotHoldMs",
+    // Owner ruling 2026-09-07: a paused tab holds its conversion slot for a
+    // limited time. Bounded 1 minute to 1 hour; below the heartbeat
+    // suspend cutoff it simply behaves as that cutoff (a session must be
+    // suspended before it can be reclaimed).
+    schema: z.number().int().min(60_000).max(3_600_000),
+    default: 5 * 60_000,
+    category: "sessions",
+    description: "How long a paused video keeps its conversion slot before someone else may take it. Someone who pauses and comes back within this time continues where they were; after it, a new viewer who needs a slot gets this one and the paused video restarts when played. Enter the time in milliseconds (the default 300000 = 5 minutes).",
+    technicalDetails:
+      "Milliseconds, bounded 60,000 to 3,600,000. The player stops heartbeating on pause, so this is measured from the last heartbeat; admission reclaims the longest-silent suspended transcode session (any suspension cause) once it exceeds max(this, sessions.heartbeatSuspendCutoffMs). Only transcode-decision sessions occupy slots; copies (direct-stream/remux) never do.",
+    requiresRestart: false,
+    scope: "ui",
+  }),
+
   // ---- update check ----
   defineSetting({
     key: "updateCheck.mode",

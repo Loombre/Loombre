@@ -51,6 +51,7 @@ import {
   metadataConsumerHandler,
   metadataSearchConsumerHandler,
   metadataRefreshConsumerHandler,
+  metadataClearConsumerHandler,
   enqueueRefreshForNewlyEnabledProviders,
   createKeyringKeyResolver,
 } from "./metadata/index.js";
@@ -220,6 +221,8 @@ for (const notice of registry.disabledProviders()) {
 // embedded PostgreSQL was listening and its first read (ECONNREFUSED)
 // became a fatal top-level rejection — one crash file per package
 // restart on the Linux reference box (rebuild #10, 2026-09-07).
+
+queue.work("metadata-clear", metadataClearConsumerHandler({ db }), { concurrency: 1 });
 
 queue.work(
   "metadata-refresh",

@@ -4143,6 +4143,32 @@ paths:
         '422': { $ref: '#/components/responses/UnprocessableEntity' }
         default: { $ref: '#/components/responses/Problem' }
 
+  /admin/items/{id}/clear-match:
+    parameters:
+      - $ref: '#/components/parameters/IdPathParam'
+    post:
+      operationId: clearItemMatch
+      tags: [admin]
+      summary: Clear a wrong provider match on an enrichable item (admin)
+      description: >-
+        Enqueues a `metadata-clear` job: the item's provider match, its
+        provenance, provider-sourced tags/people/images (rows and files)
+        and the provider-filled satellite fields are removed, the title and
+        year go back to what the scanner derives from the first present
+        file's name, and the automatic unmatched sweep skips the item until
+        a candidate is applied with apply-match. Same guarded lookup and
+        404 posture as apply-match (movie/series/artist/album only).
+      responses:
+        '202':
+          description: Clear-match job enqueued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JobRef' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Problem' }
+
   # ──────── Remote access — Loombre Remote / Tunnel / Direct (STATE.md
   # "Loombre Remote — embedded WireGuard + three-path wizard + reachability
   # proof + posture card", R1-R11/RG1-RG15) ────────────────────────────────

@@ -113,3 +113,21 @@
   color: var(--color-accent);
   font-size: var(--text-sm);
 }
+
+/* Clear-match row under the candidates (owner ruling 2026-09-07). */
+.clearRow {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-xs);
+  flex-wrap: wrap;
+  margin-top: var(--space-sm);
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.clearText {
+  flex: 1 1 240px;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}

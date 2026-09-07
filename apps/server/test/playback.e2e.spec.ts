@@ -32,11 +32,7 @@ import { NestFactory } from "@nestjs/core";
 import type { INestApplication } from "@nestjs/common";
 import { countActiveTranscodeSessions, createDb, ensureTestDatabase, getUserByUsername } from "@loombre/db";
 import { AppModule } from "../src/app.module.js";
-import {
-  HEARTBEAT_SUSPEND_CUTOFF_MS,
-  PlaybackSessionSweeperService,
-  STALE_SESSION_CUTOFF_MS,
-} from "../src/playback/session-sweeper.service.js";
+import { HEARTBEAT_SUSPEND_CUTOFF_MS, PlaybackSessionSweeperService, STALE_SESSION_CUTOFF_MS, PAUSED_SLOT_HOLD_MS } from "../src/playback/session-sweeper.service.js";
 import { SettingsService } from "../src/settings/settings.service.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -693,7 +689,7 @@ describe("SPF-9 admission-time reclamation — a heartbeat-suspended transcode s
           .set({
             status: "suspended",
             suspended_by_throttle: false,
-            last_heartbeat_ms: Date.now() - HEARTBEAT_SUSPEND_CUTOFF_MS - 5_000,
+            last_heartbeat_ms: Date.now() - PAUSED_SLOT_HOLD_MS - 5_000,
           })
           .where("id", "=", firstId)
           .execute();

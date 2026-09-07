@@ -49,9 +49,13 @@ export async function listRefreshableItems(db: DbOrTx, params: ListRefreshableIt
     .limit(params.limit);
 
   if (params.unmatchedOnly) {
-    query = query.where((eb) =>
-      eb.not(eb.exists(eb.selectFrom('provider_ids').select('provider_ids.id').whereRef('provider_ids.item_id', '=', 'catalog_items.id')))
-    );
+    query = query
+      .where((eb) =>
+        eb.not(eb.exists(eb.selectFrom('provider_ids').select('provider_ids.id').whereRef('provider_ids.item_id', '=', 'catalog_items.id')))
+      )
+      // An admin who cleared a wrong match (migrations/0049) does not want
+      // the sweep to re-pick it; Fix Match turns the flag back on.
+      .where('metadata_auto_match', '=', true);
   }
   if (params.afterId !== null) {
     query = query.where('id', '>', params.afterId);

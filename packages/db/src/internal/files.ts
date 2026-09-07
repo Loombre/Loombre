@@ -215,6 +215,12 @@ export async function deleteMediaFile(db: DbOrTx, fileId: string): Promise<void>
 /** Every media_files row belonging to an item in `libraryId`, regardless of
  *  missing state — the full-scan "which files were not seen this pass"
  *  sweep join target (docs/PLAN.md §8.2, P1.2). */
+/** Every media_files row of one item, id-ordered — the clear-match job
+ *  re-derives the title from the first present file's path. */
+export async function listMediaFilesForItem(db: DbOrTx, itemId: string): Promise<MediaFileRow[]> {
+  return db.selectFrom('media_files').selectAll().where('item_id', '=', itemId).orderBy('id', 'asc').execute();
+}
+
 export async function listMediaFilesForLibrary(db: DbOrTx, libraryId: string): Promise<MediaFileRow[]> {
   return db
     .selectFrom('media_files')

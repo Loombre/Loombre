@@ -91,6 +91,11 @@ embedded tags) to figure out what it is.
   list the Dashboard's unmatched panel shows) and **Refresh metadata**
   (every item, keeping each one's existing match, so a Fix Match choice is
   never replaced). Both run as one job you can follow under Jobs.
+- **A wrong match can be cleared.** Open the title's **Fix match** and
+  choose **Clear current match…** (it asks once more). The provider match,
+  its artwork, cast and overview are removed, the title and year go back
+  to what the file name says, and the automatic matching leaves that
+  title alone until you apply a candidate from the same dialog.
 - **It recognizes renamed or moved files.** If you rename or reorganize a
   file within your library, Loombre matches it to the same file it already
   knew about (by its content, not just its name), so your watch history

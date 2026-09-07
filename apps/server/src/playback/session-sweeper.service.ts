@@ -63,6 +63,11 @@ export const STALE_SESSION_CUTOFF_MS = 15 * 60_000;
  *  STALE_SESSION_CUTOFF_MS's comment immediately above. */
 export const HEARTBEAT_SUSPEND_CUTOFF_MS = 90_000;
 
+/** Registry default for sessions.pausedSlotHoldMs (owner ruling
+ *  2026-09-07): how long a paused tab keeps its transcode slot before
+ *  admission may hand it to a new request. */
+export const PAUSED_SLOT_HOLD_MS = 5 * 60_000;
+
 @Injectable()
 export class PlaybackSessionSweeperService implements OnModuleInit, OnModuleDestroy {
   private timer: NodeJS.Timeout | undefined;

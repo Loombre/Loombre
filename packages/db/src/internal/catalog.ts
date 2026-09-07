@@ -276,6 +276,26 @@ export async function findMovieByTitleYear(
   return query.executeTakeFirst();
 }
 
+/** clear-match / Fix Match: whether the automatic unmatched sweep may
+ *  touch this item again (migrations/0049). */
+export async function setCatalogItemAutoMatch(db: DbOrTx, itemId: string, autoMatch: boolean): Promise<void> {
+  await db.updateTable('catalog_items').set({ metadata_auto_match: autoMatch }).where('id', '=', itemId).execute();
+}
+
+/** Resets the title/sort title/year an enrichment wrote (clear-match) —
+ *  the values a scan would have derived from the file name, supplied by
+ *  the caller (the parser lives in the worker). */
+export async function resetCatalogItemIdentity(
+  db: DbOrTx,
+  input: { itemId: string; title: string; sortTitle: string; year: number | null; nowMs: number }
+): Promise<void> {
+  await db
+    .updateTable('catalog_items')
+    .set({ title: input.title, sort_title: input.sortTitle, year: input.year, community_rating: null, updated_at_ms: input.nowMs })
+    .where('id', '=', input.itemId)
+    .execute();
+}
+
 /** Series identity key: (library, title) — no year component (TV parsing,
  *  unlike movies, does not carry a reliable series-level year). */
 export async function findSeriesByTitle(

@@ -481,6 +481,7 @@ const IMPLEMENTED_NON_PUBLIC_EXPECTATIONS: Record<string, number> = {
   listUnmatchedLibraryItems: 404,
   searchItemMatchCandidates: 404,
   applyItemMatch: 404,
+  clearItemMatch: 404, // same placeholder-id 404 as applyItemMatch
 
   // playback (Phase 3 §11 step 6b: real plan() engine + admission control
   // + HLS/subtitle serving — unimplemented-allowance is now EXACTLY ZERO)

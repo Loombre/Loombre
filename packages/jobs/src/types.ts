@@ -75,6 +75,20 @@ export interface MetadataSearchJobPayload {
  * handler only ENQUEUES 'metadata' jobs (one per item, subjectItemId set)
  * — the provider I/O stays in that consumer.
  */
+/**
+ * Clear a wrong provider match (owner ruling 2026-09-07; POST
+ * /admin/items/{id}/clear-match). The worker owns it because the reset
+ * needs the scanner's file-name parser for the title/year the item goes
+ * back to (apps/worker/src/scan/parse) and unlinks the wrong artwork
+ * files. Effects (apps/worker/src/metadata/clear-consumer.ts): provider
+ * ids, provenance, provider-sourced tags/people/images and the satellite
+ * fields are dropped, title/year re-derived from the first present file,
+ * catalog_items.metadata_auto_match set false, item.updated emitted.
+ */
+export interface MetadataClearJobPayload {
+  itemId: string;
+}
+
 export interface MetadataRefreshJobPayload {
   libraryId: string | null;
   provider: string | null;
@@ -304,6 +318,7 @@ export interface JobPayloads {
   metadata: MetadataJobPayload;
   'metadata-search': MetadataSearchJobPayload;
   'metadata-refresh': MetadataRefreshJobPayload;
+  'metadata-clear': MetadataClearJobPayload;
   import: ImportJobPayload;
   'image-backfill': ImageBackfillJobPayload;
   'opengop-backfill': OpenGopBackfillJobPayload;
@@ -327,6 +342,7 @@ export const JOB_TYPES = [
   'metadata',
   'metadata-search',
   'metadata-refresh',
+  'metadata-clear',
   'import',
   'image-backfill',
   'opengop-backfill',
@@ -409,6 +425,7 @@ export const JOB_QUEUE_OPTIONS: Readonly<Record<JobType, JobQueueOptions>> = {
   // of thousands of inserts; retryLimit 1 because a partial fan-out that
   // reruns only re-enqueues items that are still unmatched.
   'metadata-refresh': { expireInSeconds: LONG_RUNNING_EXPIRE_SECONDS, retryLimit: 1 },
+  'metadata-clear': { expireInSeconds: BOUNDED_EXPIRE_SECONDS, retryLimit: 2 },
   import: { expireInSeconds: LONG_RUNNING_EXPIRE_SECONDS, retryLimit: 2 },
   'image-backfill': { expireInSeconds: BOUNDED_EXPIRE_SECONDS, retryLimit: 2 },
   // Each batch is a handful of bounded (~60-75ms) ffmpeg trace_headers

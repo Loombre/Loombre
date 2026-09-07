@@ -119,6 +119,21 @@ export interface FixMatchProps {
 export function FixMatch({ itemId, itemTitle, open, onClose, onApplied }: FixMatchProps): React.JSX.Element {
   const [state, setState] = useState<SearchState>({ kind: "searching" });
   const [applyingKey, setApplyingKey] = useState<string | null>(null);
+  const [clearState, setClearState] = useState<"idle" | "confirming" | "clearing">("idle");
+
+  async function clearMatch(): Promise<void> {
+    setClearState("clearing");
+    try {
+      await apiPost("/admin/items/{id}/clear-match", { params: { path: { id: itemId } } });
+      showToast(`MATCH CLEARED — ${itemTitle.toUpperCase()} · back to the scanned title; use Fix match to pick the right one`);
+      onApplied();
+      onClose();
+    } catch (err) {
+      showToast(apiErrorCopy(err, "Failed to clear the match."), { variant: "danger" });
+    } finally {
+      setClearState("idle");
+    }
+  }
   const { showToast } = useToast();
   const cancelledRef = useRef(false);
 
@@ -234,6 +249,32 @@ export function FixMatch({ itemId, itemTitle, open, onClose, onApplied }: FixMat
             })}
           </ul>
         )}
+        {/* Owner ruling 2026-09-07: a wrong match can be CLEARED — the item
+            goes back to what the scan saw (title/year from the file name,
+            no provider artwork/cast/overview) and the automatic sweep
+            leaves it alone until a candidate is applied here. Two-step,
+            never a single click: the reset drops real data. */}
+        <div className={styles.clearRow}>
+          {clearState === "idle" && (
+            <Button variant="ghost" onClick={() => setClearState("confirming")} disabled={applyingKey !== null}>
+              Clear current match…
+            </Button>
+          )}
+          {clearState === "confirming" && (
+            <>
+              <span className={styles.clearText}>
+                Remove this item's provider match, artwork, cast and overview, and stop matching it automatically?
+              </span>
+              <Button variant="ghost" onClick={() => setClearState("idle")}>
+                Keep
+              </Button>
+              <Button variant="danger" onClick={() => void clearMatch()}>
+                Clear match
+              </Button>
+            </>
+          )}
+          {clearState === "clearing" && <span className={styles.clearText}>Clearing…</span>}
+        </div>
       </div>
     </SheetOrModal>
   );

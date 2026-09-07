@@ -45,6 +45,14 @@ export async function upsertMetadataProvenance(
     .executeTakeFirstOrThrow();
 }
 
+/** Drops every provenance row for an item — the clear-match job's reset
+ *  (owner ruling 2026-09-07): with no provenance the next enrichment merges
+ *  as if the item had never been matched. */
+export async function deleteProvenanceForItem(db: DbOrTx, itemId: string): Promise<number> {
+  const result = await db.deleteFrom('metadata_provenance').where('item_id', '=', itemId).executeTakeFirst();
+  return Number(result.numDeletedRows ?? 0);
+}
+
 export async function getProvenanceForItem(
   db: DbOrTx,
   itemId: string

@@ -262,6 +262,16 @@ How long Loombre waits after a device goes quiet before pausing its conversion. 
 - **Default:** 90 seconds
 - **Applies:** immediately — no restart needed.
 
+### Paused Slot Hold Ms
+
+<small>Setting key: `sessions.pausedSlotHoldMs`</small>
+
+How long a paused video keeps its conversion slot before someone else may take it. Someone who pauses and comes back within this time continues where they were; after it, a new viewer who needs a slot gets this one and the paused video restarts when played. Enter the time in milliseconds (the default 300000 = 5 minutes).
+
+- **Technical details:** Milliseconds, bounded 60,000 to 3,600,000. The player stops heartbeating on pause, so this is measured from the last heartbeat; admission reclaims the longest-silent suspended transcode session (any suspension cause) once it exceeds max(this, sessions.heartbeatSuspendCutoffMs). Only transcode-decision sessions occupy slots; copies (direct-stream/remux) never do.
+- **Default:** 5 minutes
+- **Applies:** immediately — no restart needed.
+
 ## Update checking
 
 Whether Loombre checks for newer versions. Never installs anything automatically.

@@ -115,6 +115,29 @@ export async function getOriginalImageForKind(
     .executeTakeFirst();
 }
 
+/**
+ * Deletes the image rows for an entity with the given sources (clear-match:
+ * `['provider']` — a wrong match's poster/backdrop/logo, never the folder
+ * art a scan found or an embedded cover) and returns their file paths so
+ * the caller can unlink the files best-effort AFTER the transaction.
+ */
+export async function deleteImagesForEntity(
+  db: DbOrTx,
+  entityType: string,
+  entityId: string,
+  sources: readonly ImagesTable['source'][]
+): Promise<string[]> {
+  if (sources.length === 0) return [];
+  const rows = await db
+    .deleteFrom('images')
+    .where('entity_type', '=', entityType)
+    .where('entity_id', '=', entityId)
+    .where('source', 'in', sources as ImagesTable['source'][])
+    .returning('file_path')
+    .execute();
+  return rows.map((r) => r.file_path);
+}
+
 // ============================================================================
 // One-time dominant_color backfill (P2.11) — worker-only queries backing
 // apps/worker/src/image/backfill-consumer.ts. Only the width-NULL

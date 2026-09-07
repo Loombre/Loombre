@@ -1361,13 +1361,21 @@ State machine: `created → starting → active ⇄ suspended → seeking → ac
 - **Concurrency:** global semaphore = `maxSimultaneousTranscodes`; admission
   beyond it fails the session create with a typed 429 (`transcode-slots-
   exhausted`) — clients fall back to a lower-bitrate direct attempt or queue.
-  Since SPF-9, when the count meets the cap the gate first ends the STALEST
-  heartbeat-suspended transcode session (`status = 'suspended'`,
-  `suspended_by_throttle = false`, no heartbeat for ≥ the 90 s sweeper
-  cutoff — a viewer who paused and left) with
-  `error_code = 'evicted-for-admission'`, re-counts, and only then refuses;
-  active and throttle-suspended sessions are never touched (the A5 law),
-  and direct-play never enters the gate.
+  **Owner rulings 2026-09-07 (supersede the SPF-9 wording):** (1) only a
+  `transcode` decision occupies a slot — direct-play never enters the gate
+  and a direct-stream/remux COPY does not either (it re-encodes nothing;
+  copies are bounded by the worker's transcode consumer concurrency,
+  `jobs.transcodeConcurrency`); (2) a paused tab holds its slot for
+  `sessions.pausedSlotHoldMs` (5 min default). The player stops
+  heartbeating on pause, so when the count meets the cap the gate first
+  ends the longest-silent SUSPENDED transcode session — any suspension
+  cause, throttle-parked included — whose last heartbeat is older than
+  max(`pausedSlotHoldMs`, the 90 s sweeper cutoff), with
+  `error_code = 'evicted-for-admission'`, re-counts, and only then refuses.
+  An ACTIVE (heartbeating) session is never touched — that half of the A5
+  law stands; the old "throttle-suspended sessions are never reclaimed"
+  half is withdrawn, because it let four paused copies hold every slot for
+  hours on the Linux reference box.
 - **Audit:** the serialized plan + engineVersion stored on the session row at
   create; ffmpeg stderr tail (last 4 KB ring) stored on failure. Since
   SPF-7 the worker classifies that tail (pure `packages/shared` classifier:

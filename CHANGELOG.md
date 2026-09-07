@@ -174,6 +174,20 @@ axis; nothing before `1.0.0-beta.1` was ever released.
   (`01/01/1999`, `1/1/1999`, `1999/01/01`, `01.01.1999`, as well as
   `1999-01-01`) and shows an inline message when a value cannot be read
   or is out of range, instead of silently reverting it.
+- Playback: only real conversions count against the simultaneous
+  conversion limit. A stream copy (a file sent as-is but repackaged for
+  streaming) no longer occupies a slot, so paused copies can no longer
+  refuse a conversion.
+- Playback: a paused video keeps its conversion slot for a limited time
+  (new **Playback sessions** setting, 5 minutes by default). After that,
+  a new viewer who needs a slot takes it and the paused video restarts
+  when played. Previously a paused tab whose conversion had been parked
+  held the slot indefinitely.
+- Metadata: a wrong match can be cleared. **Fix match → Clear current
+  match…** removes the provider match, its artwork, cast and overview,
+  returns the title and year to what the file name says, and stops the
+  automatic sweep from re-matching the item until a candidate is applied
+  (new `POST /admin/items/{id}/clear-match`).
 - Settings: **Reset to default** now clears the stored value instead of
   writing the default's current number, so the setting reads "default"
   again and a machine-derived default keeps tracking the machine. New
