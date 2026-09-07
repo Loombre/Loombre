@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -259,10 +260,22 @@ func TestResolveMalformedCases(t *testing.T) {
 	}
 }
 
+// The liveness probe and the group lookup are POSIX (platform_unix.go;
+// platform_other.go stubs them out), and the fallback fakes below match
+// on "/"-joined paths — none of it is meaningful on a Windows host, where
+// the package only has to compile.
+func skipOnWindows(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX process/path semantics — the tray never runs on Windows")
+	}
+}
+
 // End-to-end against a real temp directory, with only the liveness check
 // faked — proves the default seams (os.ReadFile, path joining) are wired
 // the way the injected tests assume.
 func TestResolveAgainstRealFiles(t *testing.T) {
+	skipOnWindows(t)
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, DiscoveryFilename), discoveryJSON(t, 45001, os.Getpid(), LoopbackHost), 0o644); err != nil {
 		t.Fatalf("write discovery: %v", err)
@@ -286,6 +299,7 @@ func TestResolveAgainstRealFiles(t *testing.T) {
 // The real liveness probe: this test's own pid is alive by construction,
 // and a pid of 0 or a negative one never is.
 func TestProcessAliveOnThisProcess(t *testing.T) {
+	skipOnWindows(t)
 	if !processAlive(os.Getpid()) {
 		t.Fatal("this test's own process should read as alive")
 	}
@@ -310,6 +324,7 @@ func TestAvailabilityStrings(t *testing.T) {
 // 0750 data dir, where EACCES must read as "not running" — never as a
 // permissions hint (the old behaviour told the user to join group loombre).
 func TestResolveFallbackPermissionDeniedIsNotRunning(t *testing.T) {
+	skipOnWindows(t)
 	got := Resolve(Options{
 		Dirs: []string{"/run/loombre"},
 		ReadFile: func(name string) ([]byte, error) {
@@ -368,6 +383,7 @@ func TestResolveExistingPrimaryWithoutFileStopsTheSearch(t *testing.T) {
 // With no primary directory at all, the fallback still serves a --no-systemd
 // install whose files ARE readable.
 func TestResolveFallbackReadableWorks(t *testing.T) {
+	skipOnWindows(t)
 	got := Resolve(Options{
 		Dirs: []string{"/run/loombre"},
 		ReadFile: func(name string) ([]byte, error) {

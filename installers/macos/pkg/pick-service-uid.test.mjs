@@ -24,7 +24,16 @@
 //
 // Run: node --test installers/macos/pkg/pick-service-uid.test.mjs
 
-import { test } from "node:test";
+import { test as posixTest } from "node:test";
+
+// Every test here runs a macOS installer shell script under bash and reads
+// POSIX exec bits — nothing a Windows host can do, so the whole file skips
+// there (visibly: the tests still list as skipped).
+const WINDOWS_SKIP = process.platform === "win32" && "macOS pkg shell scripts need a POSIX host (bash, exec bits)";
+const test = WINDOWS_SKIP
+  ? (name, optionsOrFn, maybeFn) =>
+      posixTest(name, { ...(typeof optionsOrFn === "object" ? optionsOrFn : {}), skip: WINDOWS_SKIP }, typeof optionsOrFn === "function" ? optionsOrFn : maybeFn)
+  : posixTest;
 import assert from "node:assert/strict";
 import { existsSync, statSync } from "node:fs";
 import path from "node:path";

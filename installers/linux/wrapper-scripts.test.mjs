@@ -173,7 +173,9 @@ for (const { name, entry } of WRAPPERS) {
       mkdirSync(dataDir, { recursive: true });
 
       const defaulted = runStubbed(dir, wrapperPath, { LOOMBRE_DATA_DIR: dataDir });
-      assert.equal(defaulted.LOOMBRE_TRANSCODE_DIR, path.join(dataDir, "transcode"));
+      // The wrapper appends "/transcode" in bash — on a Windows host (Git Bash) the
+      // data dir keeps its backslashes, so compare the string, not path.join.
+      assert.equal(defaulted.LOOMBRE_TRANSCODE_DIR, `${dataDir}/transcode`);
 
       const explicit = runStubbed(dir, wrapperPath, { LOOMBRE_DATA_DIR: dataDir, LOOMBRE_TRANSCODE_DIR: "/mnt/nvme/loombre-staging" });
       assert.equal(explicit.LOOMBRE_TRANSCODE_DIR, "/mnt/nvme/loombre-staging");
@@ -220,7 +222,7 @@ function groupNameOf(path) {
   return bsd.status === 0 ? bsd.stdout.trim() : "";
 }
 
-test("bin/loombre-server: LOOMBRE_IPC_GROUP defaults to the RUNTIME_DIRECTORY's own group (whatever bin/loombre-ipc-dir-setup made it — the server's chown is then a no-op it is allowed to make); an explicit value wins; unset without a runtime dir", () => {
+test("bin/loombre-server: LOOMBRE_IPC_GROUP defaults to the RUNTIME_DIRECTORY's own group (whatever bin/loombre-ipc-dir-setup made it — the server's chown is then a no-op it is allowed to make); an explicit value wins; unset without a runtime dir", { skip: process.platform === "win32" && "RUNTIME_DIRECTORY is colon-separated (systemd); a drive-letter path cannot express it" }, () => {
   const dir = generate();
   try {
     const wrapperPath = stubExec(dir, "loombre-server", "lib/server/dist/main.js");

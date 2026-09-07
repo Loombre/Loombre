@@ -1421,7 +1421,13 @@ if [ "\${1:-}" = "--remove" ]; then
   fi
   exit 0
 fi
-_dir="\${1:-\${RUNTIME_DIRECTORY%%:*}}"
+_dir="\${1:-}"
+if [ -z "\${_dir}" ]; then
+  # Two steps: bash >= 4 under set -u rejects \${UNSET%%:*} (bash 3.2
+  # tolerates it), so default the variable before trimming it.
+  _dir="\${RUNTIME_DIRECTORY:-}"
+  _dir="\${_dir%%:*}"
+fi
 _owner="\${2:-}"
 if [ -z "\${_dir}" ]; then
   exit 0
