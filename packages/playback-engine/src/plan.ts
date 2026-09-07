@@ -234,7 +234,22 @@ import { buildFfmpegArgs } from "./args/builder.js";
  * IS the C2 regression pin (§7.5's "Matrix churn" paragraph). Matrix
  * 530 -> 536 cases, golden count 41 -> 42.
  */
-export const ENGINE_VERSION = "0.13.0";
+/**
+ * 0.14.0 (2026-09-07, first three-OS CI run of the beta.3 anchor — the
+ * playback matrix is a CI step the local gate did not run until this
+ * change): the 0.13.0 §7 source-height clamp kept ONLY the clamped rung
+ * when the source bitrate sat below the table's lowest rung, and Stage G's
+ * Tier-0 cap could then never remove it (its rescue keeps the pre-filter
+ * ladder's lowest-bitrate rung — the lone clamped 4K/1080p rung). §7 now
+ * keeps the in-height table floor rung beside the clamped one in that
+ * case (`stages/ladder.ts` step (b)); the T0 cap lands on the floor rung
+ * and fires `software-fallback:tier-capped` as it always did. MINOR: a
+ * changed construction rule, a different stored `ladder` for that class
+ * of plans. Matrix: 349/352/376/407/408/449/450/496/497 re-pinned to the
+ * clamp (their 0.13.0 expectations were never re-run), 538/540/541
+ * corrected (541 moves to Tier 2, where the clamp is observable).
+ */
+export const ENGINE_VERSION = "0.14.0";
 
 /**
  * Stage D assembly (docs/PLAYBACK.md §3 Stage D.4, binding interpretation

@@ -1,6 +1,7 @@
 name: transcode — rules (a) and (b) both narrow the same ladder naturally, in combination
 why: >
   Distinct from the single-rule-isolated cases (343-352): here BOTH the source height (720p, drops 2160p/1080p rungs) AND the source bitrate (2Mbps, additionally drops the 720p/3Mbps rung on top of that) narrow the same ladder together, leaving only 480p/360p. Proves the two rules compose correctly as independent conjunctive filters rather than only ever being exercised in isolation. why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`).
+  ENGINE_VERSION 0.13.0/0.14.0 re-pin (docs/PLAYBACK.md §7 source-height clamp, 2026-09-07): the 720p/3M rung — the source's own resolution — is now kept at max(round(1.25 × 2M) = 2.5M, floor 800k) = 2.5M rather than dropped; rule (a) still drops 1080p+ and 480p/360p survive on their own merits.
 
 input:
   media:
@@ -51,6 +52,10 @@ expect:
     - software-fallback:encode
   container: fmp4-hls
   ladder:
+    - heightPx: 720
+      videoBitrateBps: 2500000
+      audioBitrateBps: 160000
+      codec: h264
     - heightPx: 480
       videoBitrateBps: 1500000
       audioBitrateBps: 160000

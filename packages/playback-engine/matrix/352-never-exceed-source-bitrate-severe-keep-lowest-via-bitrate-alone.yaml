@@ -1,5 +1,6 @@
-name: transcode — source bitrate below even the lowest rung forces keep-lowest via rule (b) alone
+name: "transcode — source bitrate below even the lowest rung: the clamped 2160p rung plus the §7 floor rung, then the Tier-0 cap keeps the floor"
 why: >
+  ENGINE_VERSION 0.14.0 (docs/PLAYBACK.md §7, 2026-09-07): the source bitrate is 700,000 — below even 360p/800,000 — so no rung survives rule (b) on its own. The 0.13.0 clamp keeps the 2160p/16M rung at max(round(1.25 × 700k) = 875k, floor 800k) = 875k; 0.14.0 keeps the in-height table floor (360p/800k) beside it, because Stage G's Tier-0 cap (source 2160 ≥ 1080, full-software) otherwise rescued the LONE clamped 4K rung — a Tier-0 box software-encoding 2160p at 875 kbps. With the floor present the cap keeps 360p/800k and fires `software-fallback:tier-capped` (the post-cap ladder differs). Original case text follows.
   Rule (e) triggered by rule (b) alone (distinct from 341/342, which triggered it via device/network caps): source bitrate is 700,000 — below even the 360p/800,000 rung — so EVERY rung is dropped on bitrate grounds (height/network/device are all generous/irrelevant here). Rule (e) keeps exactly the table's lowest-bitrate rung despite it still nominally exceeding the source's own bitrate. why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`).
 
 input:
@@ -49,6 +50,7 @@ expect:
   reasons:
     - video-interlaced
     - software-fallback:encode
+    - software-fallback:tier-capped
   container: fmp4-hls
   ladder:
     - heightPx: 360

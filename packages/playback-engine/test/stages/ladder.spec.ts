@@ -318,6 +318,30 @@ describe("buildLadder: rule (b) — never exceed source bitrate", () => {
     ]);
   });
 
+  it("sub-floor source bitrate (0.14.0): the clamped source-height rung is joined by the table floor rung, so a later Tier-0 cap has a sub-480p rung to keep", () => {
+    // 2160p at 700 kbps sits below even 360p/0.8M: no rung survives rule
+    // (b) on its own merits. The clamp keeps 2160p at max(round(1.25 ×
+    // 700k) = 875k, floor 800k) = 875k; 0.13.0 stopped there, and Stage G's
+    // Tier-0 cap could not remove that lone 4K rung (its rescue keeps the
+    // pre-filter ladder's lowest-bitrate rung — which WAS the 4K rung).
+    const media = makeMedia([makeVideoStream({ height: 2160, width: 3840, bitrateBps: 700_000 })], {
+      overallBitrateBps: 700_000,
+    });
+    const ladder = buildLadder(media, makeDevice(), makeNetwork(), makePolicy(), CAPS_SOFTWARE_ONLY, 0).ladder;
+    expect(ladder).toEqual([
+      { heightPx: 2160, videoBitrateBps: 875_000, audioBitrateBps: 384_000, codec: "hevc" },
+      { heightPx: 360, videoBitrateBps: 800_000, audioBitrateBps: 160_000, codec: "h264" },
+    ]);
+  });
+
+  it("sub-floor source bitrate with a single in-height rung: the clamped rung stands alone (no duplicate floor)", () => {
+    const media = makeMedia([makeVideoStream({ height: 360, width: 640, bitrateBps: 300_000 })], {
+      overallBitrateBps: 300_000,
+    });
+    const ladder = buildLadder(media, makeDevice(), makeNetwork(), makePolicy(), CAPS_SOFTWARE_ONLY, 0).ladder;
+    expect(ladder).toEqual([{ heightPx: 360, videoBitrateBps: 800_000, audioBitrateBps: 160_000, codec: "h264" }]);
+  });
+
   it("exact-boundary bitrate (source bitrate === a rung's videoBitrateBps) keeps that rung — strict >", () => {
     const media = makeMedia([makeVideoStream({ height: 2160, width: 3840, bitrateBps: 4_000_000 })], {
       overallBitrateBps: 4_000_000,

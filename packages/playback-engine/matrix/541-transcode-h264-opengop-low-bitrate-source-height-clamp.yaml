@@ -9,8 +9,11 @@ why: >
   its lowest-bitrate row, 1080p/4M here) with its bitrate lowered to
   min(own, max(round(1.25 × 930000) = 1162500, table floor 800000)); the
   other over-bitrate rungs (1080p/8M, 720p/3M, 480p/1.5M) are dropped as
-  before and 360p/0.8M survives on its own merits. Two rungs, so the Tier-0
-  advertised cap (§7.5) has nothing to trim.
+  before and 360p/0.8M survives on its own merits. Tier 2 (policies.t2-default,
+  the reference box's LOOMBRE_TIER=2), because on Tier 0 §8.3's cap would
+  land this full-software route back on 360p regardless (see 352) — the
+  clamp is observable only above Tier 0. caps.software-only routes the
+  transcode to software: `software-fallback:encode` closes the reason list.
 
 input:
   media:
@@ -49,7 +52,7 @@ input:
   network:
     fixture: networks.local
   policy:
-    fixture: policies.t0-default
+    fixture: policies.t2-default
   caps:
     fixture: caps.software-only
   selection:
@@ -63,7 +66,8 @@ expect:
   reasons:
     - container-not-direct-playable
     - video-open-gop-copy-unsafe
-  container: fmp4-hls
+    - software-fallback:encode
+  container: ts-hls
   video:
     action: transcode
   ladder:

@@ -1,6 +1,7 @@
 name: transcode — comparator interpretation, stream.bitrateBps null falls back to media.overallBitrateBps
 why: >
   §7 construction rule (b)'s comparator: "stream.bitrateBps ?? media.overallBitrateBps" (binding interpretation, reported per this step's instructions). Here the SELECTED video stream's own bitrateBps is null, so the ladder must be built against media.overallBitrateBps (2Mbps) instead — dropping the 16/8/4/3Mbps rungs, keeping 480p/360p. why (Phase 3 §11 step 3, Stage G arrival, STATE.md P3.2 regression law): this case's caps fixture has no hardware backend covering this route, so Stage G now routes full software (`software-fallback:encode`).
+  ENGINE_VERSION 0.13.0/0.14.0 re-pin (docs/PLAYBACK.md §7 source-height clamp, 2026-09-07): the 2160p/16M rung is now KEPT at max(round(1.25 × 2M) = 2.5M, floor 800k) = 2.5M instead of dropped, so Stage G's Tier-0 cap (source 2160 ≥ 1080, full-software route) now has something to remove — the final ladder is the same 480p/360p pair, but `software-fallback:tier-capped` fires because the post-cap ladder differs from the pre-cap one.
 
 input:
   media:
@@ -49,6 +50,7 @@ expect:
   reasons:
     - video-interlaced
     - software-fallback:encode
+    - software-fallback:tier-capped
   container: fmp4-hls
   ladder:
     - heightPx: 480

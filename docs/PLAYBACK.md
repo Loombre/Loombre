@@ -635,7 +635,13 @@ forced transcode (open-GOP copy refusal, tone-map, burn-in) of a
 low-bitrate source must not lose resolution it never needed to lose — a
 1080p source at 0.93 Mbps used to come out as a lone 360p rung. 1.25× is
 re-encode headroom; the table floor stops a tiny source from producing a
-nonsensical high-resolution rung. Network and device caps still apply to
+nonsensical high-resolution rung. **When no rung survives the bitrate
+rule on its own (the source sits below the table's lowest rung), the
+in-height table's lowest-bitrate rung is kept beside the clamped one
+(ENGINE_VERSION 0.14.0)** — the floor the rule's "keep at least the
+lowest rung" clause always provided, so §8.3's Tier-0 cap has a sub-480p
+rung to land on instead of rescuing the lone clamped rung. Network and
+device caps still apply to
 the clamped value; drop rungs above `network.maxBitrateBps` (keep at least the lowest rung);
 the master playlist lists the ADVERTISED rung set (§7.5 — all surviving
 rungs on Tier 1+, the variant-capped subset on Tier 0); **each rung is a

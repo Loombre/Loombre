@@ -5,7 +5,7 @@ why: 'Pins stages/hardware.ts binding interpretation 3''s amf/d3d11va branch (pr
   backend — even one declaring a verified toneMap method — is treated as never able to tone-map. amf covers
   decode+encode for this route yet both rule (i) and (ii) fall through on method resolution; rule (iii)
   software + ''always'' CPU policy yields cpu-zscale. Reasons [hdr-tone-map-required, software-fallback:encode].
-  Deliberate future-proof exception: hdr10 vs SDR.'
+  Deliberate future-proof exception: hdr10 vs SDR. ENGINE_VERSION 0.13.0/0.14.0 re-pin (docs/PLAYBACK.md §7 source-height clamp, 2026-09-07): the 1080p/8M rung is now kept at max(round(1.25 × 5M) = 6.25M, floor) = 6.25M (384k audio row) — under the 20 Mbps network cap, and this route never tier-caps.'
 input:
   media:
     fileId: file-450
@@ -57,6 +57,10 @@ expect:
   - hdr-tone-map-required
   - software-fallback:encode
   ladder:
+  - heightPx: 1080
+    videoBitrateBps: 6250000
+    audioBitrateBps: 384000
+    codec: h264
   - heightPx: 1080
     videoBitrateBps: 4000000
     audioBitrateBps: 160000

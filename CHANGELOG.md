@@ -146,7 +146,10 @@ upgrade in place (migrations 0046-0049 apply on first start).
 - Playback: a forced conversion of a low-bitrate title no longer drops to
   the smallest quality level. The level at the title's own resolution is
   kept with its bitrate lowered to fit the source instead of being removed
-  (a 1080p title at 0.9 Mbps came out as 360p). ENGINE_VERSION 0.13.0.
+  (a 1080p title at 0.9 Mbps came out as 360p). When the source sits below
+  even the smallest level, that smallest level is kept too, so a Tier-0
+  server still falls back to it rather than encoding the full-resolution
+  level in software. ENGINE_VERSION 0.14.0.
 - Player: switching versions no longer races the previous session for a
   conversion slot — the old session is ended before the new one is
   requested. Version entries that would read identically (two parts of

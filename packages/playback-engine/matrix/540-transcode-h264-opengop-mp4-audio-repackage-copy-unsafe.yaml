@@ -3,7 +3,7 @@ why: >
   The divergence case the HEVC rule's Finding D fix was about, applied to
   Stage B′: Stage A finds the mp4 direct-playable, but Stage D must
   transcode the truehd track (devices.constrained-tv declares aac only, no
-  passthrough), which repackages the whole delivery into fmp4-hls — and a
+  passthrough), which repackages the whole delivery into ts-hls (the fixture is ts-only) — and a
   segmented copy of an open-GOP h264 stream is exactly what Stage B′
   refuses, regardless of WHICH stage caused the segmentation. Had the rule
   been gated on Stage A's own verdict (as the HEVC rule briefly was), this
@@ -11,6 +11,7 @@ why: >
   non-independent segments. Expected: decision transcode; Stage D's
   audio-codec-unsupported first (stage order), then Stage B′'s
   video-open-gop-copy-unsafe; video.action transcode, not copy.
+  Stage D also reports `audio-atmos-lost` for the TrueHD/Atmos track it re-encodes (case 004's rule), and Stage G (never re-run when this case was written) adds the software route and §8.3's Tier-0 cap on this 1080p source: `software-fallback:encode`, `software-fallback:tier-capped`.
 input:
   media:
     fileId: file-540
@@ -61,7 +62,10 @@ expect:
   decision: transcode
   reasons:
     - audio-codec-unsupported
+    - audio-atmos-lost
     - video-open-gop-copy-unsafe
-  container: fmp4-hls
+    - software-fallback:encode
+    - software-fallback:tier-capped
+  container: ts-hls
   video:
     action: transcode

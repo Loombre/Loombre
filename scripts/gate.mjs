@@ -4,15 +4,15 @@
  * Ordered CI gate runner (CLAUDE.md: `pnpm gate` / `pnpm gate:full`):
  *   codegen -> sdk-drift -> version-stamp -> oasdiff -> depcruise
  *   -> runtime-imports -> license-check -> go-licenses-check -> dep-audit
- *   -> lint -> typecheck -> test -> installers-test -> scripts-test
- *   -> db:migrate-check -> grep-gates -> docs-build
+ *   -> lint -> typecheck -> test -> playback-matrix -> installers-test
+ *   -> scripts-test -> db:migrate-check -> grep-gates -> docs-build
  *   -> [gate:full only] web-build-budget
  *
  * Modes (L4, STATE.md ledger item "consider adding the web production
  * build ... to `pnpm gate`" — closed by adding a mode instead of changing
  * the default):
  *   `node scripts/gate.mjs`      (no arg — FAST, the CLAUDE.md inner-loop
- *     default): the 17 steps above, unchanged behavior and unchanged speed.
+ *     default): the 18 steps above, unchanged behavior and unchanged speed.
  *     Full mode APPENDS to the `steps` array below rather than editing it
  *     in place, specifically so a reviewer can diff the array itself and
  *     see no step was silently lost or reordered. The array is the truth,
@@ -22,7 +22,7 @@
  *     count as "N steps" so that check keeps seeing it.
  *   `node scripts/gate.mjs full` (FULL — what CI's `pnpm gate:full` runs,
  *     and what CLAUDE.md's working agreements call for before any
- *     push/PR): the same 17 steps, plus a final `web-build-budget`
+ *     push/PR): the same 18 steps, plus a final `web-build-budget`
  *     (`pnpm run perf:web-budget`) — builds apps/web's workspace
  *     dependency closure, builds apps/web itself for production, boots it,
  *     and asserts the /browse route's first-load JS gzip size against the
@@ -122,7 +122,7 @@
  * 10): `node scripts/docs/build.mjs` — VitePress site build + the
  * `redocly build-docs` API reference, wired as the LAST of the 17 fixed
  * steps (full mode's web-build-budget, when present, runs after it).
- * Deliberately last among those 17 steps: it's cheapest to reach only once
+ * Deliberately last among those 18 steps: it's cheapest to reach only once
  * everything earlier (codegen through grep-gates) has already confirmed
  * the rest of the repo is consistent, and a docs-only PR still gets full
  * gate coverage before this step runs. A broken docs build (bad Markdown
@@ -174,6 +174,10 @@ const steps = [
   { name: "lint", run: () => runCommand("pnpm", ["run", "lint"]) },
   { name: "typecheck", run: () => runCommand("pnpm", ["run", "typecheck"]) },
   { name: "test", run: () => runCommand("pnpm", ["run", "test"]) },
+  // packages/playback-engine's matrix runs on its own vitest config, which
+  // `turbo run test` never loads; CI ran it as a separate step and the
+  // local gate did not, so twelve red cases reached a release anchor.
+  { name: "playback-matrix", run: () => runCommand("pnpm", ["run", "test:matrix"]) },
   { name: "installers-test", run: () => runCommand("pnpm", ["run", "installers:test"]) },
   { name: "scripts-test", run: () => runCommand("pnpm", ["run", "scripts:test"]) },
   { name: "db:migrate-check", run: () => runCommand("pnpm", ["run", "db:migrate-check"]) },

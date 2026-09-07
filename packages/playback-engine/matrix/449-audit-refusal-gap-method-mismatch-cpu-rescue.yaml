@@ -5,7 +5,7 @@ why: 'Contrast control for 447/448: with t1-cpu-tonemap (allowToneMapCpu ''alway
   (cpu-zscale, unit-unassertable by this schema, verified by probe and documented in the audit report)
   and the reason list is byte-identical to 448''s, proving the reason surface CANNOT distinguish the method-resolved
   and method-unresolved software routes (part of the same audit finding: §4 has no code for ''tone-map
-  required but no method resolved''). Deliberate future-proof exception: hdr10 vs SDR.'
+  required but no method resolved''). Deliberate future-proof exception: hdr10 vs SDR. ENGINE_VERSION 0.13.0/0.14.0 re-pin (docs/PLAYBACK.md §7 source-height clamp, 2026-09-07): the 1080p/8M rung is now kept at max(round(1.25 × 5M) = 6.25M, floor) = 6.25M (384k audio row) — under the 20 Mbps network cap, and this route never tier-caps.'
 input:
   media:
     fileId: file-449
@@ -57,6 +57,10 @@ expect:
   - hdr-tone-map-required
   - software-fallback:encode
   ladder:
+  - heightPx: 1080
+    videoBitrateBps: 6250000
+    audioBitrateBps: 384000
+    codec: h264
   - heightPx: 1080
     videoBitrateBps: 4000000
     audioBitrateBps: 160000

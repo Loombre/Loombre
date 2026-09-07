@@ -37,6 +37,10 @@ const read = (rel) => readFileSync(path.join(REPO_ROOT, rel), "utf8");
 const OUT_OF_WORKSPACE_SUITES = [
   { tree: "installers/", script: "installers:test", step: "installers-test" },
   { tree: "scripts/", script: "scripts:test", step: "scripts-test" },
+  // Inside the workspace, but on its own vitest config that `turbo run test`
+  // never loads — twelve matrix cases went red for a whole run (beta.3's
+  // first three-OS CI) while every local gate stayed green.
+  { tree: "packages/playback-engine/matrix/", script: "test:matrix", step: "playback-matrix" },
 ];
 
 /** scripts/gate.mjs's fast-step array — the same parse docs-drift.test.mjs

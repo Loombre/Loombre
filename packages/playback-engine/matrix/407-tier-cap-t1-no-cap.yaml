@@ -1,6 +1,7 @@
 name: "transcode — T1 + software-only + a 1080p+ source: NO tier cap (tier gate is T0-only)"
 why: >
   Same hevc-vs-constrained-tv codec-unsupported shape as case 405 (1080p source), but policy is tiergated-t1 (tier 1, not 0) -> docs/PLAYBACK.md §8.3's tier cap ('T0 full-software transcode...') never fires at tier 1. reasons carries software-fallback:encode WITHOUT tier-capped, and the surviving ladder keeps its full pre-cap shape ([1080p/4M,720p/3M,480p/1.5M,360p/0.8M], pinned exactly).
+  ENGINE_VERSION 0.13.0/0.14.0 re-pin (docs/PLAYBACK.md §7 source-height clamp, 2026-09-07): the 1080p/8M rung (greatest in-height row over the source bitrate) is now kept at max(round(1.25 × 5.5M) = 6.875M, floor) = 6.875M with its own 384k audio row; no tier cap at this tier, so the ladder is five rungs.
 
 input:
   media:
@@ -50,6 +51,10 @@ expect:
     - video-codec-unsupported
     - software-fallback:encode
   ladder:
+    - heightPx: 1080
+      videoBitrateBps: 6875000
+      audioBitrateBps: 384000
+      codec: h264
     - heightPx: 1080
       videoBitrateBps: 4000000
       audioBitrateBps: 160000

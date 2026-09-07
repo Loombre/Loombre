@@ -7,13 +7,14 @@ why: >
   segments begin on non-IDR I-frames and a decoder (re)starting there shows
   the missing references as blocking. devices.constrained-tv declares
   directPlayContainers:[mp4] only, so Stage A alone reaches direct-stream
-  with container-not-direct-playable (fmp4-hls); Stage B's rules 1-4 find
+  with container-not-direct-playable (ts-hls — the fixture is ts-only); Stage B's rules 1-4 find
   nothing (high@4.1 1080p24 8-bit is within the entry) and would have
   copied. Stage B′ sees the provisional container is segmented and
   escalates: decision transcode, video-open-gop-copy-unsafe appended after
   every A-F reason. Case 539 is the direct-play counterpart (mp4, nothing
   repackaged, no reason); case 540 proves the "repackaged for an UNRELATED
   reason" path.
+  Stage G (never re-run when this case was written): caps.software-only routes the escalated transcode to software (`software-fallback:encode`), and the 1080p source on policies.t0-default's full-software route meets §8.3's Tier-0 cap — the 8M/4M/3M rungs go, 480p/360p stay, `software-fallback:tier-capped` fires.
 input:
   media:
     fileId: file-538
@@ -65,4 +66,6 @@ expect:
   reasons:
     - container-not-direct-playable
     - video-open-gop-copy-unsafe
-  container: fmp4-hls
+    - software-fallback:encode
+    - software-fallback:tier-capped
+  container: ts-hls

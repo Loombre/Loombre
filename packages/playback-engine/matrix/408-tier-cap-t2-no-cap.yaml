@@ -1,6 +1,7 @@
 name: "transcode — T2 + software-only + a 1080p+ source: NO tier cap (tier gate is T0-only)"
 why: >
   Same shape again with the tonemap-never fixture used purely for its tier:2 value (source hdr is 'none', so its allowToneMapCpu setting never enters the picture) -> the tier cap never fires at tier 2 either. reasons carries software-fallback:encode WITHOUT tier-capped; ladder keeps its full pre-cap shape.
+  ENGINE_VERSION 0.13.0/0.14.0 re-pin (docs/PLAYBACK.md §7 source-height clamp, 2026-09-07): the 1080p/8M rung (greatest in-height row over the source bitrate) is now kept at max(round(1.25 × 5.5M) = 6.875M, floor) = 6.875M with its own 384k audio row; no tier cap at this tier, so the ladder is five rungs.
 
 input:
   media:
@@ -50,6 +51,10 @@ expect:
     - video-codec-unsupported
     - software-fallback:encode
   ladder:
+    - heightPx: 1080
+      videoBitrateBps: 6875000
+      audioBitrateBps: 384000
+      codec: h264
     - heightPx: 1080
       videoBitrateBps: 4000000
       audioBitrateBps: 160000

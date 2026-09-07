@@ -390,8 +390,24 @@ export function buildLadder(
       : overBitrate.reduce((best, rung) =>
           rung.heightPx > best.heightPx || (rung.heightPx === best.heightPx && rung.videoBitrateBps < best.videoBitrateBps) ? rung : best,
         );
+  // ENGINE_VERSION 0.14.0 (2026-09-07): when NOTHING survives (b) on its
+  // own merits — the source sits below even the table's lowest rung — the
+  // clamped rung is joined by the in-height table's lowest-bitrate rung,
+  // the same floor step (e) used to keep on its own. Without it the
+  // clamped rung stood alone, and Stage G's Tier-0 cap (stages/hardware.ts
+  // applyTierCap) could not remove it: its rescue keeps the pre-filter
+  // ladder's lowest-bitrate rung, which WAS that lone 4K/1080p rung — a
+  // Tier-0 box would have software-encoded 2160p at 875 kbps. With the
+  // floor present the cap has a sub-480p rung to keep; Tier 1+ simply
+  // gains a real ABR floor under the clamped rung.
+  const survivedOnMerit = withinHeight.some((rung) => rung.videoBitrateBps <= sourceBitrateBps);
+  const floorRung =
+    clampCandidate !== undefined && !survivedOnMerit
+      ? withinHeight.reduce((min, rung) => (rung.videoBitrateBps < min.videoBitrateBps ? rung : min))
+      : undefined;
   const afterBitrate: LadderRung[] = withinHeight.flatMap((rung) => {
     if (rung.videoBitrateBps <= sourceBitrateBps) return [rung];
+    if (rung === floorRung && rung !== clampCandidate) return [rung];
     if (rung !== clampCandidate) return [];
     // A clamp only ever LOWERS a rung: min() keeps an explicit table row
     // whose own bitrate already sits inside the headroom band verbatim.

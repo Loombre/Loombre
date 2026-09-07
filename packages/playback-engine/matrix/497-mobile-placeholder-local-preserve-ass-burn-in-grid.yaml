@@ -4,7 +4,7 @@ why: 'Grid combo (mobile-placeholder × local × preserve-ass-styling): the hls-
   (mobile hlsVtt:true + policy hls-vtt) so preserveAssStyling''s override fires subtitle-burn-in-for-styling
   (contrast with 477 where the cascade never opened). Burn-in forces the video transcode; software route;
   tier 0 but 720p < 1080 → no cap. Ladder: 720/3M dropped by the 2.5M source bitrate, device 8M cap moot.
-  Deliberate future-proof exception: the styling-preserving burn-in (the driver).'
+  Deliberate future-proof exception: the styling-preserving burn-in (the driver). ENGINE_VERSION 0.13.0/0.14.0 re-pin (docs/PLAYBACK.md §7 source-height clamp, 2026-09-07): the 720p/3M rung is now kept — min(3M, max(round(1.25 × 2.5M) = 3.125M, floor)) = its own 3M, verbatim (a clamp only ever lowers a rung).'
 input:
   media:
     fileId: file-497
@@ -65,6 +65,10 @@ expect:
   - software-fallback:encode
   subtitleStrategy: burn-in
   ladder:
+  - heightPx: 720
+    videoBitrateBps: 3000000
+    audioBitrateBps: 160000
+    codec: h264
   - heightPx: 480
     videoBitrateBps: 1500000
     audioBitrateBps: 160000
