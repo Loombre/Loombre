@@ -11,7 +11,7 @@
  * glue, deliberately thin so the actually-tricky logic stays unit
  * testable without a real ffmpeg process or database.
  */
-import { readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { readFile, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { DbOrTx } from "@loombre/db/internal";
 import {
@@ -33,6 +33,7 @@ import {
 } from "@loombre/db/internal";
 import { nowMs as clockNowMs, type FfmpegFailureCode } from "@loombre/shared";
 import { resolveFfmpeg } from "../probe/ffprobe.js";
+import { replaceFileAtomically } from "./atomic-replace.js";
 import { measureCopySeekOriginMs, videoTypeIndexFromArgs, type MeasureSeekOriginInput } from "./seek-origin.js";
 import { substituteTokens, injectReadrate } from "./args.js";
 import {
@@ -749,7 +750,12 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
       // atomic within a directory on POSIX, and Node's rename replaces an
       // existing destination on Windows too (MOVEFILE_REPLACE_EXISTING),
       // so readers now see either the previous complete playlist or the
-      // next one — never a torn state.
+      // next one — never a torn state. On Windows the replace itself can
+      // be REFUSED (EPERM) while any share-delete-less handle — an
+      // antivirus scan, the indexer — holds the destination for a few
+      // milliseconds; atomic-replace.ts retries that on win32 (the first
+      // Windows gate leg lost a whole session to one such EPERM) and stays
+      // a single attempt everywhere else.
       // A FROZEN playlist is also never rewritten: the ENDLIST-bearing
       // render was written once, on the tick ENDLIST first appeared, and
       // an ended playlist must not change (§9.1.5 rule 4).
@@ -771,7 +777,7 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
           const playlistPath = join(sessionDir, "media.m3u8");
           const playlistTmpPath = `${playlistPath}.tmp`;
           await writeFile(playlistTmpPath, rendered, "utf8");
-          await rename(playlistTmpPath, playlistPath);
+          await replaceFileAtomically(playlistTmpPath, playlistPath);
           lastWrittenPlaylistText = rendered;
         }
       }

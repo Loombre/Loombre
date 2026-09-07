@@ -20,7 +20,14 @@ axis; nothing before `1.0.0-beta.1` was ever released.
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- Windows: a conversion could stop serving new segments if the playlist
+  was being read at the instant the worker replaced it — Windows refuses
+  to replace a file another program holds open, and one such refusal
+  ended the session's loop. The replace now retries briefly on Windows
+  (found by the first Windows CI run; the server's reads and a virus
+  scanner's are both such holders).
 
 ## [1.0.0-beta.3] — 2026-09-07 (pre-release)
 

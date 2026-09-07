@@ -31,12 +31,13 @@
 
 import { EventEmitter } from "node:events";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { replaceFileSync } from "./replace-file-sync.js";
 import { createDb, createPlaybackSession, endPlaybackSession, ensureTestDatabase, requestRungSwitch, requestSeek, resolveTestDatabaseUrl } from "@loombre/db";
 import type { ViewerContext } from "@loombre/db";
 import { plan, type DeviceProfile, type MediaInfo, type NetworkConditions, type PlanInput, type ServerPolicy, type TrackSelection, type VerifiedCapabilities } from "@loombre/playback-engine";
@@ -361,7 +362,7 @@ describe("seek-restart de-duplication (continuation item 1: livelock)", () => {
     const target = join(runDir, "media.m3u8");
     const tmp = `${target}.fabricate.tmp`;
     writeFileSync(tmp, `${lines.join("\n")}\n`, "utf8");
-    renameSync(tmp, target);
+    replaceFileSync(tmp, target);
   }
 
   /** Blocks until the runtime has FOLDED the fabricated playlist — the
