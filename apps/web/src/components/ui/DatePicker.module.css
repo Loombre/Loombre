@@ -202,3 +202,11 @@
 .day[data-selected]:hover:not(:disabled) {
   background: var(--color-accent-hover);
 }
+
+/* Inline typed-entry error (a rejected shape or an out-of-range date) —
+   replaces the old silent revert. */
+.typedError {
+  margin: var(--space-2xs) 0 0;
+  font-size: var(--text-xs);
+  color: var(--color-danger, var(--color-text-muted));
+}

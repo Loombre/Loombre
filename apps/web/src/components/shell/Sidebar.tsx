@@ -41,6 +41,7 @@
 // header need the same two ids, and three components each doing their own
 // fetch would triple the request for no reason. See that hook's header.
 import Link from "next/link";
+import { useEffect } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { Icon } from "../icon/Icon.js";
 import { Avatar } from "../ui/Card.js";
@@ -48,7 +49,7 @@ import { BlazeMark } from "../brand/BlazeMark.js";
 import { useScanStatus } from "./use-scan-status.js";
 import { APP_VERSION } from "../../lib/app-version.js";
 import { formatStoragePoolMeter, useStoragePool } from "../../lib/storage-pool.js";
-import { hasRestrictedZoneEntitlement, useRestrictedZoneCount } from "../../lib/restricted-zone-count.js";
+import { hasRestrictedZoneEntitlement, refreshRestrictedZoneCount, useRestrictedZoneCount } from "../../lib/restricted-zone-count.js";
 import { useRestricted } from "../restricted/RestrictedProvider.js";
 import { useWatchlistIds } from "../../lib/watchlist-sync.js";
 import { LIBRARY_NAV_ITEMS, SYSTEM_NAV_ITEMS, resolveShortcutHref, type NavActiveContext } from "./nav-items.js";
@@ -107,6 +108,12 @@ export function Sidebar({
 }: SidebarProps): React.JSX.Element {
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  // Entitlement can change while the app is open (a birth date saved, a
+  // grant issued by another admin): re-check the zone count on every
+  // navigation, throttled inside the store (ROUTE_REFRESH_MIN_INTERVAL_MS).
+  useEffect(() => {
+    refreshRestrictedZoneCount({ throttled: true });
+  }, [pathname]);
   const activeLibraryId = searchParams.get("library");
   const scanning = useScanStatus(isAdmin);
   const pool = useStoragePool(isAdmin);

@@ -66,6 +66,7 @@ import { Card } from "../ui/Card.js";
 import { SegmentedControl } from "../ui/SegmentedControl.js";
 import { Select } from "../ui/Select.js";
 import { DatePicker, formatIsoDate, todayCalendarDate } from "../ui/DatePicker.js";
+import { refreshRestrictedZoneCount } from "../../lib/restricted-zone-count.js";
 import { Icon } from "../icon/Icon.js";
 import { useRestricted } from "../restricted/RestrictedProvider.js";
 import { apiGet, apiPatch, apiPut, LoombreApiError } from "../../lib/api-client.js";
@@ -223,6 +224,9 @@ function ProfileSection(): React.JSX.Element {
       setBirthDate(loaded.birthDate);
       setCurrentPassword("");
       setStatus("saved");
+      // A birth date is restricted content's age gate — the sidebar's
+      // Restricted entry must not wait for a reload to notice.
+      if (body.birthDate !== undefined) refreshRestrictedZoneCount();
     } catch (err) {
       setStatus("error");
       if (isCurrentPasswordInvalid(err)) {

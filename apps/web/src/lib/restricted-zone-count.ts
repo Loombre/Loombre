@@ -22,6 +22,7 @@
 import { useSyncExternalStore } from "react";
 import { apiGet } from "./api-client.js";
 import { getAuthStore } from "./auth-store.js";
+import { subscribeCatalogInvalidation } from "./catalog-invalidation.js";
 
 export interface UseRestrictedZoneCountResult {
   /** null while loading, on any fetch failure, AND for a viewer with no
@@ -52,6 +53,13 @@ const listeners = new Set<() => void>();
  *  `cancelled` flag. */
 let fetchSeq = 0;
 let unsubscribeAuth: (() => void) | null = null;
+let unsubscribeInvalidation: (() => void) | null = null;
+let lastLoadAtMs = 0;
+
+/** Route-change refreshes (Sidebar) are throttled to this so ordinary
+ *  navigation costs at most one GET /restricted/count per interval; the
+ *  explicit refreshes (a birth date saved, a grant issued) bypass it. */
+export const ROUTE_REFRESH_MIN_INTERVAL_MS = 15_000;
 
 function emit(next: UseRestrictedZoneCountResult): void {
   snapshot = next;
@@ -61,6 +69,7 @@ function emit(next: UseRestrictedZoneCountResult): void {
 function load(): void {
   const store = getAuthStore();
   const seq = ++fetchSeq;
+  lastLoadAtMs = Date.now();
   if (!store.isAuthenticated()) {
     emit({ count: null, loading: false });
     return;
@@ -89,6 +98,10 @@ function subscribeShared(listener: () => void): () => void {
     // stale count from the PREVIOUS session). Later consumers share the
     // in-flight request / cached result instead of fetching again.
     unsubscribeAuth = getAuthStore().subscribe(load);
+    // Unlock/lock and other catalog invalidations re-fetch too: the zone's
+    // count changes with the unlock state (U10) and a grant/create can
+    // flip the entitlement itself.
+    unsubscribeInvalidation = subscribeCatalogInvalidation(load);
     load();
   }
   return () => {
@@ -99,10 +112,29 @@ function subscribeShared(listener: () => void): () => void {
       // with a fresh fetch rather than a cache of unknown age.
       unsubscribeAuth?.();
       unsubscribeAuth = null;
+      unsubscribeInvalidation?.();
+      unsubscribeInvalidation = null;
       fetchSeq++;
       snapshot = INITIAL;
     }
   };
+}
+
+/**
+ * Re-fetch the shared count now (owner report, Linux reference box: the
+ * gates flipped — birth date saved, restricted library created and
+ * granted — but the sidebar's Restricted entry stayed hidden until a full
+ * reload, because this store only fetched on first subscribe and on auth
+ * changes). Called explicitly by the mutations that can change a viewer's
+ * entitlement (ProfileSettings after a birth-date save, AddLibrarySheet /
+ * LibrariesSection after a grant) and, `throttled`, by the Sidebar on
+ * every route change so a change made elsewhere (another admin's grant)
+ * surfaces within one navigation. No-op with no consumer mounted.
+ */
+export function refreshRestrictedZoneCount(options: { throttled?: boolean } = {}): void {
+  if (listeners.size === 0) return;
+  if (options.throttled && Date.now() - lastLoadAtMs < ROUTE_REFRESH_MIN_INTERVAL_MS) return;
+  load();
 }
 
 function getSharedSnapshot(): UseRestrictedZoneCountResult {

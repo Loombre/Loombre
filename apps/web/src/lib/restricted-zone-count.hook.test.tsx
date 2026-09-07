@@ -37,7 +37,8 @@ vi.mock("./auth-store.js", () => ({
 }));
 
 // Imported AFTER the mocks above so the module under test picks them up.
-const { useRestrictedZoneCount } = await import("./restricted-zone-count.js");
+const { useRestrictedZoneCount, refreshRestrictedZoneCount } = await import("./restricted-zone-count.js");
+const { emitCatalogInvalidation } = await import("./catalog-invalidation.js");
 type HookResult = ReturnType<typeof useRestrictedZoneCount>;
 
 /** Each Probe writes its latest hook result here, keyed by mount id, so a
@@ -145,5 +146,70 @@ describe("useRestrictedZoneCount (shared cache / request coalescing)", () => {
     await flush();
     expect(apiGetMock).toHaveBeenCalledTimes(2);
     expect(results.get(0)).toEqual({ count: 7, loading: false });
+  });
+});
+
+describe("useRestrictedZoneCount — re-fetching once the gates flip (no reload)", () => {
+  let view: TestRender | null = null;
+
+  beforeEach(() => {
+    apiGetMock.mockReset();
+    authenticated = true;
+  });
+
+  afterEach(() => {
+    view?.unmount();
+    view = null;
+    results.clear();
+  });
+
+  it("refreshRestrictedZoneCount() re-fetches: a 404 (not entitled) becomes the real count once a grant/birth date landed, for every consumer", async () => {
+    apiGetMock.mockRejectedValueOnce(Object.assign(new Error("Not Found"), { status: 404 }));
+    view = renderIntoBody(probes(2));
+    await flush();
+    expect(results.get(0)?.count).toBeNull();
+    expect(apiGetMock).toHaveBeenCalledTimes(1);
+
+    apiGetMock.mockResolvedValueOnce({ count: 73 });
+    await act(async () => {
+      refreshRestrictedZoneCount();
+      await Promise.resolve();
+    });
+    await flush();
+    expect(apiGetMock).toHaveBeenCalledTimes(2);
+    expect(results.get(0)?.count).toBe(73);
+    expect(results.get(1)?.count).toBe(73);
+  });
+
+  it("a throttled (route-change) refresh right after a load is a no-op; an explicit one is not", async () => {
+    apiGetMock.mockResolvedValue({ count: 1 });
+    view = renderIntoBody(probes(1));
+    await flush();
+    expect(apiGetMock).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      refreshRestrictedZoneCount({ throttled: true });
+    });
+    expect(apiGetMock).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      refreshRestrictedZoneCount();
+    });
+    expect(apiGetMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("a catalog invalidation (unlock/lock, grants) re-fetches the shared count", async () => {
+    apiGetMock.mockResolvedValue({ count: 5 });
+    view = renderIntoBody(probes(1));
+    await flush();
+    expect(apiGetMock).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      emitCatalogInvalidation();
+    });
+    expect(apiGetMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("refresh with no consumer mounted fetches nothing", async () => {
+    apiGetMock.mockResolvedValue({ count: 5 });
+    refreshRestrictedZoneCount();
+    expect(apiGetMock).not.toHaveBeenCalled();
   });
 });

@@ -66,6 +66,38 @@ function isValidCalendarDate({ year, month, day }: CalendarDate): boolean {
   return day <= daysInMonth(year, month);
 }
 
+/** Typed-entry parse (owner report, Linux reference box: "the birth date
+ *  only works via the calendar icon" — a US user typing 01/01/1999 was
+ *  silently reverted on blur). Accepts, in this order: `YYYY-MM-DD`,
+ *  `YYYY/MM/DD`, `MM/DD/YYYY` (US, slashes → month first, single digits
+ *  allowed), and `DD.MM.YYYY` (dots → day first). Returns the ISO string
+ *  the caller commits, or null when the text is not a real calendar date
+ *  in any of those shapes. Exported for tests. */
+export function parseTypedDate(text: string): string | null {
+  const raw = text.trim();
+  if (raw === "") return null;
+  if (parseIsoDate(raw)) return raw;
+  let y: string | undefined;
+  let m: string | undefined;
+  let d: string | undefined;
+  let match: RegExpExecArray | null;
+  if ((match = /^(\d{4})\/(\d{1,2})\/(\d{1,2})$/.exec(raw))) {
+    [, y, m, d] = match;
+  } else if ((match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(raw))) {
+    [, m, d, y] = match;
+  } else if ((match = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/.exec(raw))) {
+    [, d, m, y] = match;
+  } else {
+    return null;
+  }
+  const iso = `${y}-${m!.padStart(2, "0")}-${d!.padStart(2, "0")}`;
+  return parseIsoDate(iso) ? iso : null;
+}
+
+/** The inline message a rejected typed value shows — one line, names the
+ *  accepted shapes, never a silent revert. */
+export const TYPED_DATE_FORMAT_HINT = "Use YYYY-MM-DD or MM/DD/YYYY.";
+
 /** Strict `YYYY-MM-DD` parse — rejects malformed shapes AND calendar
  *  nonsense (`2023-02-30`), so a partially-typed or fat-fingered value in
  *  the text field never silently becomes "the nearest real date". */
@@ -196,6 +228,8 @@ export function DatePicker({
   required = false,
 }: DatePickerProps): React.JSX.Element {
   const rootRef = useRef<HTMLDivElement>(null);
+  const [typedError, setTypedError] = useState<string | null>(null);
+  const typedErrorId = `${id ?? "date"}-typed-error`;
   const triggerRef = useRef<HTMLButtonElement>(null);
   const dayRefs = useRef(new Map<string, HTMLButtonElement>());
   const dialogId = useId();
@@ -295,6 +329,9 @@ export function DatePicker({
     // mid-typing string ("1991-02-") must never briefly become the
     // committed birth date (this is the same "no garbage on the wire"
     // guarantee the old `<input type="date">` got for free from the UA).
+    // Typed shapes other than ISO (01/01/1999) commit on blur, once the
+    // user has finished typing them.
+    setTypedError(null);
     const parsed = parseIsoDate(next);
     if (parsed && !isDisabledDate(parsed)) {
       onChange(next);
@@ -304,9 +341,32 @@ export function DatePicker({
   }
 
   function handleTextBlur(): void {
-    if (text === "") return;
-    const parsed = parseIsoDate(text);
-    if (!parsed || isDisabledDate(parsed)) setText(value);
+    if (text === "") {
+      setTypedError(null);
+      return;
+    }
+    const iso = parseTypedDate(text);
+    if (iso === null) {
+      // Not a date in any accepted shape: keep what was typed and SAY so —
+      // a silent revert reads as "typing doesn't work".
+      setTypedError(TYPED_DATE_FORMAT_HINT);
+      return;
+    }
+    const parsed = parseIsoDate(iso)!;
+    if (isDisabledDate(parsed)) {
+      // A real date outside the allowed range: revert (the value must stay
+      // committable) but explain the revert.
+      setText(value);
+      setTypedError(maxCal && compareCalendarDates(parsed, maxCal) > 0 ? "That date is in the future." : "That date is outside the allowed range.");
+      return;
+    }
+    setTypedError(null);
+    if (iso !== text) setText(iso);
+    if (iso !== value) {
+      onChange(iso);
+      setView(parsed);
+      setFocusedIso(iso);
+    }
   }
 
   function handleTextKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
@@ -410,6 +470,8 @@ export function DatePicker({
           aria-haspopup="dialog"
           aria-expanded={open}
           aria-controls={open ? dialogId : undefined}
+          aria-invalid={typedError !== null ? true : undefined}
+          aria-describedby={typedError !== null ? typedErrorId : undefined}
         />
         <button
           type="button"
@@ -424,6 +486,11 @@ export function DatePicker({
           <Icon icon={CalendarDays} size="dense" />
         </button>
       </div>
+      {typedError !== null && (
+        <p id={typedErrorId} className={styles.typedError} role="alert">
+          {typedError}
+        </p>
+      )}
       {open && (
         <div id={dialogId} className={styles.popover} role="dialog" aria-modal="false" aria-label="Choose date">
           {/* Month/year QUICK-JUMP only — no separate prev/next-month

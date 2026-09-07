@@ -165,6 +165,15 @@ axis; nothing before `1.0.0-beta.1` was ever released.
   (birth date, opt-in with PIN, a granted Restricted library), the Profile
   birth-date field says the age check needs it, and the user guide lists
   the same three.
+- Web: the sidebar's Restricted entry appeared only after a full reload
+  once an account became entitled. The zone count now re-fetches after a
+  birth-date save, after a library grant, on unlock/lock, and on
+  navigation (at most once every 15 s), and the Libraries screen's note
+  links straight to restricted content once the account qualifies.
+- Web: the birth-date field accepts typed dates as people write them
+  (`01/01/1999`, `1/1/1999`, `1999/01/01`, `01.01.1999`, as well as
+  `1999-01-01`) and shows an inline message when a value cannot be read
+  or is out of range, instead of silently reverting it.
 - Settings: **Reset to default** now clears the stored value instead of
   writing the default's current number, so the setting reads "default"
   again and a machine-derived default keeps tracking the machine. New

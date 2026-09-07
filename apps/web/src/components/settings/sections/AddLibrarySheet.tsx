@@ -70,6 +70,7 @@ import { Button } from "../../ui/Button.js";
 import { SegmentedControl } from "../../ui/SegmentedControl.js";
 import { useToast } from "../../ui/Toast.js";
 import { apiGet, apiPost, apiPut } from "../../../lib/api-client.js";
+import { refreshRestrictedZoneCount } from "../../../lib/restricted-zone-count.js";
 import type { components } from "@loombre/sdk";
 import { apiErrorCopy } from "../../../lib/api-error-message.js";
 import styles from "./shared.module.css";
@@ -156,6 +157,9 @@ export function AddLibrarySheet({
         try {
           await putSelfGrant(lib);
           grantIssued = true;
+          // Gate 4 just flipped for this account — let the sidebar's
+          // Restricted entry appear without a reload.
+          refreshRestrictedZoneCount();
         } catch (err) {
           grantFailure = apiErrorCopy(err, "Failed to grant access.");
         }

@@ -47,6 +47,7 @@
 //     fabricated date (U9).
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { HardDrive } from "lucide-react";
 import type { components } from "@loombre/sdk";
 import { Button } from "../../ui/Button.js";
@@ -65,6 +66,7 @@ import { diffPermissionsToSubmit } from "../../../lib/library-permissions.js";
 import { enumLabel, MEDIA_KIND_LABEL } from "../../../lib/enum-labels.js";
 import { formatRelativeTime } from "../../../lib/relative-time.js";
 import { useToast } from "../../ui/Toast.js";
+import { hasRestrictedZoneEntitlement, refreshRestrictedZoneCount, useRestrictedZoneCount } from "../../../lib/restricted-zone-count.js";
 import { TextInput } from "../../ui/Input.js";
 import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "../../../lib/api-client.js";
 import { apiErrorCopy } from "../../../lib/api-error-message.js";
@@ -347,6 +349,7 @@ function HiddenLibraryRow({
 
 export function LibrariesSection({ heading }: { heading: string | null }): React.JSX.Element {
   const { showToast } = useToast();
+  const restrictedZone = useRestrictedZoneCount();
   const [libraries, setLibraries] = useState<Library[] | null>(null);
   // d3-d5: null = the administration-scoped listing is unavailable to this
   // caller (403 — not an admin) or failed. That is NOT an error banner:
@@ -410,6 +413,7 @@ export function LibrariesSection({ heading }: { heading: string | null }): React
         params: { path: { id: lib.id } },
         body: { libraryId: lib.id, permissions: [{ userId: me.id, granted: true }] },
       });
+      refreshRestrictedZoneCount();
       // Honest about what a grant does and does not do: gate 4 is now
       // satisfied, but a RESTRICTED library still needs this device's live
       // unlock (gate 5) before it joins the list above.
@@ -507,6 +511,12 @@ export function LibrariesSection({ heading }: { heading: string | null }): React
         are true for it: a birth date on its Profile (the age check), restricted content opted in with a PIN (Profile
         → Restricted content), and a library with content class <em>Restricted</em> that the account is granted access
         to (Add library → Restricted, then Permissions). That includes your own account.
+        {hasRestrictedZoneEntitlement(restrictedZone.count) && (
+          <>
+            {" "}
+            Your account meets all three — <Link href="/restricted">open restricted content</Link>.
+          </>
+        )}
       </p>
 
       <button type="button" className={styles.addTile} onClick={() => setAdding(true)}>
