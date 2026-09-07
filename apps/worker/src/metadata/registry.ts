@@ -69,6 +69,21 @@ export class ProviderRegistry {
     return [...this.providers.values()].filter((p) => p.kinds.includes(kind));
   }
 
+  /** Job-boundary re-resolution (see MetadataProvider.refresh): every
+   *  provider that can re-read its gate does so; a provider whose refresh
+   *  throws stays as it was — a keyring hiccup must never turn into a
+   *  failed metadata job. */
+  async refreshAll(): Promise<void> {
+    for (const provider of this.providers.values()) {
+      if (!provider.refresh) continue;
+      try {
+        await provider.refresh();
+      } catch {
+        // keep the last-known resolution
+      }
+    }
+  }
+
   /** Admin-notice surface (P1.9): every registered provider that constructed
    *  successfully but is inert because a required API key is absent. */
   disabledProviders(): DisabledProviderNotice[] {

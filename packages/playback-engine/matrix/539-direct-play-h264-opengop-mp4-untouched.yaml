@@ -1,0 +1,59 @@
+name: direct-play — mp4 h264 openGop:true vs constrained-tv — nothing is segmented, so Stage B′ stays silent
+why: >
+  Counterpart to case 538: the SAME open-GOP h264 stream in an mp4 that
+  devices.constrained-tv direct-plays. A progressively served file is never
+  cut into segments — the browser decodes from the first IDR onward and
+  every recovery-point I-frame has its references — so Stage B′'s
+  predicate (final container fmp4-hls|ts-hls) is false and the plan is the
+  plain direct-play case 012 already pins. Pins that open_gop=true on h264
+  never by itself forces a transcode.
+input:
+  media:
+    fileId: file-539
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 8160000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 24
+        bitrateBps: 8000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+        openGop: true
+    audio:
+      - index: 1
+        codec: aac
+        channels: 2
+        sampleRate: 48000
+        bitrateBps: 160000
+        language: eng
+        isDefault: true
+        hasAtmos: false
+    subtitle: []
+  device:
+    fixture: devices.constrained-tv
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: direct-play
+  reasons: []
+  container: source

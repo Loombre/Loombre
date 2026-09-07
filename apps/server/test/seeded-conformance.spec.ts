@@ -85,6 +85,7 @@ const PERSON_CREDIT_SCHEMA = {
     role: { type: "string", enum: ["actor", "director", "writer", "artist", "album_artist", "performer", "guest"] },
     credit: { type: ["string", "null"] },
     order: { type: "integer", minimum: 0 },
+    images: { type: "array" },
   },
 } as const;
 

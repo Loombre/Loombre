@@ -243,6 +243,29 @@ required → at least `direct-stream`, reason `container-not-direct-playable`.
    `video-bitdepth-unsupported` | `video-resolution-exceeds-device` |
    `video-framerate-exceeds-device`.
 4. Else verdict `copy`.
+5. **Stage B′ — open-GOP H.264 copy safety (ENGINE_VERSION 0.12.0,
+   2026-09-07).** Evaluated AFTER Stages A-F, because it needs the FINAL
+   container: codec `h264` with `openGop === true`, video otherwise copied
+   (no B/C/E/F escalation), and the final container segmented
+   (`fmp4-hls` | `ts-hls`) → transcode, reason `video-open-gop-copy-unsafe`.
+   The HLS muxer cuts a segment at every packet flagged key; x264
+   `--open-gop` / intra-refresh / broadcast sources flag non-IDR I-frames
+   (recovery-point SEI) as keyframes, so a stream copy yields segments
+   whose first frame references the previous segment —
+   `EXT-X-INDEPENDENT-SEGMENTS` becomes false and any decoder restart at
+   such a segment (seek, flush, rung switch) shows the missing references
+   as blocking. ffmpeg has no bitstream filter that clears the key flag on
+   a non-IDR frame, so the only route to independent segments is a
+   re-encode. Direct play (`source`) and a progressive remux (`mp4`) are
+   NOT segmented and are untouched. `plan()` aggregates A-F once
+   provisionally to learn the container, evaluates this rule, and
+   aggregates again with its verdict — exact in one pass, since the
+   escalation only raises severity to transcode (itself segmented). HEVC
+   open GOP is a different case (RASL leading pictures are droppable at a
+   seek restart, see the assembly-time strip below) and stays a copy.
+   Probe side: `media_streams.open_gop` is now populated for `h264` too
+   (recovery-point SEI in a bounded `trace_headers` scan; migration 0048
+   re-nulls the bulk-`false` h264 rows so the backfill re-probes them).
 
 **Stage C — HDR (only when B verdict is copy or transcode-with-copy-possible).**
 Evaluated on source `hdr`:
@@ -356,6 +379,7 @@ Blocking-class: `container-not-direct-playable`, `video-codec-unsupported`,
 `video-profile-unsupported`, `video-level-exceeds-device`,
 `video-bitdepth-unsupported`, `video-resolution-exceeds-device`,
 `video-framerate-exceeds-device`, `video-interlaced`,
+`video-open-gop-copy-unsafe` (Stage B′, 0.12.0),
 `hdr-tone-map-required`, `dv-profile5-requires-tonemap`,
 `tone-map-refused-by-policy`, `audio-codec-unsupported`,
 `audio-channels-exceed-device`, `audio-passthrough-unsupported`,
@@ -1260,7 +1284,15 @@ State machine: `created → starting → active ⇄ suspended → seeking → ac
     summed; a previous run's durations describe a different region of the
     source entirely. Segments of the run already pruned out of the playlist
     are the single estimated term, and they extrapolate at THAT RUN's own
-    measured mean. **Run ownership follows the segment counter, never the
+    measured mean. **`source_origin_ms` is where the run REALLY starts
+    (2026-09-07).** For a run that stream-copies video, `-ss T` before
+    `-i` lands the demuxer on the last keyframe at or before T and nothing
+    trims the frames in between, so the run's timeline begins at that
+    keyframe — up to one GOP early; the worker measures the landing with a
+    one-packet `-copyts` framecrc probe (`seek-origin.ts`) before the spawn
+    and records THAT, never the requested T. A decoding run trims to T and
+    records T. The pre-fix labelling put every subtitle cue (absolute in
+    source time) up to a GOP early after any seek or resume. **Run ownership follows the segment counter, never the
     clock:** a backward seek starts a later run at an EARLIER
     `source_origin_ms`, so the origin is not monotonic across runs and
     `start_segment` is the only key that is. A session with no recorded runs

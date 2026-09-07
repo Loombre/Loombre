@@ -275,6 +275,10 @@ export function metadataConsumerHandler(deps: MetadataConsumerDeps): JobHandler<
     const item = await getMetadataSourceItem(deps.db, payload.itemId);
     if (!item) return; // race: item deleted before the job ran — no-op.
 
+    // Job boundary: a key saved in the admin screen since the last job is
+    // picked up here (keys.ts createKeyringKeyResolver), not at restart.
+    await deps.registry.refreshAll();
+
     if (!SUPPORTED_ITEM_TYPES.has(item.itemType)) return;
 
     const entityKind = item.itemType === 'artist' ? 'artist' : item.itemType === 'album' ? 'album' : undefined;
@@ -315,6 +319,9 @@ export function metadataConsumerHandler(deps: MetadataConsumerDeps): JobHandler<
     if (!matched) return;
 
     const providerSourceTag = `provider:${matched.providerName}` as ProviderFieldSource;
+    /** person id -> portrait URL, collected inside the transaction below and
+     *  enqueued after it commits (same ordering as the item's own artwork). */
+    const personPortraits = new Map<string, string>();
 
     const [existingProvenanceRows, currentSatelliteFields, currentRelations] = await Promise.all([
       getProvenanceForItem(deps.db, item.id),
@@ -387,12 +394,13 @@ export function metadataConsumerHandler(deps: MetadataConsumerDeps): JobHandler<
       await replaceItemTags(trx, item.id, tagInputs);
 
       const peopleInputs = await Promise.all(
-        finalPeople.map(async (p) => ({
-          personId: (await findOrCreatePerson(trx, p.name, item.contentClass)).id,
-          role: p.role,
-          credit: p.credit ?? null,
-          order: p.order,
-        }))
+        finalPeople.map(async (p) => {
+          const personId = (await findOrCreatePerson(trx, p.name, item.contentClass)).id;
+          // First portrait wins for a person credited twice on one item
+          // (actor + director) — one job per person, not per credit.
+          if (p.imageUrl && !personPortraits.has(personId)) personPortraits.set(personId, p.imageUrl);
+          return { personId, role: p.role, credit: p.credit ?? null, order: p.order };
+        })
       );
       await replaceItemPeople(trx, item.id, peopleInputs);
 
@@ -416,6 +424,20 @@ export function metadataConsumerHandler(deps: MetadataConsumerDeps): JobHandler<
         entityId: item.id,
         kind: image.kind,
         sourcePath: `url:${image.url}`,
+      });
+    }
+
+    // Cast portraits: one 'thumb' per credited person that has one. A
+    // person shared across many items gets the same source URL from each
+    // match, and the image job is a no-op when images.source_ref already
+    // matches (stable identity per (entity, kind)) — so 127 credits on a
+    // film cost 127 jobs once, and nothing on the next film they share.
+    for (const [personId, url] of personPortraits) {
+      await deps.enqueueImageJob({
+        entityType: 'person',
+        entityId: personId,
+        kind: 'thumb',
+        sourcePath: `url:${url}`,
       });
     }
   };

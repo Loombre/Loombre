@@ -4803,3 +4803,56 @@ COMMENT ON COLUMN images.source_ref IS
   'NULL = unknown (pre-0046 row). Read by the image job to skip a '
   're-download + re-encode when the existing original for (entity_type, '
   'entity_id, kind) came from the same reference.';
+
+-- SPDX-License-Identifier: AGPL-3.0-only
+-- Loombre :: migration 0047_metadata_provider_state
+--
+-- Additive-only: one new table, no drops, no type narrowing, no rewriting
+-- of prior migrations, no contract surface.
+--
+-- WHY. The worker resolves each keyed metadata provider's API key at boot
+-- (env var, else the keyring entry the admin screen writes). "The provider
+-- became enabled" is the moment every already-scanned, still-unmatched
+-- item should be enriched — but without a record of what the worker saw
+-- LAST boot it cannot tell "enabled, as always" from "enabled since the
+-- operator added LOOMBRE_TMDB_API_KEY to loombre.env and restarted", and
+-- re-enqueuing every unmatched item on every boot would turn each restart
+-- into a provider search storm for titles the provider has already failed
+-- to find. One row per keyed provider, written by the worker at boot and
+-- by the refresh fan-out when it runs for that provider; read only by the
+-- worker's boot comparison. Real columns, no JSONB (CLAUDE.md invariant 3).
+
+CREATE TABLE metadata_provider_state (
+  provider       TEXT PRIMARY KEY,
+  enabled        BOOLEAN NOT NULL,
+  observed_at_ms BIGINT NOT NULL
+);
+
+COMMENT ON TABLE metadata_provider_state IS
+  'Last enabled/disabled state the worker observed per keyed metadata '
+  'provider (tmdb, tvdb). A boot that finds a provider enabled while this '
+  'row says disabled (or is absent) enqueues one metadata-refresh job for '
+  'that provider; see apps/worker/src/index.ts.';
+
+-- SPDX-License-Identifier: AGPL-3.0-only
+-- Loombre :: migration 0048_media_streams_open_gop_h264
+--
+-- Data-only, additive in effect: sets one column back to NULL on a bounded
+-- set of rows. No schema change, no drops, no contract surface.
+--
+-- WHY. The open-GOP probe (migrations/0038) scanned HEVC only; the backfill
+-- bulk-wrote open_gop = false for every other codec because the engine
+-- never consulted the field for them. As of docs/PLAYBACK.md §3 Stage B′
+-- (ENGINE_VERSION 0.12.0) it DOES consult it for h264 — an open-GOP h264
+-- stream must not be stream-copied into a segmented container — and the
+-- worker's detector now scans h264 for recovery-point SEIs. A bulk `false`
+-- on an h264 row is therefore not a verdict, it is the old "not applicable"
+-- value wearing a verdict's clothes. NULL = "not yet probed" puts those rows
+-- back in front of the boot-time backfill (hasVideoStreamsNeedingOpenGop
+-- Backfill), which scans them once and writes a real answer.
+
+UPDATE media_streams
+   SET open_gop = NULL
+ WHERE stream_type = 'video'
+   AND codec = 'h264'
+   AND open_gop = false;

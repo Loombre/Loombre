@@ -33,6 +33,7 @@ import {
 } from "@loombre/db/internal";
 import { nowMs as clockNowMs, type FfmpegFailureCode } from "@loombre/shared";
 import { resolveFfmpeg } from "../probe/ffprobe.js";
+import { measureCopySeekOriginMs, videoTypeIndexFromArgs, type MeasureSeekOriginInput } from "./seek-origin.js";
 import { substituteTokens, injectReadrate } from "./args.js";
 import {
   SEGMENT_DURATION_SEC,
@@ -95,6 +96,11 @@ export interface RunSessionDeps {
   /** Injected process spawn (tests substitute a fake child process —
    *  process.ts's own header). */
   spawnFn?: SpawnFn;
+  /** Where a stream-copy seek run REALLY starts (seek-origin.ts): the
+   *  keyframe ffmpeg's input seek lands on, at or before the target.
+   *  Defaults to the real one-packet probe; a test that fakes ffmpeg via
+   *  `spawnFn` gets a no-op (null → the target) unless it injects one. */
+  measureSeekOrigin?: (input: MeasureSeekOriginInput) => Promise<number | null>;
   /** Overrides the platform-derived throttle mechanism (tests only —
    *  never set in production wiring, consumer.ts). */
   mechanismOverride?: ThrottleMechanism;
@@ -405,6 +411,9 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
     return index >= 0 ? index : undefined;
   })();
 
+  const measureSeekOrigin: (input: MeasureSeekOriginInput) => Promise<number | null> =
+    deps.measureSeekOrigin ?? (deps.spawnFn ? async () => null : measureCopySeekOriginMs);
+
   async function spawnRun(
     runIndex: number,
     startSeg: number,
@@ -421,6 +430,21 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
       ...(seekTargetMs !== undefined ? { seekTargetMs } : {}),
     });
     const paced = applyPlatformPacing(substituted);
+    // Copy runs start at the keyframe the demuxer lands on, not at the
+    // requested target (seek-origin.ts) — measured BEFORE the spawn so both
+    // the run row and the in-memory run carry the anchor the playlist
+    // labels segments with (and that a later rung switch continues from).
+    // A decoding run trims to the target exactly; nothing to measure.
+    let sourceOriginMs = seekTargetMs ?? 0;
+    if (seekTargetMs !== undefined && plan.video.action === "copy") {
+      const measured = await measureSeekOrigin({
+        ffmpegPath: ffmpegPath!,
+        filePath: file!.path,
+        videoTypeIndex: videoTypeIndexFromArgs(substituted),
+        seekTargetMs,
+      }).catch(() => null);
+      if (measured !== null) sourceOriginMs = measured;
+    }
     const handle = spawnFfmpegRun(ffmpegPath!, paced, { cwd: runDir, ...(deps.spawnFn ? { spawnFn: deps.spawnFn } : {}) });
     deps.onRunSpawned?.(handle.pid, runIndex);
     // Continuation item 2 (migrations/0043): durably record WHERE this run
@@ -439,7 +463,7 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
       sessionId,
       runIndex,
       startSegment: startSeg,
-      sourceOriginMs: seekTargetMs ?? 0,
+      sourceOriginMs,
       // Wave C2 (migration 0044): WHICH rung this run encoded, so a
       // session's run history says not just where each run started but at
       // what quality. Omitted (-> NULL) for a ladder-empty session.
@@ -487,7 +511,7 @@ export async function runTranscodeSession(deps: RunSessionDeps, sessionId: strin
       released: false,
       unregister,
       startSegment: startSeg,
-      sourceOriginMs: seekTargetMs ?? 0,
+      sourceOriginMs,
       producedMs: 0,
       headPruned: false,
       ladderRungIndex,

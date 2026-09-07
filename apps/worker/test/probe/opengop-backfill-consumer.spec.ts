@@ -100,8 +100,11 @@ function fakeDetect(filePath: string): Promise<boolean | null> {
 
 describe("opengopBackfillConsumerHandler", () => {
   it("bulk-sets non-HEVC NULL rows false on the first batch, scans HEVC rows via the injected detector, leaves a failed scan NULL, and resumes correctly across a cursor boundary", async () => {
-    // Non-HEVC rows: never scanned, always resolved by the bulk pass.
-    const h264 = await seedVideoStream("/media/test/h264-row.mp4", "h264");
+    // Rows outside the scanned set (hevc/h264): never scanned, always
+    // resolved by the bulk pass. (h264 joined the scanned set on
+    // 2026-09-07, Stage B′ — it goes through `detect` like hevc now, see
+    // the row seeded after the HEVC ones below.)
+    const vp9 = await seedVideoStream("/media/test/vp9-row.webm", "vp9");
     const av1 = await seedVideoStream("/media/test/av1-row.mp4", "av1");
 
     // HEVC rows: id-ordered (UUIDv7), sorted below by the DB's own id, not
@@ -115,6 +118,9 @@ describe("opengopBackfillConsumerHandler", () => {
     const hevcSeeded = [hevcOpen1, hevcClosed1, hevcFail1, hevcOpen2].sort((a, b) =>
       a.streamId < b.streamId ? -1 : 1,
     );
+    // An h264 row seeded LAST (highest id): part of the scanned set, so it
+    // lands in batch 2 with the 4th HEVC row — never in the bulk pass.
+    const h264Open = await seedVideoStream("/media/test/h264-open-row.mp4", "h264");
 
     const enqueueCalls: string[] = [];
     const handler = opengopBackfillConsumerHandler({
@@ -133,8 +139,10 @@ describe("opengopBackfillConsumerHandler", () => {
 
     // Non-HEVC rows resolved by the bulk pass, not the (never-called-for-
     // them) detector.
-    expect(await readOpenGop(h264.streamId)).toBe(false);
+    expect(await readOpenGop(vp9.streamId)).toBe(false);
     expect(await readOpenGop(av1.streamId)).toBe(false);
+    // In the scanned set but beyond batch 1's three rows: untouched.
+    expect(await readOpenGop(h264Open.streamId)).toBeNull();
 
     expect(enqueueCalls).toHaveLength(1);
     const cursorAfterBatch1 = enqueueCalls[0]!;
@@ -157,19 +165,22 @@ describe("opengopBackfillConsumerHandler", () => {
     // The 4th HEVC row (not in batch 1) is untouched — still NULL.
     expect(await readOpenGop(fourth.streamId)).toBeNull();
 
-    // A NEW non-HEVC row, inserted AFTER the fresh-sweep bulk pass already
-    // ran, proves the bulk-false UPDATE runs ONCE per fresh sweep (cursor
-    // === null) — not on every resumed batch below.
-    const lateH264 = await seedVideoStream("/media/test/h264-late-row.mp4", "h264");
+    // A NEW unscanned-codec row, inserted AFTER the fresh-sweep bulk pass
+    // already ran, proves the bulk-false UPDATE runs ONCE per fresh sweep
+    // (cursor === null) — not on every resumed batch below.
+    const lateAv1 = await seedVideoStream("/media/test/av1-late-row.mp4", "av1");
 
     // --- Batch 2: resume from the captured cursor -> processes exactly
-    // the remaining 1 HEVC row, batch comes back short, so no further
-    // re-enqueue, and the late non-HEVC row is NOT touched (proves the
-    // bulk pass did not re-run). ---
+    // the remaining HEVC row plus the h264 row (2 < batchSize), so no
+    // further re-enqueue, and the late unscanned row is NOT touched
+    // (proves the bulk pass did not re-run). ---
     await handler({ cursor: cursorAfterBatch1 }, { jobId: "opengop-backfill-job-2" });
 
     expect(enqueueCalls).toHaveLength(1); // unchanged — no second re-enqueue
-    expect(await readOpenGop(lateH264.streamId)).toBeNull();
+    expect(await readOpenGop(lateAv1.streamId)).toBeNull();
+    // The h264 row was scanned by the injected detector ("-open-"), never
+    // bulk-set.
+    expect(await readOpenGop(h264Open.streamId)).toBe(true);
 
     // Real verdicts for the two "open" HEVC fixtures.
     expect(await readOpenGop(hevcOpen1.streamId)).toBe(true);

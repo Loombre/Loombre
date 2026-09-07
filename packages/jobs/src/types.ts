@@ -60,6 +60,28 @@ export interface MetadataSearchJobPayload {
 }
 
 /**
+ * Metadata REFRESH fan-out (owner report from the Linux reference box:
+ * saving a provider key left every already-scanned item unmatched until
+ * each was fixed by hand). One job, three triggers, one handler
+ * (apps/worker/src/metadata/refresh-consumer.ts):
+ *   - `provider` set, `libraryId` null: a key was saved (apps/server's
+ *     ProviderKeysService) or the worker booted with that provider newly
+ *     enabled — every library whose effective chain includes the provider.
+ *   - `libraryId` set: POST /libraries/{id}/refresh-metadata.
+ * `scope` 'unmatched' = items with no provider_ids row (the Dashboard's
+ * own "unmatched" definition); 'all' = every enrichable item, with an
+ * item's existing match carried as forceRef so a Refresh never silently
+ * re-picks a different candidate than an admin's Fix Match chose. The
+ * handler only ENQUEUES 'metadata' jobs (one per item, subjectItemId set)
+ * — the provider I/O stays in that consumer.
+ */
+export interface MetadataRefreshJobPayload {
+  libraryId: string | null;
+  provider: string | null;
+  scope: 'unmatched' | 'all';
+}
+
+/**
  * Data-freedom import job (P1.17, docs/PLAN.md §8.4): POST /import enqueues
  * one of these per archive upload. Phase 1 shipped only the job-queue
  * plumbing (a stub that immediately failed every job with
@@ -281,6 +303,7 @@ export interface JobPayloads {
   image: ImageJobPayload;
   metadata: MetadataJobPayload;
   'metadata-search': MetadataSearchJobPayload;
+  'metadata-refresh': MetadataRefreshJobPayload;
   import: ImportJobPayload;
   'image-backfill': ImageBackfillJobPayload;
   'opengop-backfill': OpenGopBackfillJobPayload;
@@ -303,6 +326,7 @@ export const JOB_TYPES = [
   'image',
   'metadata',
   'metadata-search',
+  'metadata-refresh',
   'import',
   'image-backfill',
   'opengop-backfill',
@@ -381,6 +405,10 @@ export const JOB_QUEUE_OPTIONS: Readonly<Record<JobType, JobQueueOptions>> = {
   image: { expireInSeconds: BOUNDED_EXPIRE_SECONDS, retryLimit: 2 },
   metadata: { expireInSeconds: BOUNDED_EXPIRE_SECONDS, retryLimit: 2 },
   'metadata-search': { expireInSeconds: BOUNDED_EXPIRE_SECONDS, retryLimit: 2 },
+  // Pure fan-out (one ledger insert per item) but a large library is tens
+  // of thousands of inserts; retryLimit 1 because a partial fan-out that
+  // reruns only re-enqueues items that are still unmatched.
+  'metadata-refresh': { expireInSeconds: LONG_RUNNING_EXPIRE_SECONDS, retryLimit: 1 },
   import: { expireInSeconds: LONG_RUNNING_EXPIRE_SECONDS, retryLimit: 2 },
   'image-backfill': { expireInSeconds: BOUNDED_EXPIRE_SECONDS, retryLimit: 2 },
   // Each batch is a handful of bounded (~60-75ms) ffmpeg trace_headers

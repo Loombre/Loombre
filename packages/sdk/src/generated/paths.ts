@@ -109,6 +109,7 @@ export const API_OPERATIONS = [
   { path: "/libraries/{id}", method: "patch", operationId: "updateLibrary" },
   { path: "/libraries/{id}/permissions", method: "get", operationId: "getLibraryPermissions" },
   { path: "/libraries/{id}/permissions", method: "put", operationId: "putLibraryPermissions" },
+  { path: "/libraries/{id}/refresh-metadata", method: "post", operationId: "refreshLibraryMetadata" },
   { path: "/libraries/{id}/scan", method: "post", operationId: "scanLibrary" },
   { path: "/movies", method: "get", operationId: "listMovies" },
   { path: "/movies/{id}", method: "get", operationId: "getMovie" },

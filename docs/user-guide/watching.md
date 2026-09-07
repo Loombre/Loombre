@@ -27,6 +27,16 @@ never silently auto-resumes without asking).
 The usual controls are there: play, pause, skip forward and back, and a
 progress bar you can drag to jump to any point.
 
+## Choosing a version
+
+Some titles have more than one file — a 4K and a 1080p encode, a
+theatrical and an extended cut. On the title's page, each entry under
+**Versions** has its own **Play** button. Inside the player, when there is
+more than one file, a **Version** button sits next to the audio and
+subtitle picker: choosing another version switches to that file and picks
+up close to where you were. The address bar shows which file is playing,
+so a link you copy while watching opens the same version.
+
 ## Subtitles and audio
 
 If your file has subtitles, Loombre may show them automatically based on

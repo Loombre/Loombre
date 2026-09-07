@@ -54,6 +54,7 @@ import { apiGet, LoombreApiError } from "../../../lib/api-client.js";
 import { getAuthStore } from "../../../lib/auth-store.js";
 import { buildLoginHref, currentLocationPath } from "../../../lib/auth-return-path.js";
 import { itemUnavailableReasons } from "../../../lib/playback-reasons.js";
+import { versionSwitchHref } from "../../../lib/version-options.js";
 import styles from "./page.module.css";
 
 export default function WatchPage(): React.JSX.Element {
@@ -164,6 +165,10 @@ export default function WatchPage(): React.JSX.Element {
         {...(hintType ? { hintType } : {})}
         {...(mediaFileId ? { mediaFileId } : {})}
         {...(startMs !== undefined ? { startMs } : {})}
+        // Version picker: the URL stays the source of truth for the playing
+        // file (see lib/version-options.ts) — replace, not push, so Back
+        // still leaves the player rather than stepping through versions.
+        onSelectVersion={(nextFileId, positionMs) => router.replace(versionSwitchHref(itemId, nextFileId, { hintType, positionMs }))}
       />
     );
   }

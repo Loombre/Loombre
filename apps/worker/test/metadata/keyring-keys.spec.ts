@@ -16,7 +16,8 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { detectSecretBackend, storeSecret } from '@loombre/secrets';
-import { resolveApiKeyWithKeyring } from '../../src/metadata/keys.js';
+import { createKeyringKeyResolver, resolveApiKeyWithKeyring } from '../../src/metadata/keys.js';
+import { createTmdbProvider } from '../../src/metadata/providers/tmdb.js';
 
 const KEY_VALUE = 'ui-entered-tmdb-key-8b1f';
 
@@ -86,5 +87,42 @@ describe('resolveApiKeyWithKeyring (A9 worker seam)', () => {
     writeFileSync(path.join(secretsDir, 'provider-key-tvdb'), 'not json at all', { mode: 0o600 });
     const result = await resolveApiKeyWithKeyring('LOOMBRE_TVDB_API_KEY', 'tvdb', envFor());
     expect(result.enabled).toBe(false);
+  });
+});
+
+describe('createKeyringKeyResolver (job-boundary key pickup)', () => {
+  it('env wins on every call; the keyring read is cached for the TTL, then re-read', async () => {
+    let now = 1_000_000;
+    let env = envFor();
+    const resolver = createKeyringKeyResolver('LOOMBRE_TVDB_API_KEY', 'tvdb', { ttlMs: 10_000, env, clock: () => now });
+    // No tvdb key anywhere yet.
+    expect((await resolver()).enabled).toBe(false);
+
+    // Saved from the admin screen (same envelope the server writes).
+    const detected = await detectSecretBackend();
+    await storeSecret(detected.backend, `${dataDir}/secrets/provider-key-tvdb`, JSON.stringify({ value: 'saved-tvdb-key', setAtMs: 1 }));
+    // Still inside the TTL: the cached "disabled" answer stands...
+    expect((await resolver()).enabled).toBe(false);
+    // ...until it expires.
+    now += 10_001;
+    expect(await resolver()).toEqual({ enabled: true, apiKey: 'saved-tvdb-key' });
+
+    // An env var set later wins immediately, TTL or not.
+    env = envFor({ LOOMBRE_TVDB_API_KEY: 'env-tvdb-key' });
+    const envResolver = createKeyringKeyResolver('LOOMBRE_TVDB_API_KEY', 'tvdb', { ttlMs: 10_000, env, clock: () => now });
+    expect(await envResolver()).toEqual({ enabled: true, apiKey: 'env-tvdb-key' });
+  });
+
+  it('a provider constructed without a key flips to enabled on refresh() once its resolver finds one', async () => {
+    const answers = [{ enabled: false as const, reason: 'no key yet' }, { enabled: true as const, apiKey: 'k' }];
+    const provider = createTmdbProvider({ db: {} as never, env: envFor(), resolveKey: async () => answers.shift() ?? { enabled: true, apiKey: 'k' } });
+    expect(provider.enabled).toBe(false);
+    expect(provider.disabledReason).toContain('LOOMBRE_TMDB_API_KEY');
+    await provider.refresh!();
+    expect(provider.enabled).toBe(false);
+    expect(provider.disabledReason).toBe('no key yet');
+    await provider.refresh!();
+    expect(provider.enabled).toBe(true);
+    expect(provider.disabledReason).toBeUndefined();
   });
 });

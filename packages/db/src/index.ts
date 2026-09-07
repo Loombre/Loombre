@@ -39,7 +39,7 @@ export type {
 export { searchCatalog } from './query/search.js';
 
 // People / tags (leak surfaces per §6.4 / STATE.md P1.17).
-export type { ListPeopleParams, ListPeopleResult, PersonRow } from './query/people.js';
+export type { ListPeopleParams, ListPeopleResult, PersonDetailRow, PersonRow } from './query/people.js';
 export { getPersonById, listPeople } from './query/people.js';
 export type { ListTagsParams, ListTagsResult, TagRow } from './query/tags.js';
 export { listTags } from './query/tags.js';

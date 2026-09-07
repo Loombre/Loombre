@@ -28,8 +28,16 @@ import { ViewerContextProvider } from "../common/viewer-context.provider.js";
 import { resolveViewer, parseListQuery } from "./viewer.js";
 import { mapByType } from "./mappers.js";
 
-function mapPerson(row: { id: string; name: string; contentClass: string; creditCount: number }) {
-  return { id: row.id, name: row.name, contentClass: row.contentClass, creditCount: row.creditCount };
+function mapPerson(row: { id: string; name: string; contentClass: string; creditCount: number; images?: unknown[] }) {
+  return {
+    id: row.id,
+    name: row.name,
+    contentClass: row.contentClass,
+    creditCount: row.creditCount,
+    // Only getPersonById carries images (PersonDetailRow); list rows omit
+    // the field entirely, matching the contract's "omitted on list rows".
+    ...(row.images !== undefined ? { images: row.images } : {}),
+  };
 }
 
 // Phosphor Wave 2 lane L3 (/people/[id] route filmography) — the only

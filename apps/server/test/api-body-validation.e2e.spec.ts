@@ -429,6 +429,47 @@ describe("POST /libraries/{id}/scan body validation (ScanLibraryRequest addition
   }, 20_000);
 });
 
+// ──────────────────── POST /libraries/{id}/refresh-metadata ─────────────────
+// RefreshLibraryMetadataRequest: additionalProperties:false, `scope` one of
+// unmatched|all (default unmatched). Same posture as scan above: a bad body
+// is a 422 and enqueues nothing.
+describe("POST /libraries/{id}/refresh-metadata body validation (RefreshLibraryMetadataRequest)", () => {
+  const REJECTED: ReadonlyArray<readonly [label: string, body: Record<string, unknown>]> = [
+    ["scope outside the enum", { scope: "everything" }],
+    ["scope as a boolean", { scope: true }],
+    ["scope as null", { scope: null }],
+    ["an unknown property", { full: true }],
+    ["an unknown property alongside a valid scope", { scope: "all", bogus: 1 }],
+  ];
+
+  for (const [label, body] of REJECTED) {
+    it(`422s on ${label}, and enqueues NO job`, async () => {
+      const before = await countJobs();
+      const res = await admin().post(`/libraries/${targetLibraryId}/refresh-metadata`, body);
+      expectValidationProblem(res);
+      expect(await countJobs()).toBe(before);
+    }, 20_000);
+  }
+
+  for (const body of [{ scope: "unmatched" }, { scope: "all" }, undefined]) {
+    it(`enqueues ONE metadata-refresh job for ${JSON.stringify(body) ?? "no body"} (never a per-item loop in the request)`, async () => {
+      const before = await countJobs();
+      const res = await admin().post(`/libraries/${targetLibraryId}/refresh-metadata`, body);
+      expect(res.status, JSON.stringify(res.body)).toBe(202);
+      expect(typeof res.body.jobId).toBe("string");
+      expect(await countJobs()).toBe(before + 1);
+      const list = await admin().get("/admin/jobs?limit=200");
+      const job = (list.body.items as { id: string; type: string; subjectItemId: string | null }[]).find((j) => j.id === res.body.jobId);
+      expect(job).toMatchObject({ type: "metadata-refresh", subjectItemId: null });
+    }, 20_000);
+  }
+
+  it("404s an unknown library (after the body check)", async () => {
+    const res = await admin().post("/libraries/018f6f1e-0000-7000-8000-00000000dead/refresh-metadata", { scope: "all" });
+    expect(res.status).toBe(404);
+  }, 20_000);
+});
+
 // ────────────────────────────── PATCH /users/me ─────────────────────────────
 // UpdateMeRequest: displayName/email/birthDate are all `[string,'null']`.
 // Round 2 of this finding: a present-but-wrong-typed value must 422 and

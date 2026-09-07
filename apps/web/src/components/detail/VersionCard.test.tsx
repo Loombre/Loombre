@@ -37,7 +37,28 @@ import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { components } from "@loombre/sdk";
 import { renderIntoBody, type TestRender } from "../ui/test-render.js";
-import { VersionCard } from "./VersionCard.js";
+
+// Same next/link stub as VersionRow.test.tsx: the Play link is a /watch
+// entry point and must client-navigate, never full-document load.
+const clientNav = vi.hoisted(() => ({ pushes: [] as string[] }));
+vi.mock("next/link", () => ({
+  default: ({ href, children, ...rest }: { href: string; children?: React.ReactNode } & React.AnchorHTMLAttributes<HTMLAnchorElement>): React.JSX.Element => (
+    <a
+      href={href}
+      {...rest}
+      onClick={(e) => {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+        e.preventDefault();
+        clientNav.pushes.push(href);
+      }}
+    >
+      {children}
+    </a>
+  ),
+}));
+
+const { VersionCard } = await import("./VersionCard.js");
+const ITEM_ID = "01920000-0000-7000-8000-0000000000aa";
 
 type MediaFileSummary = components["schemas"]["MediaFileSummary"];
 
@@ -66,27 +87,27 @@ describe("VersionCard hdr display (browser-items-F6)", () => {
 
   it('omits the HDR/SDR segment entirely when hdr is null (no derivable signal) — does NOT assert "SDR"', () => {
     const file = makeFile({ hdr: null });
-    view = renderIntoBody(<VersionCard file={file} />);
+    view = renderIntoBody(<VersionCard itemId={ITEM_ID} file={file} />);
     expect(view.container.textContent).not.toContain("SDR");
     expect(view.container.textContent).toContain("HEVC");
   });
 
   it('renders "SDR" for a real, probed hdr: "none" verdict', () => {
     const file = makeFile({ hdr: "none" });
-    view = renderIntoBody(<VersionCard file={file} />);
+    view = renderIntoBody(<VersionCard itemId={ITEM_ID} file={file} />);
     expect(view.container.textContent).toContain("SDR");
   });
 
   it('renders "HDR10" for hdr: "hdr10" (e.g. deriveHdrForDisplay reading a PQ color_transfer back)', () => {
     const file = makeFile({ hdr: "hdr10" });
-    view = renderIntoBody(<VersionCard file={file} />);
+    view = renderIntoBody(<VersionCard itemId={ITEM_ID} file={file} />);
     expect(view.container.textContent).toContain("HDR10");
     expect(view.container.textContent).not.toContain("SDR");
   });
 
   it('renders "Dolby Vision" for hdr: "dv"', () => {
     const file = makeFile({ hdr: "dv" });
-    view = renderIntoBody(<VersionCard file={file} />);
+    view = renderIntoBody(<VersionCard itemId={ITEM_ID} file={file} />);
     expect(view.container.textContent).toContain("Dolby Vision");
   });
 });
@@ -124,7 +145,7 @@ describe("VersionCard file path wrapping (LD-18 (rc.6))", () => {
 
   it("renders the COMPLETE path text, filename tail included, for a >120-char path", () => {
     expect(LONG_PATH.length).toBeGreaterThan(120);
-    view = renderIntoBody(<VersionCard file={makeFile({ path: LONG_PATH })} />);
+    view = renderIntoBody(<VersionCard itemId={ITEM_ID} file={makeFile({ path: LONG_PATH })} />);
     const text = view.container.textContent ?? "";
     expect(text).toContain(LONG_PATH);
     // The tail is the part the old desktop ellipsis destroyed.
@@ -177,17 +198,17 @@ describe("VersionCard file path copy button (LD-18 (rc.6))", () => {
   });
 
   it("renders a copy button labelled for the action next to the path", () => {
-    view = renderIntoBody(<VersionCard file={makeFile({ path: LONG_PATH })} />);
+    view = renderIntoBody(<VersionCard itemId={ITEM_ID} file={makeFile({ path: LONG_PATH })} />);
     expect(view.container.querySelector('button[aria-label="Copy file path"]')).not.toBeNull();
   });
 
   it("renders NO copy button when the file carries no path", () => {
-    view = renderIntoBody(<VersionCard file={makeFile()} />);
+    view = renderIntoBody(<VersionCard itemId={ITEM_ID} file={makeFile()} />);
     expect(view.container.querySelector('button[aria-label="Copy file path"]')).toBeNull();
   });
 
   it("copies the EXACT full path string on click", async () => {
-    view = renderIntoBody(<VersionCard file={makeFile({ path: LONG_PATH })} />);
+    view = renderIntoBody(<VersionCard itemId={ITEM_ID} file={makeFile({ path: LONG_PATH })} />);
     const button = view.container.querySelector('button[aria-label="Copy file path"]') as HTMLButtonElement;
     await act(async () => {
       button.click();
@@ -196,7 +217,7 @@ describe("VersionCard file path copy button (LD-18 (rc.6))", () => {
   });
 
   it('swaps to the "Copied" affordance after a successful copy', async () => {
-    view = renderIntoBody(<VersionCard file={makeFile({ path: LONG_PATH })} />);
+    view = renderIntoBody(<VersionCard itemId={ITEM_ID} file={makeFile({ path: LONG_PATH })} />);
     const button = view.container.querySelector('button[aria-label="Copy file path"]') as HTMLButtonElement;
     expect(button.title).toBe("Copy");
     await act(async () => {
@@ -211,7 +232,7 @@ describe("VersionCard file path copy button (LD-18 (rc.6))", () => {
     Object.assign(navigator, {
       clipboard: { writeText: vi.fn().mockRejectedValue(new Error("denied")) },
     });
-    view = renderIntoBody(<VersionCard file={makeFile({ path: LONG_PATH })} />);
+    view = renderIntoBody(<VersionCard itemId={ITEM_ID} file={makeFile({ path: LONG_PATH })} />);
     const button = view.container.querySelector('button[aria-label="Copy file path"]') as HTMLButtonElement;
     await act(async () => {
       button.click();
@@ -230,7 +251,7 @@ describe("VersionCard file path copy button (LD-18 (rc.6))", () => {
       removeAllRanges,
     } as unknown as Selection);
 
-    view = renderIntoBody(<VersionCard file={makeFile({ path: LONG_PATH })} />);
+    view = renderIntoBody(<VersionCard itemId={ITEM_ID} file={makeFile({ path: LONG_PATH })} />);
     const button = view.container.querySelector('button[aria-label="Copy file path"]') as HTMLButtonElement;
     await act(async () => {
       button.click();
@@ -251,7 +272,7 @@ describe("VersionCard file path copy button (LD-18 (rc.6))", () => {
 
   it("clears the pending reset timer on unmount", async () => {
     const clearTimeoutSpy = vi.spyOn(global, "clearTimeout");
-    view = renderIntoBody(<VersionCard file={makeFile({ path: LONG_PATH })} />);
+    view = renderIntoBody(<VersionCard itemId={ITEM_ID} file={makeFile({ path: LONG_PATH })} />);
     const button = view.container.querySelector('button[aria-label="Copy file path"]') as HTMLButtonElement;
     await act(async () => {
       button.click();
@@ -263,5 +284,38 @@ describe("VersionCard file path copy button (LD-18 (rc.6))", () => {
 
     expect(clearTimeoutSpy).toHaveBeenCalled();
     clearTimeoutSpy.mockRestore();
+  });
+});
+
+describe("VersionCard play link", () => {
+  let view: TestRender | null = null;
+  afterEach(() => {
+    view?.unmount();
+    view = null;
+    clientNav.pushes.length = 0;
+  });
+
+  it("links each card to /watch/{itemId}?mediaFileId=<its own file id>, labelled by the version", () => {
+    view = renderIntoBody(
+      <>
+        <VersionCard itemId={ITEM_ID} file={makeFile({ id: "11111111-1111-1111-1111-111111111111", versionLabel: "Theatrical" })} />
+        <VersionCard itemId={ITEM_ID} file={makeFile({ id: "22222222-2222-2222-2222-222222222222", versionLabel: null })} />
+      </>,
+    );
+    const links = Array.from(view.container.querySelectorAll<HTMLAnchorElement>("a"));
+    expect(links.map((a) => a.getAttribute("href"))).toEqual([
+      `/watch/${ITEM_ID}?mediaFileId=11111111-1111-1111-1111-111111111111`,
+      `/watch/${ITEM_ID}?mediaFileId=22222222-2222-2222-2222-222222222222`,
+    ]);
+    expect(links.map((a) => a.getAttribute("aria-label"))).toEqual(["Play Theatrical", "Play Original"]);
+  });
+
+  it("starts a client-side navigation on click, not a full document load", () => {
+    view = renderIntoBody(<VersionCard itemId={ITEM_ID} file={makeFile({ id: "33333333-3333-3333-3333-333333333333" })} />);
+    const link = view.container.querySelector<HTMLAnchorElement>("a")!;
+    act(() => {
+      link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
+    });
+    expect(clientNav.pushes).toEqual([`/watch/${ITEM_ID}?mediaFileId=33333333-3333-3333-3333-333333333333`]);
   });
 });

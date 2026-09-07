@@ -124,7 +124,15 @@ function GenreChips({ genres }: { genres: string[] }): React.JSX.Element | null 
 type PersonCredit = components["schemas"]["PersonCredit"];
 type MediaFileSummary = components["schemas"]["MediaFileSummary"];
 
-function PeopleSection({ people }: { people: PersonCredit[] | undefined }): React.JSX.Element | null {
+function PeopleSection({
+  people,
+  serverUrl,
+  accessToken,
+}: {
+  people: PersonCredit[] | undefined;
+  serverUrl: string;
+  accessToken: string;
+}): React.JSX.Element | null {
   if (!people || people.length === 0) return null;
   const sorted = people.slice().sort((a, b) => a.order - b.order);
   return (
@@ -132,7 +140,7 @@ function PeopleSection({ people }: { people: PersonCredit[] | undefined }): Reac
       <h2 className={styles.sectionHeading}>Cast &amp; Crew</h2>
       <div className={styles.peopleScroller} role="list" aria-label="Cast and crew">
         {sorted.map((person) => (
-          <PersonCard key={person.id} person={person} />
+          <PersonCard key={person.id} person={person} serverUrl={serverUrl} accessToken={accessToken} />
         ))}
       </div>
     </section>
@@ -210,7 +218,7 @@ export function EpisodeDetail({ id, serverUrl, accessToken }: { id: string; serv
         <PlayLink itemId={episode.id} />
         {episode.overview && <p className={styles.overview}>{episode.overview}</p>}
       </AmbientHero>
-      <PeopleSection people={episode.people} />
+      <PeopleSection people={episode.people} serverUrl={serverUrl} accessToken={accessToken} />
       <VersionsSection itemId={episode.id} mediaFiles={episode.mediaFiles} />
     </div>
   );
@@ -266,7 +274,7 @@ export function ArtistDetail({ id, serverUrl, accessToken }: { id: string; serve
         {albums && albums.length > 0 && <MusicPlayButton queue={() => fetchArtistQueue(albums)} />}
         {artist.overview && <p className={styles.overview}>{artist.overview}</p>}
       </AmbientHero>
-      <PeopleSection people={artist.people} />
+      <PeopleSection people={artist.people} serverUrl={serverUrl} accessToken={accessToken} />
       <section className={styles.section}>
         <h2 className={styles.sectionHeading}>Albums</h2>
         {albums === null ? (

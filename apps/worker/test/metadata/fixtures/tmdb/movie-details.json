@@ -14,7 +14,7 @@
   ],
   "credits": {
     "cast": [
-      { "name": "Keanu Reeves", "character": "Neo", "order": 0 },
+      { "name": "Keanu Reeves", "character": "Neo", "order": 0, "profile_path": "/keanu.jpg" },
       { "name": "Laurence Fishburne", "character": "Morpheus", "order": 1 },
       { "name": "Carrie-Anne Moss", "character": "Trinity", "order": 2 }
     ],

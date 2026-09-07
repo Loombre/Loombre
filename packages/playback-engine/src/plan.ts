@@ -113,6 +113,7 @@ import { evaluateSubtitle } from "./stages/subtitle.js";
 import { buildLadder, capAdvertisedVariants, evaluateBitrate } from "./stages/ladder.js";
 import { routeHardware } from "./stages/hardware.js";
 import { STAGE_SEVERITY, severityToVerdict, type StageResult } from "./stages/types.js";
+import { evaluateOpenGopCopySafety } from "./stages/open-gop.js";
 import { buildFfmpegArgs } from "./args/builder.js";
 
 /**
@@ -233,7 +234,7 @@ import { buildFfmpegArgs } from "./args/builder.js";
  * IS the C2 regression pin (§7.5's "Matrix churn" paragraph). Matrix
  * 530 -> 536 cases, golden count 41 -> 42.
  */
-export const ENGINE_VERSION = "0.11.0";
+export const ENGINE_VERSION = "0.12.0";
 
 /**
  * Stage D assembly (docs/PLAYBACK.md §3 Stage D.4, binding interpretation
@@ -377,11 +378,25 @@ export function plan(input: PlanInput): PlaybackPlan {
   // (it never contributes to severity — see stages/hardware.ts's header) —
   // it runs later, below, once `video.action` and `ladder` are known.
 
-  const stages: StageResult[] = [stageA, stageB, stageC, stageD, stageE, stageF];
-  const reasons: PlanReason[] = stages.flatMap((s) => s.reasons);
+  // Stage B′ (docs/PLAYBACK.md §3 rule 5, ENGINE_VERSION 0.12.0 —
+  // stages/open-gop.ts): an open-GOP h264 stream must not be stream-copied
+  // into a SEGMENTED container. The predicate needs the FINAL container,
+  // which only the aggregate of A-F decides, so A-F are aggregated once
+  // provisionally (same `resolveDecision` as the final pass below — one
+  // function, never two copies of the rule), the stage is evaluated
+  // against that container, and the final aggregate includes its verdict.
+  // Exact in one pass: the escalation only raises severity to transcode,
+  // whose container is a segmented one regardless.
+  const baseStages: StageResult[] = [stageA, stageB, stageC, stageD, stageE, stageF];
+  const videoWouldTranscode = videoAlreadyTranscoding || stageF.verdict === "transcode";
+  const provisionalContainer = decisionToContainer(resolveDecision(baseStages).decision, device);
+  const stageBOpenGop = evaluateOpenGopCopySafety(media, selection.videoStreamIndex, {
+    videoWouldTranscode,
+    segmentedContainer: provisionalContainer === "fmp4-hls" || provisionalContainer === "ts-hls",
+  });
 
-  const maxSeverity = stages.reduce((acc, s) => Math.max(acc, STAGE_SEVERITY[s.verdict]), 0);
-  const aggregatedVerdict = severityToVerdict(maxSeverity);
+  const stages: StageResult[] = [...baseStages, stageBOpenGop];
+  const { reasons, decision } = resolveDecision(stages);
 
   // Final assembly (docs/PLAYBACK.md §3 "Final assembly", quoted verbatim):
   // "mode==='download' and container-only change → remux (progressive
@@ -404,13 +419,17 @@ export function plan(input: PlanInput): PlaybackPlan {
   // {container-not-direct-playable}; informational reasons are ignored.
   // Pinned by matrix case 205 (download + dv8.1-compat + hdr10 device →
   // remux) and test/plan.spec.ts.
-  const blockingReasons = reasons.filter((r) => isBlockingReasonCode(r.code));
-  const containerOnlyChange =
-    aggregatedVerdict === "direct-stream" &&
-    blockingReasons.length > 0 &&
-    blockingReasons.every((r) => r.code === "container-not-direct-playable");
-
-  const decision: PlanDecision = mode === "download" && containerOnlyChange ? "remux" : aggregatedVerdict;
+  function resolveDecision(stageResults: StageResult[]): { reasons: PlanReason[]; decision: PlanDecision } {
+    const collected: PlanReason[] = stageResults.flatMap((s) => s.reasons);
+    const maxSeverity = stageResults.reduce((acc, s) => Math.max(acc, STAGE_SEVERITY[s.verdict]), 0);
+    const aggregated = severityToVerdict(maxSeverity);
+    const blockingReasons = collected.filter((r) => isBlockingReasonCode(r.code));
+    const containerOnlyChange =
+      aggregated === "direct-stream" &&
+      blockingReasons.length > 0 &&
+      blockingReasons.every((r) => r.code === "container-not-direct-playable");
+    return { reasons: collected, decision: mode === "download" && containerOnlyChange ? "remux" : aggregated };
+  }
 
   const container = decisionToContainer(decision, device);
 
@@ -436,7 +455,7 @@ export function plan(input: PlanInput): PlaybackPlan {
   const video: PlaybackPlanVideo = {
     action:
       selection.videoStreamIndex !== null && media.video.length > 0
-        ? videoAlreadyTranscoding || stageF.verdict === "transcode"
+        ? videoWouldTranscode || stageBOpenGop.verdict === "transcode"
           ? "transcode"
           : "copy"
         : "none",

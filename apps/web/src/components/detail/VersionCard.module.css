@@ -49,6 +49,29 @@
   white-space: nowrap;
 }
 
+/* "Play this version" — a compact pill at the head row's end, accent on
+   the default file's card like its border. */
+.play {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3xs);
+  font-family: var(--font-mono);
+  font-size: var(--mono-md);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--track-mono);
+  color: var(--color-text);
+  text-decoration: none;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-pill);
+  padding: var(--space-3xs) var(--space-xs);
+  white-space: nowrap;
+}
+
+.play:hover {
+  border-color: var(--color-accent-border);
+  color: var(--color-accent);
+}
+
 .specs {
   font-family: var(--font-mono);
   font-size: var(--mono-md);

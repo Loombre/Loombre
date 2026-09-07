@@ -95,3 +95,38 @@ export async function resolveApiKeyWithKeyring(
     reason: `${envVarName} is not set and no key has been saved from the admin settings screen`,
   };
 }
+
+/** How long a resolved key is trusted before the keyring is consulted
+ *  again. Short enough that a key saved in the admin screen is used by the
+ *  next metadata job within seconds; long enough that a burst of jobs does
+ *  not hit the secret backend per HTTP call. */
+export const KEY_RESOLVER_TTL_MS = 10_000;
+
+/**
+ * A per-provider key resolver the providers call at each job boundary
+ * (MetadataProvider.refresh) instead of freezing the key at construction —
+ * the "re-read at the job boundary" discipline effective-settings.ts
+ * already follows for server_settings. Env-first on every call (an env key
+ * always wins and costs nothing to re-read); the keyring read behind it is
+ * cached for KEY_RESOLVER_TTL_MS. The key value never leaves the
+ * KeyResolution and is never logged.
+ */
+export function createKeyringKeyResolver(
+  envVarName: string,
+  provider: 'tmdb' | 'tvdb',
+  options: { ttlMs?: number; env?: NodeJS.ProcessEnv; clock?: () => number } = {},
+): () => Promise<KeyResolution> {
+  const ttlMs = options.ttlMs ?? KEY_RESOLVER_TTL_MS;
+  const clock = options.clock ?? (() => Date.now());
+  let cached: { resolution: KeyResolution; atMs: number } | null = null;
+  return async () => {
+    const env = options.env ?? process.env;
+    const fromEnv = resolveApiKey(envVarName, env);
+    if (fromEnv.enabled) return fromEnv;
+    const now = clock();
+    if (cached && now - cached.atMs < ttlMs) return cached.resolution;
+    const resolution = await resolveApiKeyWithKeyring(envVarName, provider, env);
+    cached = { resolution, atMs: now };
+    return resolution;
+  };
+}

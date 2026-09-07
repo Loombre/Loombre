@@ -67,6 +67,17 @@ describe('tmdb mappers (fixture-based, no network)', () => {
     expect(directors.map((d) => d.name)).toEqual(['Lana Wachowski', 'Lilly Wachowski']);
   });
 
+  it('mapMovieDetails builds a portrait imageUrl from profile_path + the image base; no base or no profile_path -> no imageUrl', () => {
+    const json = fixture<TmdbMovieDetailsResponse>('movie-details');
+    const withBase = mapMovieDetails(json, '603', 'https://image.tmdb.org/t/p/original');
+    const neo = withBase.people.find((p) => p.name === 'Keanu Reeves');
+    expect(neo?.imageUrl).toBe('https://image.tmdb.org/t/p/original/keanu.jpg');
+    const morpheus = withBase.people.find((p) => p.name === 'Laurence Fishburne');
+    expect(morpheus).not.toHaveProperty('imageUrl'); // fixture carries no profile_path for him
+    const noBase = mapMovieDetails(json, '603');
+    expect(noBase.people.find((p) => p.name === 'Keanu Reeves')).not.toHaveProperty('imageUrl');
+  });
+
   it('mapSeriesDetails maps status enum + first-air-date', () => {
     const json = fixture<TmdbTvDetailsResponse>('tv-details');
     const details = mapSeriesDetails(json, '1399');

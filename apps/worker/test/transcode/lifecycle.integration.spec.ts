@@ -50,6 +50,7 @@ import { listReapableTranscodeSessions, markSessionFailed, recordSessionWorkerPr
 import { plan, type DeviceProfile, type MediaInfo, type NetworkConditions, type PlanInput, type ServerPolicy, type TrackSelection, type VerifiedCapabilities } from "@loombre/playback-engine";
 import { resolveFfmpeg } from "../../src/probe/ffprobe.js";
 import { runTranscodeSession } from "../../src/transcode/runner.js";
+import { measureCopySeekOriginMs } from "../../src/transcode/seek-origin.js";
 import { activeTranscodeRunCount, terminateAllTranscodeRuns } from "../../src/transcode/run-registry.js";
 import { createProcessInspector, reapOrphanedTranscodeSessions } from "../../src/transcode/reaper.js";
 
@@ -463,11 +464,17 @@ describe.skipIf(!ffmpegAvailable || process.platform === "win32")(
 
         const runs = await listTranscodeRuns(db, sessionId);
         const runOne = runs.find((r) => r.runIndex === 1)!;
-        // Source origin is where the run was told to start in the SOURCE,
-        // which is the consumed seek target — not a segment index times a
-        // nominal duration, and not the run's own output timeline (which
+        // Source origin is where the run REALLY starts in the SOURCE. This
+        // device profile stream-copies the video, so that is the keyframe
+        // ffmpeg's input seek lands on at or before the target (seek-
+        // origin.ts, 2026-09-07) — measured here with the same one-packet
+        // probe the runner uses — never a segment index times a nominal
+        // duration, and never the run's own output timeline (which
         // restarts at zero).
-        expect(runOne.sourceOriginMs).toBe(seekTargetMs);
+        const landing = await measureCopySeekOriginMs({ ffmpegPath, filePath: FIXTURE_PATH, videoTypeIndex: 0, seekTargetMs });
+        expect(landing).not.toBeNull();
+        expect(landing!).toBeLessThanOrEqual(seekTargetMs);
+        expect(runOne.sourceOriginMs).toBe(landing);
         // Segment numbering continues globally from what run 0 finished.
         expect(runOne.startSegment).toBe(producedBeforeSeek + 1);
         expect(runOne.startSegment).toBeGreaterThan(0);
@@ -477,7 +484,7 @@ describe.skipIf(!ffmpegAvailable || process.platform === "win32")(
         expect(await getTranscodeRunForSegment(db, sessionId, 0)).toMatchObject({ runIndex: 0, sourceOriginMs: 0 });
         expect(await getTranscodeRunForSegment(db, sessionId, runOne.startSegment)).toMatchObject({
           runIndex: 1,
-          sourceOriginMs: seekTargetMs,
+          sourceOriginMs: landing,
         });
         expect(await getTranscodeRunForSegment(db, sessionId, runOne.startSegment - 1)).toMatchObject({ runIndex: 0 });
 

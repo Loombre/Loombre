@@ -1213,6 +1213,40 @@ paths:
         '422': { $ref: '#/components/responses/UnprocessableEntity' }
         default: { $ref: '#/components/responses/Problem' }
 
+  /libraries/{id}/refresh-metadata:
+    parameters:
+      - $ref: '#/components/parameters/IdPathParam'
+    post:
+      operationId: refreshLibraryMetadata
+      tags: [libraries]
+      summary: Enqueue a metadata refresh for a library's items (admin)
+      description: >-
+        Fans out one `metadata` job per enrichable item (movie/series/
+        artist/album) in the library, through a single `metadata-refresh`
+        job. `scope` `unmatched` (the default) covers only items with no
+        provider match yet — the same set the Dashboard's unmatched list
+        shows; `all` re-fetches every item, carrying each item's existing
+        match so a refresh never replaces the candidate an admin chose with
+        Fix Match. The same fan-out runs automatically when a provider API
+        key is saved (PUT /admin/provider-keys/{provider}) and when the
+        worker boots with a provider newly enabled.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshLibraryMetadataRequest' }
+      responses:
+        '202':
+          description: Refresh job enqueued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JobRef' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        default: { $ref: '#/components/responses/Problem' }
+
   /libraries/{id}/permissions:
     parameters:
       - $ref: '#/components/parameters/IdPathParam'
@@ -6038,6 +6072,18 @@ components:
           default: false
           description: Full rescan vs. incremental (default).
 
+    RefreshLibraryMetadataRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        scope:
+          type: string
+          enum: [unmatched, all]
+          default: unmatched
+          description: >-
+            `unmatched` = items with no provider match yet (default);
+            `all` = every enrichable item, existing matches kept.
+
     LibraryPermission:
       type: object
       additionalProperties: false
@@ -6120,6 +6166,17 @@ components:
         role: { $ref: '#/components/schemas/PersonRole' }
         credit: { type: [string, 'null'], description: 'e.g. character name ("as Batman").' }
         order: { type: integer, minimum: 0 }
+        images:
+          type: array
+          description: >-
+            The person's own managed images — today the `thumb` portrait the
+            metadata worker ingests from the provider (served by
+            GET /images/person/{id}/thumb). Empty when none exists, so a
+            client renders an initials fallback instead of requesting a 404.
+            Optional (not required) only because POST /import's ExportArchive
+            reuses the item schemas this credit sits in; the server always
+            populates it.
+          items: { $ref: '#/components/schemas/ImageDescriptor' }
 
     MediaFileAudioTrack:
       description: >-
@@ -6536,6 +6593,13 @@ components:
         name: { type: string }
         contentClass: { $ref: '#/components/schemas/ContentClass' }
         creditCount: { type: integer, minimum: 0 }
+        images:
+          type: array
+          description: >-
+            The person's own managed images (the `thumb` portrait), same
+            descriptors as PersonCredit.images. Populated by GET /people/{id};
+            omitted on GET /people list rows (Tier-0 list cost).
+          items: { $ref: '#/components/schemas/ImageDescriptor' }
 
     PersonPage:
       type: object
@@ -7005,6 +7069,12 @@ components:
             - bitrate-exceeds-network
             - subtitle-codec-unknown
             - transcode-disabled-by-policy
+            # Stage B′ (docs/PLAYBACK.md §3, ENGINE_VERSION 0.12.0): an
+            # h264 stream with open_gop=true cannot be stream-copied into a
+            # segmented container (segments would start on non-IDR I-frames
+            # and decode with missing references), so the video is
+            # transcoded instead.
+            - video-open-gop-copy-unsafe
             # Informational-class (fixed members)
             - dv-stripped-to-hdr10
             - subtitle-styling-lost

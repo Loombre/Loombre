@@ -82,6 +82,11 @@ export interface PersonCredit {
   order: number;
   /** e.g. the character name for an 'actor' credit. */
   credit?: string | null;
+  /** Absolute URL of the person's portrait at the provider (TMDB
+   *  profile_path, TVDB personImgURL). The metadata consumer turns it into
+   *  ONE 'image' job per distinct person (entity_type 'person', kind
+   *  'thumb'); absent/null = the provider has no portrait for them. */
+  imageUrl?: string | null;
 }
 
 /** provider name -> that provider's external id, for provider_ids rows. */
@@ -182,8 +187,15 @@ export interface MetadataProvider {
    *  constructs and this flag is readable, but every method rejects. */
   readonly enabled: boolean;
   /** Populated only when `enabled` is false — human-readable, surfaced by
-   *  ProviderRegistry.disabledProviders() for an admin notice. */
-  readonly disabledReason?: string;
+   *  ProviderRegistry.disabledProviders() for an admin notice. (`| undefined`
+   *  so a keyed provider can expose it as a live getter that clears once
+   *  refresh() finds a key.) */
+  readonly disabledReason?: string | undefined;
+  /** Re-resolve whatever gates `enabled` (a keyed provider's API key) —
+   *  called by ProviderRegistry.refreshAll() at every metadata job
+   *  boundary so a key saved in the admin screen is picked up without a
+   *  worker restart. Optional: providers with nothing to re-read omit it. */
+  refresh?(): Promise<void>;
 
   search(query: SearchQuery): Promise<ProviderSearchResult[]>;
   fetchDetails(ref: ProviderRef): Promise<ProviderDetails>;

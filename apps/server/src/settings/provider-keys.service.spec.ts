@@ -11,7 +11,7 @@
 // Base connection: DATABASE_URL env var, default
 //   postgres://loombre:loombre@localhost:5442/loombre
 
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -19,6 +19,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ensureTestDatabase, getUserByUsername, readUnprocessedEvents } from "@loombre/db";
 import { DbProvider, type LoombreDb } from "../common/db.provider.js";
+import type { JobQueueProvider } from "../common/job-queue.provider.js";
 import { ProviderKeysService } from "./provider-keys.service.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -113,6 +114,30 @@ describe("ProviderKeysService.setProviderKey / clearProviderKey", () => {
 
     expect(status).toEqual({ provider: "tvdb", set: true, source: "keyring", lastSetMs: nowMs });
     expect(JSON.stringify(status)).not.toContain("a-real-secret-key");
+  });
+
+  it("set() enqueues ONE metadata-refresh fan-out for the provider (unmatched scope); clear() enqueues nothing", async () => {
+    const enqueue = vi.fn(async () => "job-id");
+    const service = new ProviderKeysService(dbProvider, { queue: { enqueue } } as unknown as JobQueueProvider);
+    await service.setProviderKey({ provider: "tvdb", key: "fan-out-key", actorUserId: adminId, nowMs: Date.now() });
+    expect(enqueue).toHaveBeenCalledTimes(1);
+    expect(enqueue).toHaveBeenCalledWith("metadata-refresh", { libraryId: null, provider: "tvdb", scope: "unmatched" }, { subjectItemId: null });
+
+    enqueue.mockClear();
+    await service.clearProviderKey({ provider: "tvdb", actorUserId: adminId, nowMs: Date.now() });
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("set() still succeeds when the queue rejects the fan-out (best-effort, logged)", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const enqueue = vi.fn(async () => {
+      throw new Error("queue down");
+    });
+    const service = new ProviderKeysService(dbProvider, { queue: { enqueue } } as unknown as JobQueueProvider);
+    const status = await service.setProviderKey({ provider: "tvdb", key: "still-saved", actorUserId: adminId, nowMs: Date.now() });
+    expect(status.set).toBe(true);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("could not be enqueued"));
+    warn.mockRestore();
   });
 
   it("clear() removes the stored key; status reverts to set:false", async () => {

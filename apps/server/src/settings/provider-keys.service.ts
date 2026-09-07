@@ -50,11 +50,12 @@
 // an active env pin is harmless and never changes what providerKeyStatus()
 // reports (env still wins either way).
 
-import { Injectable } from "@nestjs/common";
+import { Injectable, Optional } from "@nestjs/common";
 import { detectSecretBackend, removeSecret, storeSecret, tryResolveSecret } from "@loombre/secrets";
 import type { SecretBackend } from "@loombre/provisioning";
 import { emitRedactedSettingsUpdated } from "@loombre/db";
 import { DbProvider } from "../common/db.provider.js";
+import { JobQueueProvider } from "../common/job-queue.provider.js";
 import { conflict, notFound, unprocessableEntity } from "../gateway/problem.exception.js";
 import { resolveAppPaths } from "../cli/app-paths.js";
 import { requireLiveAdmin } from "../common/require-live-admin.js";
@@ -87,7 +88,12 @@ function isProviderKeyEnvelope(value: unknown): value is ProviderKeyEnvelope {
 
 @Injectable()
 export class ProviderKeysService {
-  constructor(private readonly dbProvider: DbProvider) {}
+  constructor(
+    private readonly dbProvider: DbProvider,
+    // Optional so a unit test (provider-keys.service.spec.ts) can build the
+    // service without a queue; every real module provides it (CommonModule).
+    @Optional() private readonly jobQueueProvider?: JobQueueProvider,
+  ) {}
 
   /** file0600 (packages/secrets's universal fallback) treats its `key`
    *  argument as a literal filesystem path (packages/secrets/src/
@@ -176,6 +182,22 @@ export class ProviderKeysService {
       actorUserId: input.actorUserId,
       nowMs: input.nowMs,
     });
+
+    // The key is saved; now use it. One fan-out job (the worker enqueues
+    // a 'metadata' job per still-unmatched item in every library whose
+    // chain includes this provider) — the worker picks the key up at its
+    // next job boundary, no restart. Best-effort: a queue failure is
+    // logged, never turned into a failed key save, and the worker's own
+    // boot check (metadata_provider_state) covers the gap on restart.
+    try {
+      await this.jobQueueProvider?.queue.enqueue(
+        "metadata-refresh",
+        { libraryId: null, provider: input.provider, scope: "unmatched" },
+        { subjectItemId: null },
+      );
+    } catch (err) {
+      console.warn(`provider-keys: key for "${input.provider}" saved, but the metadata refresh could not be enqueued: ${err instanceof Error ? err.message : String(err)}`);
+    }
 
     return this.providerKeyStatus(input.provider);
   }

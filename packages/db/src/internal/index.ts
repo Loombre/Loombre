@@ -89,6 +89,14 @@ export {
   grantLibraryPermission,
 } from './libraries.js';
 
+export type { RefreshableItemRow, ListRefreshableItemsParams, MetadataProviderStateRow } from './metadata-refresh.js';
+export {
+  METADATA_ENRICHABLE_ITEM_TYPES,
+  listRefreshableItems,
+  getMetadataProviderState,
+  upsertMetadataProviderState,
+} from './metadata-refresh.js';
+
 export type { ImageRow, UpsertImageInput, ImageNeedingDominantColorRow } from './images.js';
 export {
   upsertImage,

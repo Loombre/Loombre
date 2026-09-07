@@ -114,6 +114,31 @@ const IRAP_TYPES = new Set([16, 17, 18, 19, 20, 21, 22, 23]); // every real keyf
 // verified against real ffmpeg 8.1.1 output — see this module's header).
 const NAL_UNIT_TYPE_LINE = /nal_unit_type\s+[01]+\s*=\s*(\d+)/;
 
+// H.264 (2026-09-07, owner report from the Linux reference box): the
+// open-GOP signal is a recovery-point SEI (payload type 6) — x264's
+// `--open-gop` and `--intra-refresh` mark their non-IDR I-frames with it,
+// and those frames carry the packet key flag the HLS muxer cuts on
+// (docs/PLAYBACK.md §3 Stage B′). trace_headers prints the SEI header as
+// "last_payload_type_byte  00000110 = 6" followed by a "Recovery Point"
+// label line (verified against ffmpeg 8.1.1 on an x264 open-gop=1 sample:
+// 7 of its 8 key-flagged packets were recovery points, 1 was the IDR; the
+// open-gop=0 control had 8 IDRs and no payload-6 SEI). Either line is the
+// signal; H.264's nal_unit_type numbering is NEVER fed to the HEVC rules
+// above (its type 8 is a PPS, not RASL_N).
+const H264_RECOVERY_POINT_PAYLOAD_LINE = /last_payload_type_byte\s+[01]+\s*=\s*6\b/;
+const H264_RECOVERY_POINT_LABEL_LINE = /\]\s*Recovery Point\s*$/;
+
+/** Codecs this detector has a rule set for. Anything else resolves `false`
+ *  without a spawn (see "Codec guard" above). */
+const SCANNABLE_CODECS = new Set(["hevc", "h264"]);
+
+/** H.264 GOPs run long (x264's default keyint is 250 = 10s at 25fps, and
+ *  recovery points sit only on I-frames), so the HEVC window's 2s would
+ *  often contain no I-frame at all and read "closed" by accident. 12s
+ *  bounds the copy+trace scan at well under a second of CPU while covering
+ *  a full default GOP. */
+const H264_MID_FILE_SCAN_SECONDS = "12";
+
 /** Below this duration, a mid-file seek-and-scan window isn't meaningful
  *  (too little room either side of the midpoint) — fall back to scanning
  *  the whole short stream from 0 instead. Set to match the real fixture
@@ -160,7 +185,7 @@ interface ScanPlan {
 /** Chooses the scan window + verdict-rule mode for a given file duration —
  *  see this module's header "SCAN WINDOW" section for the full rationale
  *  per branch. */
-function planScan(durationMs: number | null): ScanPlan {
+function planScan(durationMs: number | null, codec: string): ScanPlan {
   if (durationMs === null) {
     return { seekSeconds: null, scanSeconds: UNKNOWN_DURATION_SCAN_SECONDS, mode: "from-start" };
   }
@@ -173,7 +198,7 @@ function planScan(durationMs: number | null): ScanPlan {
   // detector needs mid-stream. Rounded to millisecond precision before
   // dividing back to seconds to avoid float noise (e.g. 7.4999999999999).
   const seekMs = Math.round(durationMs / 2);
-  return { seekSeconds: String(seekMs / 1000), scanSeconds: MID_FILE_SCAN_SECONDS, mode: "mid-file" };
+  return { seekSeconds: String(seekMs / 1000), scanSeconds: codec === "h264" ? H264_MID_FILE_SCAN_SECONDS : MID_FILE_SCAN_SECONDS, mode: "mid-file" };
 }
 
 /**
@@ -205,7 +230,7 @@ export async function detectOpenGop(
   options: DetectOpenGopOptions = {},
 ): Promise<OpenGopVerdict> {
   // Codec guard (finding 11) — checked before any ffmpeg resolution/spawn.
-  if (codec !== "hevc") return false;
+  if (!SCANNABLE_CODECS.has(codec)) return false;
 
   let ffmpegPath = options.ffmpegPath;
   if (!ffmpegPath) {
@@ -215,7 +240,7 @@ export async function detectOpenGop(
   }
 
   const timeoutMs = options.timeoutMs ?? 20_000;
-  const plan = planScan(durationMs);
+  const plan = planScan(durationMs, codec);
   const args = [
     ...(plan.seekSeconds !== null ? ["-ss", plan.seekSeconds] : []),
     "-t",
@@ -263,6 +288,12 @@ export async function detectOpenGop(
 
     const processLine = (line: string) => {
       if (settled) return;
+      if (codec === "h264") {
+        // Mode-independent: a recovery point anywhere in the window is the
+        // signal (a closed-GOP x264 stream never emits payload type 6).
+        if (H264_RECOVERY_POINT_PAYLOAD_LINE.test(line) || H264_RECOVERY_POINT_LABEL_LINE.test(line)) finish(true);
+        return;
+      }
       const match = NAL_UNIT_TYPE_LINE.exec(line);
       if (!match) return;
       const type = Number.parseInt(match[1]!, 10);

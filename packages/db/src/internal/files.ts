@@ -468,7 +468,8 @@ export async function hasVideoStreamsNeedingOpenGopBackfill(db: DbOrTx): Promise
 }
 
 /**
- * Id-ordered, cursor-paginated batch of HEVC video streams still missing an
+ * Id-ordered, cursor-paginated batch of HEVC and H.264 video streams (the
+ * two codecs the detector has rules for) still missing an
  * open_gop verdict (NULL — never a real boolean, which is a resolved verdict
  * and must never be re-selected). `afterId` is the last-processed
  * media_streams id from the previous batch (null for the first page).
@@ -508,7 +509,7 @@ export async function listHevcStreamsNeedingOpenGopProbe(
     FROM media_streams ms
     INNER JOIN media_files mf ON mf.id = ms.file_id
     WHERE ms.stream_type = 'video'
-      AND ms.codec = 'hevc'
+      AND ms.codec IN ('hevc', 'h264')
       AND ms.open_gop IS NULL
       AND mf.missing_since_ms IS NULL
       ${opts.afterId !== null ? sql`AND ms.id > ${opts.afterId}` : sql``}
@@ -543,7 +544,10 @@ export async function bulkSetNonHevcVideoOpenGopFalse(db: DbOrTx): Promise<numbe
     .set({ open_gop: false })
     .where('stream_type', '=', 'video')
     .where('open_gop', 'is', null)
-    .where((eb) => eb.or([eb('codec', '!=', 'hevc'), eb('codec', 'is', null)]))
+    // h264 joined the scanned set on 2026-09-07 (recovery-point SEI,
+    // docs/PLAYBACK.md §3 Stage B′); migration 0048 re-nulled the h264
+    // rows an earlier sweep had bulk-set false so they get a real verdict.
+    .where((eb) => eb.or([eb('codec', 'not in', ['hevc', 'h264']), eb('codec', 'is', null)]))
     .executeTakeFirst();
   return Number(result.numUpdatedRows ?? 0);
 }

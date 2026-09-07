@@ -24,6 +24,7 @@ export type BlockingReasonCode =
   | "subtitle-format-requires-burn-in"
   | "subtitle-burn-in-for-styling"
   | "video-transcode-for-subtitle-burn-in"
+  | "video-open-gop-copy-unsafe"
   | "bitrate-exceeds-network"
   | "subtitle-codec-unknown"
   | "transcode-disabled-by-policy";
@@ -46,6 +47,7 @@ export const BLOCKING_REASON_CODES: readonly BlockingReasonCode[] = [
   "subtitle-format-requires-burn-in",
   "subtitle-burn-in-for-styling",
   "video-transcode-for-subtitle-burn-in",
+  "video-open-gop-copy-unsafe",
   "bitrate-exceeds-network",
   "subtitle-codec-unknown",
   "transcode-disabled-by-policy",

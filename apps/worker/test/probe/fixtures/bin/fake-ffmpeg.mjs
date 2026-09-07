@@ -62,7 +62,38 @@ function nalLine(type) {
   return `[trace_headers @ 0xfake] 1           nal_unit_type                                          000000 = ${type}\n`;
 }
 
+function seiPayloadLine(type) {
+  return `[trace_headers @ 0xfake] 8           last_payload_type_byte                               00000110 = ${type}\n`;
+}
+
 switch (mode) {
+  case "h264-recovery": {
+    // x264 open-gop: IDR (5), slices (1), then a recovery-point SEI (6/6)
+    // ahead of a non-IDR I-frame that carries the key flag.
+    process.stderr.write(nalLine(7)); // SPS
+    process.stderr.write(nalLine(8)); // PPS — would read as RASL_N under the HEVC rules; must not
+    process.stderr.write(nalLine(5)); // IDR
+    process.stderr.write(nalLine(1)); // non-IDR slice
+    process.stderr.write(nalLine(6)); // SEI
+    process.stderr.write(seiPayloadLine(6)); // recovery point
+    process.stderr.write("[trace_headers @ 0xfake] Recovery Point\n");
+    process.stderr.write(nalLine(1)); // the recovery-point I-frame's slice
+    process.exit(0);
+    break;
+  }
+  case "h264-closed": {
+    // x264 closed GOP: SPS/PPS, IDRs, slices, one user-data SEI (payload 5) — no payload 6.
+    process.stderr.write(nalLine(7));
+    process.stderr.write(nalLine(8));
+    process.stderr.write(nalLine(6));
+    process.stderr.write(seiPayloadLine(5));
+    process.stderr.write(nalLine(5));
+    process.stderr.write(nalLine(1));
+    process.stderr.write(nalLine(5));
+    process.stderr.write(nalLine(1));
+    process.exit(0);
+    break;
+  }
   case "closed": {
     process.stderr.write(nalLine(20)); // IDR_N_LP (first keyframe)
     process.stderr.write(nalLine(1)); // TRAIL_R

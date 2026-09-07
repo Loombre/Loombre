@@ -53,6 +53,10 @@ instance. TMDB/TVDB enrichment (posters, overviews, cast) is inactive
 until at least one key is set — a scan without one still completes, just
 with no provider metadata or images. The card's **Configure provider
 keys** link takes you to the settings screen where keys are entered.
+Saving a key there matches every item scanned so far that has no provider
+match yet, in the background — no restart and no per-item Fix Match; the
+run shows up under Jobs as a `metadata-refresh` job followed by one
+`metadata` job per item.
 
 ## Crash files
 

@@ -101,6 +101,39 @@ axis; nothing before `1.0.0-beta.1` was ever released.
   source matches the one already on disk is a no-op — a re-match or a
   second provider landing on the same artwork no longer re-downloads,
   re-encodes, or changes the served bytes.
+- Metadata: cast portraits. TMDB profile images (and TVDB person photos)
+  are now fetched — one image per credited person, shared across every
+  title they appear in — and shown on the title page's cast row and the
+  person page. A person without a portrait keeps the initials avatar; the
+  page no longer requests images that do not exist.
+- Metadata: saving a provider API key now matches every already-scanned
+  item that has no provider match yet, in the background — previously the
+  key only applied to items scanned after a worker restart, and existing
+  items had to be fixed one by one. The same sweep runs when the server
+  starts with a provider newly enabled through its environment variable,
+  and the worker picks up a saved key within seconds, without a restart.
+  Libraries gain two menu actions, **Match unmatched** and **Refresh
+  metadata** (the latter keeps each item's existing match), backed by a
+  new `POST /libraries/{id}/refresh-metadata` operation.
+- Player: version selection. Each file under a title's **Versions** has a
+  **Play** button, and the player shows a **Version** picker next to the
+  audio/subtitle picker when a title has more than one file; switching
+  carries the current position over. Playback used to always take the
+  default file.
+- Playback: subtitles drifted early after any seek or resume of a
+  stream-copied title. The seek restart labelled the new run with the
+  requested time, but a stream copy can only start at the previous
+  keyframe (up to one GOP earlier), so the video and audio ran ahead of
+  the subtitle cues by that amount. The worker now measures where ffmpeg
+  actually lands and labels the run with that.
+- Playback: blocky, smeared patches on some H.264 titles when streamed.
+  Files encoded with an open GOP (x264 `--open-gop`, intra refresh, many
+  broadcast rips) flag non-IDR I-frames as keyframes; cut into HLS
+  segments as a stream copy, those segments depend on the previous one and
+  decode with missing references. The probe now detects the recovery-point
+  SEI on H.264 (existing files are re-probed on the next start) and the
+  playback engine transcodes such titles instead of copying them
+  (ENGINE_VERSION 0.12.0, reason `video-open-gop-copy-unsafe`).
 - Metadata: every TMDB image URL was built without a size segment
   (`https://image.tmdb.org/t/p//<file>` — TMDB's base URL ends at `/t/p/`
   and the default had its `original` stripped), so every poster, backdrop

@@ -219,6 +219,7 @@ function LibraryRow({
   library,
   scanStatus,
   onScan,
+  onRefreshMetadata,
   onEdit,
   onPermissions,
   onProviderChain,
@@ -228,6 +229,7 @@ function LibraryRow({
   library: Library;
   scanStatus: { scanning: boolean; lastCompletedAtMs: number | null } | undefined;
   onScan: (full: boolean) => void;
+  onRefreshMetadata: (scope: "unmatched" | "all") => void;
   onEdit: () => void;
   onPermissions: () => void;
   onProviderChain: () => void;
@@ -264,6 +266,12 @@ function LibraryRow({
           actions={[
             { label: "Scan", onSelect: () => onScan(false) },
             { label: "Full rescan", onSelect: () => onScan(true) },
+            // Metadata fan-out (POST /libraries/{id}/refresh-metadata):
+            // "Match unmatched" is the same set the Dashboard's unmatched
+            // list shows; "Refresh metadata" re-fetches everything while
+            // keeping each item's existing match.
+            { label: "Match unmatched", onSelect: () => onRefreshMetadata("unmatched") },
+            { label: "Refresh metadata", onSelect: () => onRefreshMetadata("all") },
             { label: "Permissions", onSelect: onPermissions },
             { label: "Provider chain", onSelect: onProviderChain },
             // STATE.md FIX WAVE FX1: Stash only ever applies to a
@@ -427,6 +435,15 @@ export function LibrariesSection({ heading }: { heading: string | null }): React
     }
   }
 
+  async function handleRefreshMetadata(lib: Library, scope: "unmatched" | "all"): Promise<void> {
+    try {
+      await apiPost("/libraries/{id}/refresh-metadata", { params: { path: { id: lib.id } }, body: { scope } });
+      showToast(`${scope === "all" ? "METADATA REFRESH" : "MATCHING UNMATCHED ITEMS"} STARTED — ${lib.name.toUpperCase()}`);
+    } catch (err) {
+      showToast(apiErrorCopy(err, "Failed to start the metadata refresh."), { variant: "danger" });
+    }
+  }
+
   async function handleDelete(lib: Library): Promise<void> {
     if (!window.confirm(`Delete "${lib.name}"? This does not delete files on disk.`)) return;
     try {
@@ -468,6 +485,7 @@ export function LibrariesSection({ heading }: { heading: string | null }): React
               library={lib}
               scanStatus={scanStatuses.get(lib.id)}
               onScan={(full) => void handleScan(lib, full)}
+              onRefreshMetadata={(scope) => void handleRefreshMetadata(lib, scope)}
               onEdit={() => setEditing(lib)}
               onPermissions={() => setManagingPermissions(lib)}
               onProviderChain={() => setManagingProviderChain(lib)}

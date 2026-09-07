@@ -37,7 +37,7 @@
 //       replace seekBack15/seekForward30 — same arc+arrowhead construction,
 //       numeral swapped to "10".
 import { useEffect, useState } from "react";
-import { ArrowLeft, ListVideo, Maximize, Minimize, SlidersHorizontal, Volume2, VolumeX } from "lucide-react";
+import { ArrowLeft, Layers, ListVideo, Maximize, Minimize, SlidersHorizontal, Volume2, VolumeX } from "lucide-react";
 import type { components } from "@loombre/sdk";
 import { Icon } from "../icon/Icon.js";
 import { BlazeSpinner } from "../ui/BlazeSpinner.js";
@@ -46,6 +46,8 @@ import { useMediaQuery } from "../ui/use-media-query.js";
 import { decisionLabel } from "../../lib/playback-fallback.js";
 import { Scrubber, defaultFormatTime, type BufferedRange } from "./Scrubber.js";
 import { TrackPickers } from "./TrackPickers.js";
+import { VersionPicker } from "./VersionPicker.js";
+import type { VersionOption } from "../../lib/version-options.js";
 import { ChapterList, type ChapterListEntry } from "./ChapterList.js";
 import styles from "./PlayerControls.module.css";
 
@@ -113,6 +115,14 @@ export interface PlayerControlsProps {
   onToggleFullscreen: () => void;
   onSelectAudio: (index: number) => void;
   onSelectSubtitle: (index: number | null) => void;
+  /** The item's media files as picker rows (lib/version-options.ts). The
+   *  Version button renders only when there is something to choose
+   *  between (two or more); omitted/one = no button, exactly like
+   *  `chapters`/tracks. */
+  versions?: VersionOption[];
+  /** Picking a non-current version. The caller navigates (the URL is the
+   *  source of truth for the playing file) — the popover closes itself. */
+  onSelectVersion?: (mediaFileId: string) => void;
   /** Reports whether either bottom-bar popover (track picker / chapter
    *  list) is open. VideoPlayer uses it to hide the quality dock for the
    *  duration: both surfaces anchor to the bottom-right corner, and the
@@ -127,16 +137,24 @@ export interface PlayerControlsProps {
 export function PlayerControls(props: PlayerControlsProps): React.JSX.Element {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [chaptersOpen, setChaptersOpen] = useState(false);
+  const [versionOpen, setVersionOpen] = useState(false);
   const hasTracks = props.audioStreams.length > 0 || props.subtitleStreams.length > 0;
   const hasChapters = props.chapters.length > 0;
+  const versions = props.versions ?? [];
+  const hasVersions = versions.length > 1 && props.onSelectVersion !== undefined;
   const isPhone = useMediaQuery(PHONE_QUERY);
 
   // See onPopoverOpenChange's doc comment — the quality dock hides while
   // either popover is open so the two bottom-right surfaces never collide.
   const { onPopoverOpenChange } = props;
   useEffect(() => {
-    onPopoverOpenChange?.(pickerOpen || chaptersOpen);
-  }, [onPopoverOpenChange, pickerOpen, chaptersOpen]);
+    onPopoverOpenChange?.(pickerOpen || chaptersOpen || versionOpen);
+  }, [onPopoverOpenChange, pickerOpen, chaptersOpen, versionOpen]);
+
+  function handleSelectVersion(mediaFileId: string): void {
+    setVersionOpen(false);
+    props.onSelectVersion?.(mediaFileId);
+  }
 
   function handleSelectChapter(startMs: number): void {
     props.onSeek(startMs);
@@ -246,6 +264,25 @@ export function PlayerControls(props: PlayerControlsProps): React.JSX.Element {
                   <BottomSheet open={chaptersOpen} onClose={() => setChaptersOpen(false)} title="Chapters">
                     <ChapterList chapters={props.chapters} positionMs={props.positionMs} onSelect={handleSelectChapter} />
                   </BottomSheet>
+                )}
+              </div>
+            )}
+
+            {hasVersions && (
+              <div className={styles.pickerAnchor}>
+                <button
+                  type="button"
+                  className={styles.iconButton}
+                  aria-label="Version"
+                  aria-pressed={versionOpen}
+                  onClick={() => setVersionOpen((v) => !v)}
+                >
+                  <Icon icon={Layers} />
+                </button>
+                {versionOpen && (
+                  <div className={styles.pickerPopover}>
+                    <VersionPicker versions={versions} onSelect={handleSelectVersion} />
+                  </div>
                 )}
               </div>
             )}

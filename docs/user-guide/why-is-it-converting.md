@@ -36,6 +36,12 @@ A few common reasons:
   without constant pausing to catch up.
 - **Subtitles need to be drawn directly onto the picture.** Some subtitle
   styles can only be shown this way, which requires converting the video.
+- **The file was encoded in a way that cannot be cut into pieces safely.**
+  Streaming sends video in short segments, and some H.264 files (an
+  "open GOP" encode, common in broadcast rips and some x264 settings)
+  have segment boundaries that depend on the previous segment. Sent as-is,
+  they can show blocky, smeared patches after a seek; Loombre converts
+  them instead so every segment stands on its own.
 - **Whoever administers your Loombre has chosen settings** that affect how
   videos are sent to certain devices or networks.
 

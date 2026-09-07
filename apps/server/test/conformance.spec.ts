@@ -364,6 +364,7 @@ const IMPLEMENTED_NON_PUBLIC_EXPECTATIONS: Record<string, number> = {
   updateLibrary: 404, // bodyless body is valid (no required fields); library lookup fails
   deleteLibrary: 404,
   scanLibrary: 404,
+  refreshLibraryMetadata: 404, // bodyless is valid (scope defaults to unmatched); the placeholder id 404s like scanLibrary
   getLibraryPermissions: 404,
   putLibraryPermissions: 404, // library existence checked before body validation
 

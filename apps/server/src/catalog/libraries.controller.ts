@@ -190,6 +190,8 @@ const UPDATE_LIBRARY_BODY_KEYS = new Set(["name", "paths"]);
 /** ScanLibraryRequest's full property set (additionalProperties:false,
  *  api-validation-F5). */
 const SCAN_LIBRARY_BODY_KEYS = new Set(["full"]);
+const REFRESH_METADATA_BODY_KEYS = new Set(["scope"]);
+const REFRESH_METADATA_SCOPES = new Set(["unmatched", "all"]);
 
 /** LibraryPermissionSet's full property set (additionalProperties:false,
  *  d3-b5). `libraryId` is ACCEPTED and then IGNORED: the contract lists it
@@ -401,6 +403,42 @@ export class LibrariesController {
       throw notFound("Library not found.", req.originalUrl);
     }
     const jobId = await this.jobQueueProvider.queue.enqueue("scan", { libraryId: id, full }, { subjectItemId: null });
+    return { jobId };
+  }
+
+  @Post("libraries/:id/refresh-metadata")
+  @HttpCode(HttpStatus.ACCEPTED)
+  async refreshLibraryMetadata(
+    @Param("id") id: string,
+    @Body() rawBody: Record<string, unknown> | undefined,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    await requireAdmin(this.dbProvider.db, req);
+    requireUuidParam(id, "Library not found.", req.originalUrl);
+
+    // Same ordering as scanLibrary above: the body is judged before the
+    // library's existence is revealed.
+    const body = rawBody ?? {};
+    const instance = req.originalUrl;
+    for (const key of Object.keys(body)) {
+      if (!REFRESH_METADATA_BODY_KEYS.has(key)) {
+        throw unprocessableEntity(`Unknown property "${key}".`, instance);
+      }
+    }
+    const rawScope = body["scope"];
+    if (rawScope !== undefined && (typeof rawScope !== "string" || !REFRESH_METADATA_SCOPES.has(rawScope))) {
+      throw unprocessableEntity('scope must be "unmatched" or "all".', instance);
+    }
+    const scope = rawScope === "all" ? "all" : "unmatched";
+
+    const existing = await getLibraryByIdAdmin(this.dbProvider.db, id);
+    if (!existing) {
+      throw notFound("Library not found.", req.originalUrl);
+    }
+    // One fan-out job; the worker enqueues the per-item 'metadata' jobs
+    // (packages/jobs MetadataRefreshJobPayload) — never a loop of inserts
+    // inside this request.
+    const jobId = await this.jobQueueProvider.queue.enqueue("metadata-refresh", { libraryId: id, provider: null, scope }, { subjectItemId: null });
     return { jobId };
   }
 

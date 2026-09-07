@@ -167,6 +167,7 @@ export function metadataSearchConsumerHandler(deps: MetadataSearchConsumerDeps):
     // "looked at nothing" — the two states the old candidates[]-only payload
     // collapsed into one sentence.
     const providersSearched: string[] = [];
+    await deps.registry.refreshAll(); // same job-boundary key pickup as consumer.ts
     for (const providerName of chain) {
       const provider = deps.registry.get(providerName);
       if (!provider || !provider.enabled) continue;

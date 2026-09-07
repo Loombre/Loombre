@@ -119,7 +119,10 @@ async function resolveOpenGopByIndex(
   const result = new Map<number, OpenGopVerdict>();
   const knownDurationMs = durationMs > 0 ? durationMs : null;
   for (const [videoTypeIndex, stream] of video.entries()) {
-    if (stream.codec !== "hevc") {
+    // hevc (RASL/CRA rules) and, since 2026-09-07, h264 (recovery-point
+    // SEI — docs/PLAYBACK.md §3 Stage B′); every other codec is `false`
+    // without a scan (opengop.ts's codec guard resolves the same).
+    if (stream.codec !== "hevc" && stream.codec !== "h264") {
       result.set(stream.index, false);
       continue;
     }

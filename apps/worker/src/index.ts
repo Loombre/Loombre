@@ -10,6 +10,7 @@ import {
   markSessionFailed,
   reconcileAbandonedJobLedgerRows,
   hasVideoStreamsNeedingOpenGopBackfill,
+  getMetadataProviderState,
 } from "@loombre/db/internal";
 import { LOOMBRE_VERSION_FULL } from "@loombre/shared";
 import { installCrashHandlers, installGracefulShutdown, type ShutdownSignal } from "./crash/index.js";
@@ -50,7 +51,9 @@ import {
   createTvdbProvider,
   metadataConsumerHandler,
   metadataSearchConsumerHandler,
-  resolveApiKeyWithKeyring,
+  metadataRefreshConsumerHandler,
+  enqueueRefreshForNewlyEnabledProviders,
+  createKeyringKeyResolver,
 } from "./metadata/index.js";
 import { imageConsumerHandler, imageBackfillConsumerHandler } from "./image/index.js";
 import { createImportConsumerHandler } from "./import/index.js";
@@ -201,20 +204,13 @@ queue.work(
 // resolved key is injected through the provider's existing deps.env seam
 // so provider internals stay untouched and the value is never logged.
 const registry = new ProviderRegistry();
-const tmdbKey = await resolveApiKeyWithKeyring("LOOMBRE_TMDB_API_KEY", "tmdb");
-const tvdbKey = await resolveApiKeyWithKeyring("LOOMBRE_TVDB_API_KEY", "tvdb");
-registry.register(
-  createTmdbProvider({
-    db,
-    ...(tmdbKey.enabled ? { env: { ...process.env, LOOMBRE_TMDB_API_KEY: tmdbKey.apiKey } } : {}),
-  }),
-);
-registry.register(
-  createTvdbProvider({
-    db,
-    ...(tvdbKey.enabled ? { env: { ...process.env, LOOMBRE_TVDB_API_KEY: tvdbKey.apiKey } } : {}),
-  }),
-);
+// Keys are re-resolved at every metadata job boundary (registry.refreshAll
+// in the consumers) through these TTL-cached resolvers — a key saved in the
+// admin screen is live within seconds, no restart. The boot-time refresh
+// below just makes the first disabledProviders() notice accurate.
+registry.register(createTmdbProvider({ db, resolveKey: createKeyringKeyResolver("LOOMBRE_TMDB_API_KEY", "tmdb") }));
+registry.register(createTvdbProvider({ db, resolveKey: createKeyringKeyResolver("LOOMBRE_TVDB_API_KEY", "tvdb") }));
+await registry.refreshAll();
 registry.register(createMusicBrainzProvider({ db }));
 // Stash SQLite metadata sync, K7: restricted-scoped, attaches per-library
 // via library_provider_entries (never in provider-chain-defaults.ts's
@@ -224,6 +220,30 @@ registry.register(createStashProvider({ db }));
 for (const notice of registry.disabledProviders()) {
   console.warn(`worker: metadata provider "${notice.name}" disabled — ${notice.reason}`);
 }
+
+// A keyed provider that is enabled NOW but was not at the last boot (or was
+// never recorded) fans out one metadata-refresh for every unmatched item in
+// the libraries whose chain includes it — the env-var key path. The
+// admin-screen path enqueues the same job from the server on save.
+for (const name of await enqueueRefreshForNewlyEnabledProviders(
+  db,
+  registry,
+  ["tmdb", "tvdb"],
+  (payload) => queue.enqueue("metadata-refresh", payload),
+  getMetadataProviderState,
+)) {
+  console.warn(`worker: metadata provider "${name}" is newly enabled — enqueued a metadata refresh for unmatched items`);
+}
+
+queue.work(
+  "metadata-refresh",
+  metadataRefreshConsumerHandler({
+    db,
+    registry,
+    enqueueMetadataJob: (payload, opts) => queue.enqueue("metadata", payload, opts),
+  }),
+  { concurrency: 1 },
+);
 
 queue.work(
   "metadata",

@@ -47,6 +47,7 @@ import { QualitySelector, type QualityLevel } from "./QualitySelector.js";
 import { deriveSubtitleTrackInfo, type SubtitleTrackInfo } from "../../lib/subtitle-track.js";
 import { itemUnavailableReasons, resolveUnavailableReasons } from "../../lib/playback-reasons.js";
 import { findPlayableFallback, decisionLabel, type FallbackCandidate } from "../../lib/playback-fallback.js";
+import { versionOptionsFor } from "../../lib/version-options.js";
 import { findProgressForItem, isWorthResuming } from "../../lib/progress-lookup.js";
 import { HeartbeatScheduler, type HeartbeatSnapshot, type ProgressState } from "../../lib/heartbeat.js";
 import { isAxisCommensurateStep, isRealPlaybackAdvancement, isSourceContinuous } from "../../lib/watched-progress.js";
@@ -161,6 +162,13 @@ export interface VideoPlayerProps {
    *  worth-resuming saved position exists, else start at 0). */
   startMs?: number;
   onBack: () => void;
+  /** Version picker (PlayerControls' "Version" popover): the viewer picked
+   *  another of this item's media files. The caller navigates to it —
+   *  app/watch/[itemId]/page.tsx does a router.replace with the new
+   *  ?mediaFileId (and the current position as ?t=), which lands back
+   *  here as a changed `mediaFileId` prop and re-runs the session-create
+   *  effect. Omitted = no picker. */
+  onSelectVersion?: (mediaFileId: string, positionMs: number) => void;
 }
 
 function readBuffered(video: HTMLVideoElement): BufferedRange[] {
@@ -217,7 +225,7 @@ function seekableEndSec(video: HTMLVideoElement | null): number | null {
   return s && s.length > 0 ? s.end(s.length - 1) : null;
 }
 
-export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: VideoPlayerProps): React.JSX.Element {
+export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack, onSelectVersion }: VideoPlayerProps): React.JSX.Element {
   const [phase, setPhase] = useState<Phase>("loading");
   const [item, setItem] = useState<ItemSummary | null>(null);
   // S7/K9: loaded once per item via the SDK — see the fetch effect below.
@@ -2898,6 +2906,8 @@ export function VideoPlayer({ itemId, hintType, mediaFileId, startMs, onBack }: 
             onToggleFullscreen={toggleFullscreen}
             onSelectAudio={selectAudio}
             onSelectSubtitle={selectSubtitle}
+            versions={versionOptionsFor(item?.mediaFiles ?? [], mediaFileId)}
+            {...(onSelectVersion !== undefined ? { onSelectVersion: (id: string) => onSelectVersion(id, positionMs) } : {})}
             onPopoverOpenChange={setControlsPopoverOpen}
           />
           {/* §9.1.9's ONE new piece of player UI. Rendered beside the

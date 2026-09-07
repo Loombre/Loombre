@@ -315,16 +315,34 @@ describe("plan(): video.openGop assembly (§5, 2026-08-10)", () => {
   // real h264 row would never actually reach this) must never get the flag
   // or the reason: the bsf this flag drives strips HEVC NAL types 8/9,
   // which mean something else entirely on h264 (NAL 8 is PPS).
-  it("h264 stream + openGop:true + repackaged container -> video.openGop unset, no reason, no bsf in ffmpegArgs", () => {
+  it("h264 stream + openGop:true + repackaged container -> video.openGop unset, no HEVC strip; Stage B′ (0.12.0) escalates the copy to a transcode instead", () => {
     const input = makeInput({
       media: makeMedia({ container: "mkv", video: [{ ...makeMedia().video[0]!, openGop: true }] }),
     });
     const result = plan(input);
-    expect(result.decision).toBe("direct-stream");
-    expect(result.video.action).toBe("copy");
+    // The HEVC-only flag/strip never applies to h264 (that half is
+    // unchanged); what DOES apply since 0.12.0 is stages/open-gop.ts —
+    // an open-GOP h264 copy into a segmented container is unsafe, so the
+    // video is transcoded (matrix 538/539/540 pin the three shapes).
+    expect(result.decision).toBe("transcode");
+    expect(result.video.action).toBe("transcode");
     expect(result.video.openGop).toBeUndefined();
-    expect(result.reasons).toEqual([{ code: "container-not-direct-playable", detail: "container=mkv" }]);
+    expect(result.reasons.slice(0, 2)).toEqual([
+      { code: "container-not-direct-playable", detail: "container=mkv" },
+      { code: "video-open-gop-copy-unsafe", streamIndex: 0 },
+    ]);
+    // ...and, because it is now a transcode on makeInput's software-only
+    // caps, Stage G's routing reason follows — the same tail every other
+    // software transcode in this file carries.
+    expect(result.reasons.slice(2).map((r) => r.code)).toEqual(["software-fallback:encode"]);
     expect(result.ffmpegArgs).not.toContain("filter_units=remove_types=8-9");
+  });
+
+  it("h264 stream + openGop:true in a DIRECT-PLAY container -> untouched (Stage B′ needs a segmented container)", () => {
+    const result = plan(makeInput({ media: makeMedia({ video: [{ ...makeMedia().video[0]!, openGop: true }] }) }));
+    expect(result.decision).toBe("direct-play");
+    expect(result.video.action).toBe("copy");
+    expect(result.reasons).toEqual([]);
   });
 });
 
@@ -404,14 +422,14 @@ describe("plan(): engineVersion", () => {
     expect(ENGINE_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
   });
 
-  it("Wave C2 bumps the ruleset to 0.11.0 — a NEW decision rule (§7.5 step (h)) + a new reason code, so MINOR", () => {
+  it("Stage B′ (open-GOP h264 copy safety) bumps the ruleset to 0.12.0 — a NEW decision rule + a new reason code, so MINOR (Wave C2 was 0.11.0 for the same reason)", () => {
     // Wave C1 (LD-7) landed 0.10.0 (AV1 ladder targeting) and its review
     // finding-1 follow-up 0.10.1 (a narrowing of an existing rule, PATCH).
     // Wave C2 adds §7.5's Tier-0 advertised-variant cap: a genuinely new
     // decision rule with a new emittable reason code, changing the stored
     // `ladder` for a whole class of Tier-0 plans — MINOR, by the same
     // policy that made 0.10.0 minor and 0.10.1 patch.
-    expect(ENGINE_VERSION).toBe("0.11.0");
+    expect(ENGINE_VERSION).toBe("0.12.0");
   });
 });
 

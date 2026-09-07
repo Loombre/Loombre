@@ -122,8 +122,9 @@ describe.skipIf(!toolsAvailable)("probe consumer integration (real ffmpeg/ffprob
     expect(video?.dv_profile).toBeNull();
     expect(video?.dv_bl_compat_id).toBeNull();
     expect(video?.interlaced).toBe(false);
-    // migrations/0038_media_streams_open_gop.sql: HEVC-only in v1 — a
-    // non-hevc video stream is written `false` (never scanned, never NULL).
+    // migrations/0038_media_streams_open_gop.sql + Stage B′ (2026-09-07):
+    // h264 IS scanned now (recovery-point SEI) — this closed-GOP x264
+    // fixture resolves a real `false`, never NULL.
     expect(video?.open_gop).toBe(false);
 
     const audio = streams.rows.find((s) => s.stream_type === "audio");

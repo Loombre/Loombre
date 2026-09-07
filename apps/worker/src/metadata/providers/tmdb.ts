@@ -12,7 +12,7 @@
 
 import type { DbOrTx } from '@loombre/db/internal';
 import { cachedGet, type FetchLike } from '../cache.js';
-import { resolveApiKey } from '../keys.js';
+import { resolveApiKey, type KeyResolution } from '../keys.js';
 import { acquire, TokenBucket, PROVIDER_RATE_LIMITS, type Clock } from '../rate-limit.js';
 import type {
   EpisodeProviderDetails,
@@ -60,11 +60,13 @@ interface TmdbCastMember {
   name: string;
   character?: string | null;
   order?: number | null;
+  profile_path?: string | null;
 }
 
 interface TmdbCrewMember {
   name: string;
   job: string;
+  profile_path?: string | null;
 }
 
 interface TmdbCredits {
@@ -168,19 +170,28 @@ function yearFromIsoDate(date: string | null | undefined): number | null {
   return Number.isFinite(year) ? year : null;
 }
 
-function mapCredits(credits: TmdbCredits | undefined): PersonCredit[] {
+/** TMDB's `profile_path` is a bare `/xyz.jpg`; the portrait URL is the
+ *  configuration's secure base + size + path, exactly like poster/backdrop
+ *  file_paths (mapImages). Without a base (pure mapper tests) the credit
+ *  carries no imageUrl at all rather than a half-built one. */
+function personImage(profilePath: string | null | undefined, imageBaseUrl: string | undefined): { imageUrl: string } | Record<string, never> {
+  if (!profilePath || !imageBaseUrl) return {};
+  return { imageUrl: `${imageBaseUrl}${profilePath}` };
+}
+
+function mapCredits(credits: TmdbCredits | undefined, imageBaseUrl?: string): PersonCredit[] {
   const people: PersonCredit[] = [];
   let order = 0;
   for (const c of credits?.cast ?? []) {
-    people.push({ name: c.name, role: 'actor', order: c.order ?? order, credit: c.character ?? null });
+    people.push({ name: c.name, role: 'actor', order: c.order ?? order, credit: c.character ?? null, ...personImage(c.profile_path, imageBaseUrl) });
     order += 1;
   }
   for (const c of credits?.crew ?? []) {
     if (c.job === 'Director') {
-      people.push({ name: c.name, role: 'director', order, credit: null });
+      people.push({ name: c.name, role: 'director', order, credit: null, ...personImage(c.profile_path, imageBaseUrl) });
       order += 1;
     } else if (c.job === 'Writer' || c.job === 'Screenplay') {
-      people.push({ name: c.name, role: 'writer', order, credit: null });
+      people.push({ name: c.name, role: 'writer', order, credit: null, ...personImage(c.profile_path, imageBaseUrl) });
       order += 1;
     }
   }
@@ -189,7 +200,7 @@ function mapCredits(credits: TmdbCredits | undefined): PersonCredit[] {
 
 /** TMDB has no first-class "tags" concept distinct from genres — tags stay
  *  empty (documented deviation; the keywords endpoint is out of scope). */
-export function mapMovieDetails(json: TmdbMovieDetailsResponse, externalId: string): MovieProviderDetails {
+export function mapMovieDetails(json: TmdbMovieDetailsResponse, externalId: string, imageBaseUrl?: string): MovieProviderDetails {
   return {
     itemType: 'movie',
     title: json.title,
@@ -200,7 +211,7 @@ export function mapMovieDetails(json: TmdbMovieDetailsResponse, externalId: stri
     contentRating: null,
     genres: (json.genres ?? []).map((g) => g.name),
     tags: [],
-    people: mapCredits(json.credits),
+    people: mapCredits(json.credits, imageBaseUrl),
     providerIds: { tmdb: externalId },
     tagline: json.tagline ?? null,
     runtimeMs: json.runtime ? json.runtime * 60_000 : null,
@@ -213,7 +224,7 @@ const TMDB_TV_STATUS: Record<string, SeriesProviderDetails['status']> = {
   'Canceled': 'cancelled',
 };
 
-export function mapSeriesDetails(json: TmdbTvDetailsResponse, externalId: string): SeriesProviderDetails {
+export function mapSeriesDetails(json: TmdbTvDetailsResponse, externalId: string, imageBaseUrl?: string): SeriesProviderDetails {
   return {
     itemType: 'series',
     title: json.name,
@@ -224,7 +235,7 @@ export function mapSeriesDetails(json: TmdbTvDetailsResponse, externalId: string
     contentRating: null,
     genres: (json.genres ?? []).map((g) => g.name),
     tags: [],
-    people: mapCredits(json.credits),
+    people: mapCredits(json.credits, imageBaseUrl),
     providerIds: { tmdb: externalId },
     status: json.status ? (TMDB_TV_STATUS[json.status] ?? null) : null,
     airDateMs: isoDateToEpochMs(json.first_air_date),
@@ -248,17 +259,17 @@ export function mapSeasonDetails(json: TmdbSeasonResponse, externalId: string): 
   };
 }
 
-export function mapEpisodeDetails(ep: TmdbEpisode, seasonNumber: number, externalId: string): EpisodeProviderDetails {
+export function mapEpisodeDetails(ep: TmdbEpisode, seasonNumber: number, externalId: string, imageBaseUrl?: string): EpisodeProviderDetails {
   const people: PersonCredit[] = [];
   let order = 0;
   for (const c of ep.crew ?? []) {
     if (c.job === 'Director') {
-      people.push({ name: c.name, role: 'director', order, credit: null });
+      people.push({ name: c.name, role: 'director', order, credit: null, ...personImage(c.profile_path, imageBaseUrl) });
       order += 1;
     }
   }
   for (const c of ep.guest_stars ?? []) {
-    people.push({ name: c.name, role: 'guest', order, credit: c.character ?? null });
+    people.push({ name: c.name, role: 'guest', order, credit: c.character ?? null, ...personImage(c.profile_path, imageBaseUrl) });
     order += 1;
   }
 
@@ -307,6 +318,11 @@ export interface TmdbProviderDeps {
   clock?: () => number;
   bucket?: TokenBucket;
   env?: NodeJS.ProcessEnv;
+  /** Job-boundary key re-resolution (keys.ts createKeyringKeyResolver) —
+   *  when present, `refresh()` replaces the construction-time env read
+   *  with its result, so a key saved in the admin screen takes effect
+   *  without a restart. */
+  resolveKey?: () => Promise<KeyResolution>;
 }
 
 function buildUrl(path: string, query: Record<string, string>): string {
@@ -318,7 +334,7 @@ function buildUrl(path: string, query: Record<string, string>): string {
 }
 
 export function createTmdbProvider(deps: TmdbProviderDeps): MetadataProvider {
-  const keyResolution = resolveApiKey('LOOMBRE_TMDB_API_KEY', deps.env);
+  let keyResolution: KeyResolution = resolveApiKey('LOOMBRE_TMDB_API_KEY', deps.env);
   const fetchImpl = deps.fetchImpl ?? ((...args: Parameters<FetchLike>) => fetch(...args));
   const clock = deps.clock ?? (() => Date.now());
   const clockObj: Clock = { nowMs: clock };
@@ -352,8 +368,15 @@ export function createTmdbProvider(deps: TmdbProviderDeps): MetadataProvider {
     name: 'tmdb',
     contentClass: 'general',
     kinds: ['movie', 'tv'],
-    enabled: keyResolution.enabled,
-    ...(!keyResolution.enabled ? { disabledReason: keyResolution.reason } : {}),
+    get enabled(): boolean {
+      return keyResolution.enabled;
+    },
+    get disabledReason(): string | undefined {
+      return keyResolution.enabled ? undefined : keyResolution.reason;
+    },
+    async refresh(): Promise<void> {
+      if (deps.resolveKey) keyResolution = await deps.resolveKey();
+    },
 
     async search(query: SearchQuery): Promise<ProviderSearchResult[]> {
       if (query.mediaKind === 'movie') {
@@ -388,9 +411,12 @@ export function createTmdbProvider(deps: TmdbProviderDeps): MetadataProvider {
     },
 
     async fetchDetails(ref: ProviderRef): Promise<ProviderDetails> {
+      // Portraits need the same configuration base as poster/backdrop
+      // paths; cached under the 'details' endpoint class like the rest.
+      const base = await imageBaseUrl();
       if (ref.mediaKind === 'movie') {
         const json = await get<TmdbMovieDetailsResponse>(`/movie/${ref.externalId}`, { append_to_response: 'credits' }, 'details');
-        return mapMovieDetails(json, ref.externalId);
+        return mapMovieDetails(json, ref.externalId, base);
       }
       if (ref.mediaKind === 'tv') {
         if (ref.seasonNumber != null && ref.episodeNumber != null) {
@@ -399,14 +425,14 @@ export function createTmdbProvider(deps: TmdbProviderDeps): MetadataProvider {
           if (!episode) {
             throw new Error(`tmdb: series ${ref.externalId} has no S${ref.seasonNumber}E${ref.episodeNumber}`);
           }
-          return mapEpisodeDetails(episode, ref.seasonNumber, ref.externalId);
+          return mapEpisodeDetails(episode, ref.seasonNumber, ref.externalId, base);
         }
         if (ref.seasonNumber != null) {
           const season = await get<TmdbSeasonResponse>(`/tv/${ref.externalId}/season/${ref.seasonNumber}`, {}, 'details');
           return mapSeasonDetails(season, ref.externalId);
         }
         const json = await get<TmdbTvDetailsResponse>(`/tv/${ref.externalId}`, { append_to_response: 'credits' }, 'details');
-        return mapSeriesDetails(json, ref.externalId);
+        return mapSeriesDetails(json, ref.externalId, base);
       }
       throw new Error(`tmdb: unsupported mediaKind "${ref.mediaKind}"`);
     },

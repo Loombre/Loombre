@@ -545,6 +545,13 @@ export interface JobsTable {
 // images
 // ============================================================================
 
+/** migrations/0047_metadata_provider_state.sql — see that file's header. */
+export interface MetadataProviderStateTable {
+  provider: string;
+  enabled: boolean;
+  observed_at_ms: number;
+}
+
 export interface ImagesTable {
   id: Generated<string>;
   entity_type: string;
@@ -1008,6 +1015,7 @@ export interface DB {
   events: EventsTable;
   jobs: JobsTable;
   images: ImagesTable;
+  metadata_provider_state: MetadataProviderStateTable;
   scan_checkpoints: ScanCheckpointsTable;
   provider_cache: ProviderCacheTable;
   metadata_provenance: MetadataProvenanceTable;

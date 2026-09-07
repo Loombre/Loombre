@@ -1,0 +1,67 @@
+name: transcode — mp4 h264 openGop:true + truehd/atmos vs constrained-tv — an audio-only escalation segments the container, so Stage B′ still fires
+why: >
+  The divergence case the HEVC rule's Finding D fix was about, applied to
+  Stage B′: Stage A finds the mp4 direct-playable, but Stage D must
+  transcode the truehd track (devices.constrained-tv declares aac only, no
+  passthrough), which repackages the whole delivery into fmp4-hls — and a
+  segmented copy of an open-GOP h264 stream is exactly what Stage B′
+  refuses, regardless of WHICH stage caused the segmentation. Had the rule
+  been gated on Stage A's own verdict (as the HEVC rule briefly was), this
+  plan would have shipped an audio transcode over a video copy with
+  non-independent segments. Expected: decision transcode; Stage D's
+  audio-codec-unsupported first (stage order), then Stage B′'s
+  video-open-gop-copy-unsafe; video.action transcode, not copy.
+input:
+  media:
+    fileId: file-540
+    container: mp4
+    durationMs: 6000000
+    sizeBytes: 5000000000
+    overallBitrateBps: 8160000
+    video:
+      - index: 0
+        codec: h264
+        profile: high
+        level: 41
+        width: 1920
+        height: 1080
+        bitDepth: 8
+        frameRate: 24
+        bitrateBps: 8000000
+        hdr: none
+        dvProfile: null
+        dvBlCompatId: null
+        interlaced: false
+        openGop: true
+    audio:
+      - index: 1
+        codec: truehd
+        channels: 8
+        sampleRate: 48000
+        bitrateBps: 3000000
+        language: eng
+        isDefault: true
+        hasAtmos: true
+    subtitle: []
+  device:
+    fixture: devices.constrained-tv
+  network:
+    fixture: networks.local
+  policy:
+    fixture: policies.t0-default
+  caps:
+    fixture: caps.software-only
+  selection:
+    videoStreamIndex: 0
+    audioStreamIndex: 1
+    subtitleStreamIndex: null
+  mode: stream
+
+expect:
+  decision: transcode
+  reasons:
+    - audio-codec-unsupported
+    - video-open-gop-copy-unsafe
+  container: fmp4-hls
+  video:
+    action: transcode

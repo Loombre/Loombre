@@ -24,6 +24,7 @@ import type { ContentClass, DB, ItemType } from '../types.js';
 import type { ViewerContext } from '../context.js';
 import { applyGuardToJoined, applyGuardToPeople } from './guard.js';
 import { decodeCursor, encodeCursor, isCursorRowId } from './cursor.js';
+import { fetchPersonImagesBatch, type ImageDescriptor } from './catalog-detail.js';
 
 export interface PersonRow {
   id: string;
@@ -31,6 +32,13 @@ export interface PersonRow {
   contentClass: ContentClass;
   /** Count of DISTINCT items visible to ctx this person is credited on. */
   creditCount: number;
+}
+
+/** getPersonById's row: PersonRow plus the person's own managed images
+ *  (the 'thumb' portrait) — the single-person GET pays one extra indexed
+ *  read; listPeople deliberately does not (Tier-0 list cost). */
+export interface PersonDetailRow extends PersonRow {
+  images: ImageDescriptor[];
 }
 
 export interface ListPeopleParams {
@@ -123,7 +131,7 @@ export async function getPersonById(
   db: Kysely<DB>,
   ctx: ViewerContext,
   id: string
-): Promise<PersonRow | undefined> {
+): Promise<PersonDetailRow | undefined> {
   const row = await applyGuardToPeople(db.selectFrom('people'), ctx)
     .innerJoin('item_people', 'item_people.person_id', 'people.id')
     .where('people.id', '=', id)
@@ -137,7 +145,9 @@ export async function getPersonById(
     ])
     .executeTakeFirst();
 
-  return row ? { ...row, creditCount: Number(row.creditCount) } : undefined;
+  if (!row) return undefined;
+  const portraits = await fetchPersonImagesBatch(db, [row.id]);
+  return { ...row, creditCount: Number(row.creditCount), images: portraits.get(row.id) ?? [] };
 }
 
 // ============================================================================

@@ -602,6 +602,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/libraries/{id}/refresh-metadata": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enqueue a metadata refresh for a library's items (admin)
+         * @description Fans out one `metadata` job per enrichable item (movie/series/ artist/album) in the library, through a single `metadata-refresh` job. `scope` `unmatched` (the default) covers only items with no provider match yet — the same set the Dashboard's unmatched list shows; `all` re-fetches every item, carrying each item's existing match so a refresh never replaces the candidate an admin chose with Fix Match. The same fan-out runs automatically when a provider API key is saved (PUT /admin/provider-keys/{provider}) and when the worker boots with a provider newly enabled.
+         */
+        post: operations["refreshLibraryMetadata"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/libraries/{id}/permissions": {
         parameters: {
             query?: never;
@@ -3370,6 +3392,14 @@ export interface components {
              */
             full: boolean;
         };
+        RefreshLibraryMetadataRequest: {
+            /**
+             * @description `unmatched` = items with no provider match yet (default); `all` = every enrichable item, existing matches kept.
+             * @default unmatched
+             * @enum {string}
+             */
+            scope: "unmatched" | "all";
+        };
         LibraryPermission: {
             /** Format: uuid */
             userId: string;
@@ -3410,6 +3440,8 @@ export interface components {
             /** @description e.g. character name ("as Batman"). */
             credit?: string | null;
             order: number;
+            /** @description The person's own managed images — today the `thumb` portrait the metadata worker ingests from the provider (served by GET /images/person/{id}/thumb). Empty when none exists, so a client renders an initials fallback instead of requesting a 404. Optional (not required) only because POST /import's ExportArchive reuses the item schemas this credit sits in; the server always populates it. */
+            images?: components["schemas"]["ImageDescriptor"][];
         };
         /** @description One probed audio stream on a MediaFileSummary (what the movie-detail METADATA "Audio" row displays). */
         MediaFileAudioTrack: {
@@ -3635,6 +3667,8 @@ export interface components {
             name: string;
             contentClass: components["schemas"]["ContentClass"];
             creditCount: number;
+            /** @description The person's own managed images (the `thumb` portrait), same descriptors as PersonCredit.images. Populated by GET /people/{id}; omitted on GET /people list rows (Tier-0 list cost). */
+            images?: components["schemas"]["ImageDescriptor"][];
         };
         PersonPage: {
             items: components["schemas"]["Person"][];
@@ -3837,7 +3871,7 @@ export interface components {
             targetMs: number;
         };
         /** @description Closed enum plus two pattern-typed families (docs/PLAYBACK.md §4). Additions to the fixed list are contract PRs. */
-        PlanReasonCode: ("container-not-direct-playable" | "video-codec-unsupported" | "video-profile-unsupported" | "video-level-exceeds-device" | "video-bitdepth-unsupported" | "video-resolution-exceeds-device" | "video-framerate-exceeds-device" | "video-interlaced" | "hdr-tone-map-required" | "dv-profile5-requires-tonemap" | "tone-map-refused-by-policy" | "audio-codec-unsupported" | "audio-channels-exceed-device" | "audio-passthrough-unsupported" | "subtitle-format-requires-burn-in" | "subtitle-burn-in-for-styling" | "video-transcode-for-subtitle-burn-in" | "bitrate-exceeds-network" | "subtitle-codec-unknown" | "transcode-disabled-by-policy" | "dv-stripped-to-hdr10" | "subtitle-styling-lost" | "audio-atmos-lost" | "gapless-degraded" | "open-gop-leading-pictures-stripped" | "av1-rung-demoted" | "ladder-variant-capped") | string;
+        PlanReasonCode: ("container-not-direct-playable" | "video-codec-unsupported" | "video-profile-unsupported" | "video-level-exceeds-device" | "video-bitdepth-unsupported" | "video-resolution-exceeds-device" | "video-framerate-exceeds-device" | "video-interlaced" | "hdr-tone-map-required" | "dv-profile5-requires-tonemap" | "tone-map-refused-by-policy" | "audio-codec-unsupported" | "audio-channels-exceed-device" | "audio-passthrough-unsupported" | "subtitle-format-requires-burn-in" | "subtitle-burn-in-for-styling" | "video-transcode-for-subtitle-burn-in" | "bitrate-exceeds-network" | "subtitle-codec-unknown" | "transcode-disabled-by-policy" | "video-open-gop-copy-unsafe" | "dv-stripped-to-hdr10" | "subtitle-styling-lost" | "audio-atmos-lost" | "gapless-degraded" | "open-gop-leading-pictures-stripped" | "av1-rung-demoted" | "ladder-variant-capped") | string;
         PlanReason: {
             code: components["schemas"]["PlanReasonCode"];
             streamIndex?: number | null;
@@ -6228,6 +6262,37 @@ export interface operations {
         };
         responses: {
             /** @description Scan job enqueued */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRef"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    refreshLibraryMetadata: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPathParam"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RefreshLibraryMetadataRequest"];
+            };
+        };
+        responses: {
+            /** @description Refresh job enqueued */
             202: {
                 headers: {
                     [name: string]: unknown;

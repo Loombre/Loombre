@@ -22,6 +22,7 @@ import { Skeleton } from "../../../components/skeleton/Skeleton.js";
 import { useCursorFeed, type CursorPage } from "../../../components/browse/useCursorFeed.js";
 import { apiGet, LoombreApiError } from "../../../lib/api-client.js";
 import { buildImageUrl } from "../../../lib/image-url.js";
+import { Avatar } from "../../../components/ui/Card.js";
 import { getAuthStore } from "../../../lib/auth-store.js";
 import { apiErrorCopy } from "../../../lib/api-error-message.js";
 import styles from "./page.module.css";
@@ -143,6 +144,7 @@ function PersonContent({ id }: { id: string }): React.JSX.Element {
     );
   }
 
+  const hasPortrait = (person.images ?? []).some((img) => img.kind === "thumb");
   const portraitSrc = buildImageUrl({
     serverUrl,
     accessToken,
@@ -155,11 +157,9 @@ function PersonContent({ id }: { id: string }): React.JSX.Element {
   return (
     <div className={styles.page}>
       <div className={styles.header}>
-        {/* No blurhash surfaced on Person today (contract has no images[]
-            on Person — only Movie/Series/Episode/Artist/Album/Track carry
-            one); a plain <img> with the shared avatar-fallback background
-            is the honest treatment rather than inventing a placeholder. */}
-        <img className={styles.portrait} src={portraitSrc} alt="" />
+        {/* Person.images says whether a portrait was ingested; without one
+            the shared initials Avatar stands in, never a broken <img>. */}
+        {hasPortrait ? <img className={styles.portrait} src={portraitSrc} alt="" /> : <Avatar label={person.name} size={140} />}
         <h1 className={styles.name}>{person.name}</h1>
       </div>
 

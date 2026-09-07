@@ -228,14 +228,34 @@ describe("detectOpenGop (fake ffmpeg, shared error/guard paths)", () => {
     expect(result).toBeNull();
   });
 
-  it("returns false WITHOUT spawning anything for a non-HEVC codec (opus review finding 11) — proven by pointing at a nonexistent ffmpeg path and getting false, not the null a real spawn attempt would produce", async () => {
-    const result = await detectOpenGop("irrelevant.mkv", 0, "h264", 20_000, {
+  it("h264: returns true on a recovery-point SEI (payload type 6) and never feeds H.264 NAL numbers to the HEVC rules (type 8 = PPS, not RASL)", async () => {
+    process.env["FAKE_FFMPEG_MODE"] = "h264-recovery";
+    expect(await detectOpenGop("irrelevant.mkv", 0, "h264", 3_000, { ffmpegPath: FAKE_FFMPEG })).toBe(true);
+    expect(await detectOpenGop("irrelevant.mkv", 0, "h264", 600_000, { ffmpegPath: FAKE_FFMPEG })).toBe(true);
+  });
+
+  it("h264: returns false for an IDR-only stream whose only SEI is user data (payload 5) — a PPS (type 8) alone is not a signal", async () => {
+    process.env["FAKE_FFMPEG_MODE"] = "h264-closed";
+    expect(await detectOpenGop("irrelevant.mkv", 0, "h264", 3_000, { ffmpegPath: FAKE_FFMPEG })).toBe(false);
+    expect(await detectOpenGop("irrelevant.mkv", 0, "h264", 600_000, { ffmpegPath: FAKE_FFMPEG })).toBe(false);
+  });
+
+  it("h264 mid-file mode scans a 12s window (a default x264 GOP is 10s), hevc keeps 2s", async () => {
+    process.env["FAKE_FFMPEG_MODE"] = "h264-closed";
+    const captured = captureArgv();
+    await detectOpenGop("irrelevant.mkv", 0, "h264", 600_000, { ffmpegPath: FAKE_FFMPEG });
+    const argv = captured.read();
+    expect(argv.slice(0, 4)).toEqual(["-ss", "300", "-t", "12"]);
+  });
+
+  it("returns false WITHOUT spawning anything for a codec outside the scanned set (hevc/h264) (opus review finding 11) — proven by pointing at a nonexistent ffmpeg path and getting false, not the null a real spawn attempt would produce", async () => {
+    const result = await detectOpenGop("irrelevant.mkv", 0, "vp9", 20_000, {
       ffmpegPath: "/definitely/not/a/real/ffmpeg-binary",
     });
     expect(result).toBe(false);
   });
 
-  it("the non-HEVC codec guard applies regardless of duration/mode (unknown duration, would-be mid-file duration)", async () => {
+  it("the codec guard applies regardless of duration/mode (unknown duration, would-be mid-file duration)", async () => {
     expect(await detectOpenGop("irrelevant.mkv", 0, "av1", null, { ffmpegPath: "/definitely/not/a/real/ffmpeg-binary" })).toBe(
       false,
     );
@@ -286,9 +306,9 @@ describe("detectOpenGop (fake ffmpeg, command shape)", () => {
     expect(args).not.toContain("-ss");
   });
 
-  it("non-HEVC codec: no argv file is ever written — the guard returns before any spawn", async () => {
+  it("unscanned codec: no argv file is ever written — the guard returns before any spawn", async () => {
     const argv = captureArgv();
-    const result = await detectOpenGop("the-file.mkv", 0, "h264", 20_000, { ffmpegPath: FAKE_FFMPEG });
+    const result = await detectOpenGop("the-file.mkv", 0, "vp9", 20_000, { ffmpegPath: FAKE_FFMPEG });
     expect(result).toBe(false);
     expect(existsSync(argv.envFile)).toBe(false);
   });
@@ -332,6 +352,25 @@ describe.skipIf(!toolsAvailable)("detectOpenGop (real ffmpeg, generated fixtures
     expect(openResult).toBe(true);
     const closedResult = await detectOpenGop(join(MEDIA_DIR, "hevc_closedgop.mkv"), 0, "hevc", null);
     expect(closedResult).toBe(false);
+  }, 15_000);
+});
+
+describe.skipIf(!toolsAvailable)("detectOpenGop (real ffmpeg, generated H.264 fixtures)", () => {
+  beforeAll(() => {
+    execFileSync(process.execPath, [GEN_SCRIPT], { stdio: "inherit" });
+  }, 60_000);
+
+  // 8s fixtures, keyint=25@25fps: a keyframe every second. Mid-file mode
+  // seeks to 4s and scans 12s (the whole rest of the file) — the open-gop
+  // encode's non-IDR I-frames each carry a recovery-point SEI.
+  it("returns true for the real x264 open-gop=1 fixture (h264_opengop.mkv)", async () => {
+    expect(await detectOpenGop(join(MEDIA_DIR, "h264_opengop.mkv"), 0, "h264", 8_000)).toBe(true);
+    expect(await detectOpenGop(join(MEDIA_DIR, "h264_opengop.mkv"), 0, "h264", null)).toBe(true);
+  }, 15_000);
+
+  it("returns false for the real x264 open-gop=0 control (h264_closedgop.mkv)", async () => {
+    expect(await detectOpenGop(join(MEDIA_DIR, "h264_closedgop.mkv"), 0, "h264", 8_000)).toBe(false);
+    expect(await detectOpenGop(join(MEDIA_DIR, "h264_closedgop.mkv"), 0, "h264", null)).toBe(false);
   }, 15_000);
 });
 

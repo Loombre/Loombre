@@ -162,7 +162,8 @@ describe('imageConsumerHandler', () => {
       const stream = Readable.toWeb(Readable.from([png])) as unknown as ReadableStream;
       return { ok: true, status: 200, statusText: 'OK', body: stream } as Response;
     };
-    const handler = imageConsumerHandler({ db, dataDir: workDir, execute: runVariantJob, fetchImpl });
+    const lines: string[] = [];
+    const handler = imageConsumerHandler({ db, dataDir: workDir, execute: runVariantJob, fetchImpl, log: (m) => lines.push(m) });
     const sourcePath = 'url:https://93.184.216.34/poster-a.jpg';
 
     await handler({ entityType: 'catalog_item', entityId: itemId, kind: 'poster', sourcePath }, { jobId: 'img-job-stable-1' });
@@ -176,6 +177,8 @@ describe('imageConsumerHandler', () => {
     // the same artwork. No fetch, no re-encode, no row churn.
     await handler({ entityType: 'catalog_item', entityId: itemId, kind: 'poster', sourcePath }, { jobId: 'img-job-stable-2' });
     expect(fetches).toBe(1);
+    // The log says which happened — the only way to verify the skip on a box.
+    expect(lines.map((l) => l.split(' ')[1])).toEqual(['rendered', 'skipped']);
     const second = await db.selectFrom('images').select(['id', 'width', 'file_path', 'source_ref', 'created_at_ms']).where('entity_id', '=', itemId).orderBy('width').execute();
     expect(second).toEqual(first);
     expect(Buffer.compare(await readFile(originalPath), bytesBefore)).toBe(0);

@@ -81,7 +81,7 @@ const MOVIE_DETAILS: ProviderDetails = {
   genres: ['Action', 'Crime'],
   tags: ['heist'],
   people: [
-    { name: 'Jane Doe', role: 'actor', order: 0, credit: 'Lead' },
+    { name: 'Jane Doe', role: 'actor', order: 0, credit: 'Lead', imageUrl: 'https://example.invalid/jane.jpg' },
     { name: 'John Smith', role: 'director', order: 1, credit: null },
   ],
   providerIds: { tmdb: '12345' },
@@ -284,7 +284,16 @@ describe('metadataConsumerHandler', () => {
     const changedFields = (ourEvents[0]!.payload as { changedFields: string[] }).changedFields;
     expect(changedFields).toEqual(expect.arrayContaining(['overview', 'contentRating', 'tagline', 'runtimeMs']));
 
-    expect(enqueueImageJob).toHaveBeenCalledTimes(2);
+    // poster + backdrop for the item, plus ONE portrait for the one credited
+    // person that has an imageUrl (John Smith has none -> no job).
+    expect(enqueueImageJob).toHaveBeenCalledTimes(3);
+    const jane = await db.selectFrom('people').select('id').where('name', '=', 'Jane Doe').executeTakeFirstOrThrow();
+    expect(enqueueImageJob).toHaveBeenCalledWith({
+      entityType: 'person',
+      entityId: jane.id,
+      kind: 'thumb',
+      sourcePath: 'url:https://example.invalid/jane.jpg',
+    });
     expect(enqueueImageJob).toHaveBeenCalledWith({
       entityType: 'catalog_item',
       entityId: itemId,

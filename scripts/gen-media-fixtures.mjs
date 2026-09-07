@@ -717,6 +717,31 @@ function main() {
     { container: "mkv", videoCodec: "hevc", interlaced: false },
     ["libx265"],
   );
+  // H.264 counterpart pair (docs/PLAYBACK.md §3 Stage B′, 2026-09-07):
+  // x264 open-gop=1 marks its non-IDR I-frames with a recovery-point SEI
+  // and the packet key flag; open-gop=0 emits IDRs only. keyint=25 @25fps
+  // (a keyframe every second) so a seek-landing test has known keyframe
+  // times, and 8s so the mid-file scan (seek 4s, 12s window) covers it.
+  encodeIfNeeded(
+    "h264_opengop.mkv",
+    [
+      "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=25:duration=8",
+      "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", "-an",
+      "-x264-params", "keyint=25:min-keyint=25:open-gop=1:scenecut=0:bframes=3",
+    ],
+    { container: "mkv", videoCodec: "h264", interlaced: false },
+    ["libx264"],
+  );
+  encodeIfNeeded(
+    "h264_closedgop.mkv",
+    [
+      "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=25:duration=8",
+      "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", "-an",
+      "-x264-params", "keyint=25:min-keyint=25:open-gop=0:scenecut=0:bframes=3",
+    ],
+    { container: "mkv", videoCodec: "h264", interlaced: false },
+    ["libx264"],
+  );
   encodeIfNeeded(
     "hevc_closedgop.mkv",
     [

@@ -209,3 +209,10 @@
     align-items: stretch;
   }
 }
+
+/* Post-save confirmation under the row (same slot as .errorText). */
+.savedNote {
+  margin: var(--space-2xs) 0 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}

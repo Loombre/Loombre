@@ -68,6 +68,17 @@ embedded tags) to figure out what it is.
   immediate check anyway, use the **Scan now** button on the admin
   Dashboard's Libraries panel, or the **Scan** / **Full rescan** actions
   in a library's **⋯** menu under Settings → Libraries.
+- **Metadata fills in on its own.** Newly scanned movies, series, artists
+  and albums are matched against your metadata providers as they arrive.
+  If a provider key was missing when a library was scanned, saving the key
+  (Dashboard → metadata provider keys) matches every still-unmatched item
+  in the background — nothing to press, no restart. The same happens when
+  the server starts with a provider newly enabled through its environment
+  variable. Two actions in the library's **⋯** menu rerun this by hand:
+  **Match unmatched** (only items with no provider match yet — the same
+  list the Dashboard's unmatched panel shows) and **Refresh metadata**
+  (every item, keeping each one's existing match, so a Fix Match choice is
+  never replaced). Both run as one job you can follow under Jobs.
 - **It recognizes renamed or moved files.** If you rename or reorganize a
   file within your library, Loombre matches it to the same file it already
   knew about (by its content, not just its name), so your watch history

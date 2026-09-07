@@ -80,6 +80,12 @@ export interface PersonCredit {
   role: string;
   credit: string | null;
   order: number;
+  /** The person's own managed images (entity_type 'person' — today the
+   *  'thumb' portrait the metadata consumer fetches from the provider),
+   *  same descriptor shape as the item's `images`. Empty when none has
+   *  been ingested, so a client renders its initials fallback instead of
+   *  requesting a 404. */
+  images: ImageDescriptor[];
 }
 
 /** One media_streams audio row, for MediaFileSummary.audioTracks (Phosphor
@@ -388,10 +394,41 @@ async function fetchPeopleBatch(
     .orderBy('item_people.ord', 'asc')
     .execute();
 
+  const portraits = await fetchPersonImagesBatch(db, [...new Set(rows.map((row) => row.personId))]);
+
   for (const row of rows) {
     const arr = map.get(row.itemId) ?? [];
-    arr.push({ id: row.personId, name: row.name, role: row.role, credit: row.credit, order: row.ord });
+    arr.push({ id: row.personId, name: row.name, role: row.role, credit: row.credit, order: row.ord, images: portraits.get(row.personId) ?? [] });
     map.set(row.itemId, arr);
+  }
+  return map;
+}
+
+/** Batched `images` rows for entity_type 'person' (the cast portraits the
+ *  metadata consumer ingests as kind 'thumb'), keyed by person id — the
+ *  people-side twin of fetchImagesBatch above. Exported for people.ts's
+ *  getPersonById so GET /people/{id} carries the same descriptors. */
+export async function fetchPersonImagesBatch(db: Kysely<DB>, personIds: string[]): Promise<Map<string, ImageDescriptor[]>> {
+  const map = new Map<string, ImageDescriptor[]>();
+  if (personIds.length === 0) return map;
+
+  const rows = await db
+    .selectFrom('images')
+    .select(['entity_id', 'kind', 'width', 'height', 'blurhash', 'dominant_color'])
+    .where('entity_type', '=', 'person')
+    .where('entity_id', 'in', personIds)
+    .execute();
+
+  for (const row of rows) {
+    const arr = map.get(row.entity_id) ?? [];
+    arr.push({
+      kind: row.kind,
+      width: row.width,
+      height: row.height,
+      blurhash: row.blurhash,
+      dominantColor: row.dominant_color ? row.dominant_color : null,
+    });
+    map.set(row.entity_id, arr);
   }
   return map;
 }

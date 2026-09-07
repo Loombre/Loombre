@@ -111,7 +111,7 @@ export function opengopBackfillConsumerHandler(deps: OpenGopBackfillConsumerDeps
 
     if (payload.cursor === null) {
       const nonHevcUpdated = await bulkSetNonHevcVideoOpenGopFalse(deps.db);
-      console.log(`worker: opengop-backfill bulk-set open_gop=false for ${nonHevcUpdated} non-hevc video stream row(s)`);
+      console.log(`worker: opengop-backfill bulk-set open_gop=false for ${nonHevcUpdated} video stream row(s) outside the scanned codecs (hevc/h264)`);
     }
 
     const batch = await listHevcStreamsNeedingOpenGopProbe(deps.db, {

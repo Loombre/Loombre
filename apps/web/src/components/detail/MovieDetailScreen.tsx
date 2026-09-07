@@ -192,7 +192,7 @@ export function MovieDetailScreen({
                   {files.length === 0 ? (
                     <div className={styles.emptyNote}>No files on record for this item.</div>
                   ) : (
-                    files.map((file) => <VersionCard key={file.id} file={file} />)
+                    files.map((file) => <VersionCard key={file.id} itemId={movie.id} file={file} />)
                   )}
                 </div>
                 {cast.length > 0 && (
@@ -200,7 +200,7 @@ export function MovieDetailScreen({
                     <div className={styles.sectionEyebrow}>CAST</div>
                     <div className={styles.castRail}>
                       {cast.map((person) => (
-                        <PersonCard key={person.id} person={person} />
+                        <PersonCard key={person.id} person={person} serverUrl={serverUrl} accessToken={accessToken} />
                       ))}
                     </div>
                   </>
@@ -234,7 +234,7 @@ export function MovieDetailScreen({
         <div className={styles.sectionEyebrow}>VERSIONS</div>
         <div className={styles.versionsList}>
           {files.map((file) => (
-            <VersionCard key={file.id} file={file} />
+            <VersionCard key={file.id} itemId={movie.id} file={file} />
           ))}
         </div>
         {cast.length > 0 && (
@@ -242,7 +242,7 @@ export function MovieDetailScreen({
             <div className={styles.sectionEyebrow}>CAST</div>
             <div className={styles.castRail}>
               {cast.map((person) => (
-                <PersonCard key={person.id} person={person} />
+                <PersonCard key={person.id} person={person} serverUrl={serverUrl} accessToken={accessToken} />
               ))}
             </div>
           </>

@@ -15,7 +15,7 @@
 import type { DbOrTx } from '@loombre/db/internal';
 import { getProviderCacheEntry, upsertProviderCacheEntry } from '@loombre/db/internal';
 import { cachedGet, ProviderFetchError, type FetchLike } from '../cache.js';
-import { resolveApiKey } from '../keys.js';
+import { resolveApiKey, type KeyResolution } from '../keys.js';
 import { acquire, TokenBucket, PROVIDER_RATE_LIMITS, type Clock } from '../rate-limit.js';
 import type {
   EpisodeProviderDetails,
@@ -48,6 +48,9 @@ interface TvdbCharacter {
   personName: string;
   peopleType: string;
   sort?: number | null;
+  /** Absolute URL of the PERSON's photo (v4 `personImgURL`); `image` is
+   *  the character still and is not used for the portrait. */
+  personImgURL?: string | null;
 }
 
 interface TvdbArtwork {
@@ -104,12 +107,13 @@ function mapCharacters(characters: TvdbCharacter[] | undefined): PersonCredit[] 
   const sorted = [...(characters ?? [])].sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0));
   const people: PersonCredit[] = [];
   for (const c of sorted) {
+    const portrait = c.personImgURL ? { imageUrl: c.personImgURL } : {};
     if (c.peopleType === 'Actor') {
-      people.push({ name: c.personName, role: 'actor', order: c.sort ?? people.length, credit: c.name ?? null });
+      people.push({ name: c.personName, role: 'actor', order: c.sort ?? people.length, credit: c.name ?? null, ...portrait });
     } else if (c.peopleType === 'Director') {
-      people.push({ name: c.personName, role: 'director', order: c.sort ?? people.length, credit: null });
+      people.push({ name: c.personName, role: 'director', order: c.sort ?? people.length, credit: null, ...portrait });
     } else if (c.peopleType === 'Writer') {
-      people.push({ name: c.personName, role: 'writer', order: c.sort ?? people.length, credit: null });
+      people.push({ name: c.personName, role: 'writer', order: c.sort ?? people.length, credit: null, ...portrait });
     }
   }
   return people;
@@ -210,10 +214,12 @@ export interface TvdbProviderDeps {
   clock?: () => number;
   bucket?: TokenBucket;
   env?: NodeJS.ProcessEnv;
+  /** Job-boundary key re-resolution — see TmdbProviderDeps.resolveKey. */
+  resolveKey?: () => Promise<KeyResolution>;
 }
 
 export function createTvdbProvider(deps: TvdbProviderDeps): MetadataProvider {
-  const keyResolution = resolveApiKey('LOOMBRE_TVDB_API_KEY', deps.env);
+  let keyResolution: KeyResolution = resolveApiKey('LOOMBRE_TVDB_API_KEY', deps.env);
   const fetchImpl = deps.fetchImpl ?? ((...args: Parameters<FetchLike>) => fetch(...args));
   const clock = deps.clock ?? (() => Date.now());
   const clockObj: Clock = { nowMs: clock };
@@ -286,8 +292,20 @@ export function createTvdbProvider(deps: TvdbProviderDeps): MetadataProvider {
     name: 'tvdb',
     contentClass: 'general',
     kinds: ['tv'],
-    enabled: keyResolution.enabled,
-    ...(!keyResolution.enabled ? { disabledReason: keyResolution.reason } : {}),
+    get enabled(): boolean {
+      return keyResolution.enabled;
+    },
+    get disabledReason(): string | undefined {
+      return keyResolution.enabled ? undefined : keyResolution.reason;
+    },
+    async refresh(): Promise<void> {
+      if (!deps.resolveKey) return;
+      const next = await deps.resolveKey();
+      const changed = next.enabled !== keyResolution.enabled || (next.enabled && keyResolution.enabled && next.apiKey !== keyResolution.apiKey);
+      keyResolution = next;
+      // A bearer token minted with the old key is not worth keeping.
+      if (changed) inMemoryToken = null;
+    },
 
     async search(query: SearchQuery): Promise<ProviderSearchResult[]> {
       if (query.mediaKind !== 'tv') return [];

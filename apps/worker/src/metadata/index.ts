@@ -42,7 +42,7 @@ export { TokenBucket, acquire, systemClock, PROVIDER_RATE_LIMITS, type Clock, ty
 
 export { cachedGet, ProviderFetchError, CACHE_TTL_MS, type CachingFetchDeps, type CachedGetOptions, type EndpointClass, type FetchLike } from './cache.js';
 
-export { resolveApiKey, resolveApiKeyWithKeyring, type KeyResolution } from './keys.js';
+export { resolveApiKey, resolveApiKeyWithKeyring, createKeyringKeyResolver, KEY_RESOLVER_TTL_MS, type KeyResolution } from './keys.js';
 
 export {
   mergeFields,
@@ -64,6 +64,14 @@ export { getMetadataSourceItem, getCurrentSatelliteFields, getCurrentRelations, 
 export { metadataConsumerHandler, type MetadataConsumerDeps } from './consumer.js';
 
 export { metadataSearchConsumerHandler, type MetadataSearchConsumerDeps, type MatchCandidate } from './match-search-consumer.js';
+
+export {
+  metadataRefreshConsumerHandler,
+  runMetadataRefresh,
+  enqueueRefreshForNewlyEnabledProviders,
+  type MetadataRefreshConsumerDeps,
+  type MetadataRefreshSummary,
+} from './refresh-consumer.js';
 
 export { createTmdbProvider, type TmdbProviderDeps } from './providers/tmdb.js';
 export { createTvdbProvider, type TvdbProviderDeps } from './providers/tvdb.js';

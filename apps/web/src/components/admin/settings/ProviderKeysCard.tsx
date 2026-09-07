@@ -53,6 +53,10 @@ function ProviderKeyRow({ status, onChanged }: { status: ProviderKeyStatus; onCh
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Shown once after a successful save: the server has enqueued the
+   *  metadata refresh for every still-unmatched item (no restart, no
+   *  per-item Fix Match) — the one thing the admin wants to know next. */
+  const [savedNote, setSavedNote] = useState<string | null>(null);
   const envLocked = status.source === "env";
   const canRemove = status.set && !envLocked;
 
@@ -79,6 +83,7 @@ function ProviderKeyRow({ status, onChanged }: { status: ProviderKeyStatus; onCh
       // header: the never-shown-again property is a security property, not
       // a UI nicety).
       resetToIdle();
+      setSavedNote("Key saved. Items without a match are being matched in the background.");
       onChanged();
     } catch (err) {
       setError(apiErrorCopy(err, "Failed to set key."));
@@ -173,6 +178,11 @@ function ProviderKeyRow({ status, onChanged }: { status: ProviderKeyStatus; onCh
         </div>
       )}
       {error && <p className={styles.errorText}>{error}</p>}
+      {savedNote && !error && (
+        <p className={styles.savedNote} role="status">
+          {savedNote}
+        </p>
+      )}
     </div>
   );
 }

@@ -12,6 +12,7 @@ import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { components } from "@loombre/sdk";
 import { PlayerControls, type PlayerControlsProps } from "./PlayerControls.js";
+import type { VersionOption } from "../../lib/version-options.js";
 import { renderIntoBody, type TestRender } from "../ui/test-render.js";
 
 type AudioStream = components["schemas"]["AudioStream"];
@@ -292,5 +293,49 @@ describe("PlayerControls — chapters", () => {
     // pickers don't (this one is a one-shot navigation, not a persistent
     // toggle) — the list content unmounts.
     expect(view.container.textContent).not.toContain("Midpoint");
+  });
+});
+
+describe("PlayerControls version picker", () => {
+  const versions: VersionOption[] = [
+    { id: "f-2160", label: "2160p", detail: "VP9 · HDR10 · WEBM", isCurrent: true, isDefault: true },
+    { id: "f-1080", label: "1080p", detail: "H.264 · MKV", isCurrent: false, isDefault: false },
+  ];
+
+  function versionButton(view: TestRender): HTMLButtonElement | null {
+    return view.container.querySelector<HTMLButtonElement>('button[aria-label="Version"]');
+  }
+
+  it("renders no Version button with a single file, or without an onSelectVersion handler", () => {
+    let view = renderIntoBody(<PlayerControls {...props({ versions: [versions[0]!], onSelectVersion: vi.fn() })} />);
+    expect(versionButton(view)).toBeNull();
+    view.unmount();
+    view = renderIntoBody(<PlayerControls {...props({ versions })} />);
+    expect(versionButton(view)).toBeNull();
+    view.unmount();
+  });
+
+  it("lists every version, marks the current one, and reports a pick then closes", () => {
+    const onSelectVersion = vi.fn();
+    const onPopoverOpenChange = vi.fn();
+    const view = renderIntoBody(<PlayerControls {...props({ versions, onSelectVersion, onPopoverOpenChange })} />);
+    const button = versionButton(view);
+    expect(button).not.toBeNull();
+    act(() => button!.click());
+    expect(onPopoverOpenChange).toHaveBeenLastCalledWith(true);
+
+    const options = Array.from(view.container.querySelectorAll<HTMLButtonElement>('[role="group"][aria-label="Version"] button'));
+    expect(options.map((o) => o.textContent)).toEqual(["2160p (default)VP9 · HDR10 · WEBM", "1080pH.264 · MKV"]);
+    expect(options[0]!.getAttribute("data-active")).toBe("true");
+    expect(options[0]!.getAttribute("aria-current")).toBe("true");
+
+    // Picking the current file is a no-op; picking the other one reports it.
+    act(() => options[0]!.click());
+    expect(onSelectVersion).not.toHaveBeenCalled();
+    act(() => options[1]!.click());
+    expect(onSelectVersion).toHaveBeenCalledWith("f-1080");
+    expect(view.container.querySelector('[role="group"][aria-label="Version"]')).toBeNull();
+    expect(onPopoverOpenChange).toHaveBeenLastCalledWith(false);
+    view.unmount();
   });
 });

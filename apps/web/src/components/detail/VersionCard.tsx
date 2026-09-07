@@ -30,7 +30,8 @@
 // its desktop and mobile trees (CSS swaps which one displays), so fixing it
 // here fixes both.
 import { useEffect, useRef, useState } from "react";
-import { BoxSelect, Check, Copy } from "lucide-react";
+import Link from "next/link";
+import { BoxSelect, Check, Copy, Play } from "lucide-react";
 import type { components } from "@loombre/sdk";
 import { Icon } from "../icon/Icon.js";
 import { Button } from "../ui/Button.js";
@@ -169,15 +170,29 @@ function FilePathRow({ path }: { path: string }): React.JSX.Element {
   );
 }
 
-export function VersionCard({ file }: { file: MediaFileSummary }): React.JSX.Element {
+export function VersionCard({ itemId, file }: { itemId: string; file: MediaFileSummary }): React.JSX.Element {
   const size = formatFileSize(file.sizeBytes ?? null);
   const runtime = formatRuntime(file.durationMs ?? null);
+  const label = file.versionLabel ?? "Original";
   return (
     <div className={styles.card} data-default={file.isDefault ?? false}>
       <div className={styles.headRow}>
-        <span className={styles.name}>{file.versionLabel ?? "Original"}</span>
+        <span className={styles.name}>{label}</span>
         {file.isDefault && <span className={styles.defaultBadge}>DEFAULT</span>}
         <span className={styles.size}>{size ?? runtime ?? ""}</span>
+        {/* Play THIS file — VersionRow.tsx's ?mediaFileId link, as an
+            affordance inside the card (the card also hosts the copy
+            button, so the card itself can't be the link). next/link,
+            never a raw <a href>, for the same client-navigation reason
+            VersionRow documents. */}
+        <Link
+          href={`/watch/${itemId}?mediaFileId=${encodeURIComponent(file.id)}`}
+          className={styles.play}
+          aria-label={`Play ${label}`}
+        >
+          <Icon icon={Play} size="dense" />
+          <span>Play</span>
+        </Link>
       </div>
       <div className={styles.specs}>{specsLine(file)}</div>
       {file.path !== undefined && <FilePathRow path={file.path} />}

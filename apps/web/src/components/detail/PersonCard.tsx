@@ -13,6 +13,7 @@
 import Link from "next/link";
 import type { components } from "@loombre/sdk";
 import { Avatar } from "../ui/Card.js";
+import { buildImageUrl } from "../../lib/image-url.js";
 import styles from "./PersonCard.module.css";
 
 type PersonCredit = components["schemas"]["PersonCredit"];
@@ -27,10 +28,39 @@ const ROLE_LABEL: Record<PersonCredit["role"], string> = {
   guest: "Guest",
 };
 
-export function PersonCard({ person }: { person: PersonCredit }): React.JSX.Element {
+export interface PersonCardProps {
+  person: PersonCredit;
+  /** Needed to build the portrait URL (GET /images/person/{id}/thumb is a
+   *  token-in-query image route like every other managed image). Callers
+   *  that render credits without a session (none today) may omit both —
+   *  the card then always shows the initials avatar. */
+  serverUrl?: string;
+  accessToken?: string | null;
+}
+
+/** True when the credit carries an ingested `thumb` portrait — the ONLY
+ *  case an <img> is rendered. `images` is the server's own statement of
+ *  what exists, so an unmatched person never costs a 404 round-trip. */
+export function hasPortrait(person: PersonCredit): boolean {
+  return (person.images ?? []).some((img) => img.kind === "thumb");
+}
+
+export function PersonCard({ person, serverUrl, accessToken }: PersonCardProps): React.JSX.Element {
+  const portrait = serverUrl && accessToken && hasPortrait(person);
   return (
     <Link href={`/people/${person.id}`} className={styles.card}>
-      <Avatar label={person.name} size={64} />
+      {portrait ? (
+        <img
+          className={styles.portrait}
+          src={buildImageUrl({ serverUrl, accessToken, entityType: "person", entityId: person.id, kind: "thumb", width: 192 })}
+          alt=""
+          width={64}
+          height={64}
+          loading="lazy"
+        />
+      ) : (
+        <Avatar label={person.name} size={64} />
+      )}
       <span className={styles.name}>{person.name}</span>
       <span className={styles.role}>{person.credit ?? ROLE_LABEL[person.role]}</span>
     </Link>

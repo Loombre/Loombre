@@ -38,6 +38,10 @@ export interface ImageConsumerDeps {
   fetchImpl?: RunImagePipelineInput['fetchImpl'];
   execute?: RunImagePipelineInput['execute'];
   clock?: () => number;
+  /** One line per job outcome ("rendered" / "skipped, same source_ref") —
+   *  the only way to verify the stable-identity skip from a log. Defaults
+   *  to console.info; tests pass a sink. */
+  log?: (message: string) => void;
 }
 
 /** 'catalog_item' (metadata/consumer.ts's original enqueue convention),
@@ -95,10 +99,15 @@ async function alreadyRenderedFrom(db: DbOrTx, payload: { entityType: string; en
 export function imageConsumerHandler(deps: ImageConsumerDeps): JobHandler<'image'> {
   const clock = deps.clock ?? (() => Date.now());
 
+  const log = deps.log ?? ((message: string) => console.info(message));
+
   return async (payload) => {
     const exists = await entityExists(deps.db, payload.entityType, payload.entityId);
     if (!exists) return;
-    if (await alreadyRenderedFrom(deps.db, payload)) return;
+    if (await alreadyRenderedFrom(deps.db, payload)) {
+      log(`image: skipped ${payload.entityType}/${payload.entityId} ${payload.kind} — same source_ref, file present`);
+      return;
+    }
 
     const settingsResult = await loadWorkerEffectiveSettings(deps.db);
     const avifEnabled = getWorkerSettingValue(settingsResult, 'images.avifEnabled', true);
@@ -140,6 +149,8 @@ export function imageConsumerHandler(deps: ImageConsumerDeps): JobHandler<'image
       createdAtMs: now,
       sourceRef: payload.sourcePath,
     });
+
+    log(`image: rendered ${payload.entityType}/${payload.entityId} ${payload.kind} from ${sourceFor(payload.sourcePath)} source (${result.variants.length} variant(s))`);
 
     for (const variant of result.variants) {
       await upsertImage(deps.db, {
