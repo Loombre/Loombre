@@ -224,6 +224,27 @@ describe("macOS privacy-protected roots → polling (SPF-14)", () => {
     expect(info).toHaveBeenCalledWith("worker: watching library lib-local — 2 paths, native events");
   });
 
+  it("planWatch resolves with the INJECTED platform's path arithmetic (a win32 plan on a POSIX host, and vice versa)", async () => {
+    // The first three-OS gate leg ran these darwin cases on a Windows host,
+    // where the host resolver turned "/Users/ozzy/Desktop/Movies" into
+    // "D:\\Users\\…" and every TCC decision came out false. Pin the seam
+    // from the other side too: a win32 plan on this (POSIX) host must hand
+    // realpath a win32-normalised path, not a cwd-prefixed POSIX one.
+    const seen: string[] = [];
+    const plan = await planWatch([{ id: "lib-win", paths: ["C:\\Media\\..\\Movies"] }], {
+      platform: "win32",
+      env: {},
+      probePath: () => Promise.resolve(),
+      realpathPath: (path) => {
+        seen.push(path);
+        return Promise.resolve(path);
+      },
+      info: () => undefined,
+    });
+    expect(seen).toEqual(["C:\\Movies"]);
+    expect(plan).toEqual([{ libraryId: "lib-win", paths: ["C:\\Media\\..\\Movies"], usePolling: false }]);
+  });
+
   it("planWatch decides polling on the RESOLVED path — `..` segments and symlinks into a protected root count", async () => {
     const plan = await planWatch(
       [

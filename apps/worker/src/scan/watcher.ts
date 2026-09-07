@@ -79,7 +79,7 @@
  */
 import { existsSync } from "node:fs";
 import { access, realpath } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
+import { posix, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 
@@ -331,6 +331,11 @@ export async function planWatch(
 ): Promise<WatchPlanEntry[]> {
   const env = options.env ?? process.env;
   const platform = options.platform ?? process.platform;
+  // Path arithmetic follows the INJECTED platform, not the host's: the
+  // polling decision reasons about the platform's own path shapes (a
+  // darwin TCC root is "/Users/<name>/Desktop/…"), and a win32 host's
+  // resolve() would turn that into "D:\\Users\\…" and decide nothing.
+  const P = platform === "win32" ? win32 : posix;
   const probePath = options.probePath ?? ((path: string) => access(path));
   const realpathPath = options.realpathPath ?? ((path: string) => realpath(path));
   const probeTimeoutMs = options.probeTimeoutMs ?? PATH_PROBE_TIMEOUT_MS;
@@ -346,8 +351,8 @@ export async function planWatch(
   async function watchable(path: string): Promise<Probe> {
     const direct = await reachable(path);
     if (direct.ok || !/ENOENT/.test(direct.why)) return direct;
-    const parent = await reachable(dirname(path));
-    return parent.ok ? { ok: true, exists: false } : { ok: false, why: `${direct.why}; parent ${dirname(path)}: ${parent.why}` };
+    const parent = await reachable(P.dirname(path));
+    return parent.ok ? { ok: true, exists: false } : { ok: false, why: `${direct.why}; parent ${P.dirname(path)}: ${parent.why}` };
   }
 
   /** The path the polling decision is taken on: absolute, `..`-free, and
@@ -355,11 +360,11 @@ export async function planWatch(
    *  path canonicalizes through its parent (realpath of a missing path
    *  rejects). Any failure or timeout falls back to the plain resolution. */
   async function canonical(path: string, exists: boolean): Promise<string> {
-    const resolved = resolve(path);
-    const target = exists ? resolved : dirname(resolved);
+    const resolved = P.resolve(path);
+    const target = exists ? resolved : P.dirname(resolved);
     const real = await settleWithin(realpathPath(target), probeTimeoutMs);
     if (!real.ok) return resolved;
-    return exists ? real.value : join(real.value, basename(resolved));
+    return exists ? real.value : P.join(real.value, P.basename(resolved));
   }
 
   const plan: WatchPlanEntry[] = [];

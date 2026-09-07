@@ -85,7 +85,10 @@ class FakeChild extends EventEmitter {
 /** Fake pids live in a range no real process can occupy here. */
 const FAKE_PID_BASE = 960_001;
 
-describe("d3-f3: a throttle SIGSTOP is bounded — a paused viewer never leaves an encoder stopped for minutes", () => {
+// win32 never SIGSTOPs anything: every win32 ffmpeg run is paced with
+// -readrate instead (src/transcode/index.ts, P3.8), so the throttle never
+// suspends a run there and the bound under test has no trigger.
+describe.skipIf(process.platform === "win32")("d3-f3: a throttle SIGSTOP is bounded — a paused viewer never leaves an encoder stopped for minutes", () => {
   let db: ReturnType<typeof createDb>;
   let raw: pg.Client;
   let stagingRoot: string;

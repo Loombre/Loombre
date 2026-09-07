@@ -283,7 +283,7 @@ describe.skipIf(!ffmpegAvailable)("AV1 ladder targeting — real ffmpeg (LD-7 / 
     }
   }, 600_000);
 
-  it("TIER-1 SOFTWARE AV1 end-to-end: the production plan() -> buildFfmpegArgs() argv really produces AV1", async () => {
+  it("TIER-1 SOFTWARE AV1 end-to-end: the production plan() -> buildFfmpegArgs() argv really produces AV1", async (ctx) => {
     const resolved = resolveFfmpeg();
     if (!resolved.ok) throw resolved.error;
     const ffmpegPath = resolved.binary.path;
@@ -291,7 +291,14 @@ describe.skipIf(!ffmpegAvailable)("AV1 ladder targeting — real ffmpeg (LD-7 / 
 
     const encodersResult = await runner.run(ffmpegPath, buildListEncodersArgs(), { timeoutMs: 30_000 });
     const encoders = parseEncoderNames(encodersResult.stdout);
-    // D4: this is the ONE software av1 encoder a plan may ever name.
+    // D4: this is the ONE software av1 encoder a plan may ever name. The
+    // claim is about VENDORED builds; a runner's own PATH ffmpeg (the
+    // Windows leg's choco build has no libsvtav1) cannot carry it — that
+    // build proves nothing here either way, so the case skips rather than
+    // asserting a fact about a binary Loombre never ships.
+    if (!encoders.has("libsvtav1") && resolved.binary.source === "path") {
+      ctx.skip(`the PATH ffmpeg at ${ffmpegPath} has no libsvtav1 — not a vendored Loombre build`);
+    }
     expect(
       encoders.has("libsvtav1"),
       "this ffmpeg build has no libsvtav1 — every vendored Loombre build compiles --enable-libsvtav1",
